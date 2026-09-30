@@ -51,6 +51,16 @@ describe('visible counts and ring condition', () => {
     expect(canRing(countVisibleItems(state))).toBe(true);
   });
 
+  it('counts multiple visible Wild Bells toward one fruit without reducing raw counts', () => {
+    const state = makeState(
+      [makeCard('A-top', ['strawberry', 'strawberry', 'strawberry', 'bell'])],
+      [makeCard('B-top', ['strawberry', 'bell'])],
+    );
+
+    expect(countVisibleItems(state)).toMatchObject({ strawberry: 4, wildBellCount: 2 });
+    expect(canRing(countVisibleItems(state))).toBe(true);
+  });
+
   it('does not let a Wild Bell reduce a raw fruit count above five', () => {
     const state = makeState(
       [makeCard('A-top', ['grape', 'grape', 'grape'])],

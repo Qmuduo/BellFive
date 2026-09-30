@@ -50,7 +50,7 @@ export const CARD_DEFINITIONS = [
   { id: 'C047', symbols: ['grape', 'grape', 'pear', 'strawberry'] },
   { id: 'C048', symbols: ['pear', 'pear', 'strawberry', 'peach'] },
   { id: 'C049', symbols: ['strawberry', 'strawberry', 'peach', 'banana'] },
-  { id: 'C050', symbols: ['peach', 'peach', 'banana', 'grape'] },
+  { id: 'C050', symbols: ['peach', 'banana', 'grape', 'pear', 'strawberry'] },
   { id: 'C051', symbols: ['banana', 'grape', 'pear', 'strawberry', 'bell'] },
   { id: 'C052', symbols: ['grape', 'pear', 'strawberry', 'peach', 'bell'] },
   { id: 'C053', symbols: ['pear', 'strawberry', 'peach', 'banana', 'bell'] },

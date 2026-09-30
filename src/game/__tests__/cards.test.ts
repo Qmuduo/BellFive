@@ -41,4 +41,15 @@ describe('CARD_DEFINITIONS', () => {
     ).toBe(true);
     expect(CARD_DEFINITIONS.some(card => new Set(card.symbols).size > 1)).toBe(true);
   });
+
+  it('includes one card with all five distinct fruit types', () => {
+    const fruitTypes = allowedElements.filter(element => element !== 'bell');
+
+    expect(
+      CARD_DEFINITIONS.some(card => {
+        const fruits = card.symbols.filter(symbol => symbol !== 'bell');
+        return fruits.length === 5 && new Set(fruits).size === fruitTypes.length;
+      }),
+    ).toBe(true);
+  });
 });

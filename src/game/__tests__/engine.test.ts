@@ -129,6 +129,7 @@ describe('ring and pile transitions', () => {
   it.each([
     { available: 0, moved: 0 },
     { available: 1, moved: 1 },
+    { available: 2, moved: 2 },
     { available: 3, moved: 2 },
   ])(
     'transfers at most two caller cards when $available are available',
@@ -179,6 +180,30 @@ describe('ring and pile transitions', () => {
 });
 
 describe('winner and terminal transitions', () => {
+  it('plays all sixty dealt cards before ending on the empty active player', () => {
+    let game = createGame(() => 0);
+
+    for (let flip = 0; flip < 60; flip += 1) {
+      game = flipCard(game);
+    }
+
+    expect(game.status).toBe('playing');
+    expect(game.players.A.drawPile).toHaveLength(0);
+    expect(game.players.B.drawPile).toHaveLength(0);
+    expect(game.players.A.playedPile).toHaveLength(30);
+    expect(game.players.B.playedPile).toHaveLength(30);
+
+    game = flipCard(game);
+
+    expect(game).toMatchObject({ status: 'finished', winner: 'B', turn: 'A' });
+    expect([
+      ...game.players.A.drawPile,
+      ...game.players.A.playedPile,
+      ...game.players.B.drawPile,
+      ...game.players.B.playedPile,
+    ]).toHaveLength(60);
+  });
+
   it('awards the win to the opponent when the active player cannot draw', () => {
     const state = makeState(
       { drawPile: [], playedPile: [makeCard('A-visible', ['banana'])] },
