@@ -43,7 +43,10 @@ export function flipCard(state: GameState): GameState {
   if (state.status !== 'playing') return state;
 
   const playerState = state.players[state.turn];
-  if (playerState.drawPile.length === 0) return state;
+  if (playerState.drawPile.length === 0) {
+    const winner = checkWinner(state);
+    return winner ? { ...state, status: 'finished', winner } : state;
+  }
 
   const [card, ...remainingDrawPile] = playerState.drawPile;
   const nextTurn: PlayerId = state.turn === 'A' ? 'B' : 'A';
@@ -60,6 +63,13 @@ export function flipCard(state: GameState): GameState {
       },
     },
   };
+}
+
+export function checkWinner(state: GameState): PlayerId | null {
+  if (state.status === 'finished') return state.winner;
+  if (state.players[state.turn].drawPile.length > 0) return null;
+
+  return state.turn === 'A' ? 'B' : 'A';
 }
 
 export function collectPlayedCards(state: GameState, caller: PlayerId): GameState {

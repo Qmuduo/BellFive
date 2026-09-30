@@ -29,7 +29,7 @@ export default function GameScreen() {
             onPress={game ? restartGame : startGame}
             style={({ pressed }) => [styles.restartButton, pressed && styles.pressed]}
           >
-            <Text style={styles.restartText}>{game ? 'RESTART' : 'START GAME'}</Text>
+            <Text style={styles.restartText}>{game ? 'RESTART GAME' : 'START GAME'}</Text>
           </Pressable>
         </View>
 
@@ -37,33 +37,46 @@ export default function GameScreen() {
           player="B"
           drawCount={game?.players.B.drawPile.length ?? 0}
           playedCount={game?.players.B.playedPile.length ?? 0}
-          active={game?.turn === 'B'}
+          active={game?.status === 'playing' && game.turn === 'B'}
           onPress={() => flipForPlayer('B')}
         />
         <GameCard playerLabel="PLAYER B" card={game?.players.B.playedPile[0]} />
 
         <View style={styles.turnArea}>
           <Text style={styles.turnLabel}>
-            {game ? `PLAYER ${game.turn}'S TURN` : 'Ready to play?'}
+            {game?.status === 'finished'
+              ? 'GAME OVER'
+              : game
+                ? `PLAYER ${game.turn}'S TURN`
+                : 'Ready to play?'}
           </Text>
-          <BellButton
-            disabled={!game || game.status !== 'playing'}
-            outcome={game?.lastRingOutcome ?? null}
-            onRing={player => ringForPlayer(player)}
-          />
-          <Pressable
-            role="button"
-            aria-label="FLIP"
-            accessibilityState={{ disabled: !game }}
-            disabled={!game}
-            onPress={flip}
-            style={({ pressed }) => [styles.flipButton, pressed && game && styles.pressed]}
-          >
-            <Text style={styles.flipText}>FLIP</Text>
-          </Pressable>
-          <Text style={styles.turnHint}>
-            {game ? `Player ${game.turn} flips next` : 'Start a game to begin'}
-          </Text>
+          {game?.status === 'finished' ? (
+            <View style={styles.gameOver}>
+              <Text style={styles.winnerLabel}>PLAYER {game.winner} WINS</Text>
+              <Text style={styles.youWin}>YOU WIN</Text>
+            </View>
+          ) : (
+            <>
+              <BellButton
+                disabled={!game || game.status !== 'playing'}
+                outcome={game?.lastRingOutcome ?? null}
+                onRing={player => ringForPlayer(player)}
+              />
+              <Pressable
+                role="button"
+                aria-label="FLIP"
+                accessibilityState={{ disabled: !game }}
+                disabled={!game}
+                onPress={flip}
+                style={({ pressed }) => [styles.flipButton, pressed && game && styles.pressed]}
+              >
+                <Text style={styles.flipText}>FLIP</Text>
+              </Pressable>
+              <Text style={styles.turnHint}>
+                {game ? `Player ${game.turn} flips next` : 'Start a game to begin'}
+              </Text>
+            </>
+          )}
         </View>
 
         <GameCard playerLabel="PLAYER A" card={game?.players.A.playedPile[0]} />
@@ -71,7 +84,7 @@ export default function GameScreen() {
           player="A"
           drawCount={game?.players.A.drawPile.length ?? 0}
           playedCount={game?.players.A.playedPile.length ?? 0}
-          active={game?.turn === 'A'}
+          active={game?.status === 'playing' && game.turn === 'A'}
           onPress={() => flipForPlayer('A')}
         />
 
@@ -127,6 +140,23 @@ const styles = StyleSheet.create({
     color: '#28333B',
     fontSize: 17,
     fontWeight: '800',
+  },
+  gameOver: {
+    alignItems: 'center',
+    paddingVertical: 28,
+  },
+  winnerLabel: {
+    color: '#2D614A',
+    fontSize: 19,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  youWin: {
+    marginTop: 5,
+    color: '#C18D13',
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
   flipButton: {
     width: 110,

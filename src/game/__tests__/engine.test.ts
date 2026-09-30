@@ -6,6 +6,7 @@ import {
   ringBell,
   shuffleDeck,
   transferPenaltyCards,
+  checkWinner,
 } from '../engine';
 import type { CardDefinition, GameElement, GameState, PlayerId } from '../types';
 
@@ -174,5 +175,45 @@ describe('ring and pile transitions', () => {
     expect(result.state.players.B.drawPile).toEqual(CARD_DEFINITIONS.slice(0, 2));
     expect(result.state.turn).toBe('B');
     expect(result.state.lastRingOutcome).toBe('wrong');
+  });
+});
+
+describe('winner and terminal transitions', () => {
+  it('awards the win to the opponent when the active player cannot draw', () => {
+    const state = makeState(
+      { drawPile: [], playedPile: [makeCard('A-visible', ['banana'])] },
+      { drawPile: [makeCard('B-draw', ['pear'])], playedPile: [] },
+      'A',
+    );
+
+    expect(checkWinner(state)).toBe('B');
+    expect(flipCard(state)).toMatchObject({ status: 'finished', winner: 'B', turn: 'A' });
+    expect(state.status).toBe('playing');
+  });
+
+  it('does not declare a winner while the active player still has a card', () => {
+    const state = makeState(
+      { drawPile: [makeCard('A-draw', ['banana'])], playedPile: [] },
+      { drawPile: [], playedPile: [] },
+      'A',
+    );
+
+    expect(checkWinner(state)).toBeNull();
+    expect(flipCard(state)).toMatchObject({ status: 'playing', winner: null, turn: 'B' });
+  });
+
+  it('keeps finished matches unchanged when another flip is attempted', () => {
+    const finished = {
+      ...makeState(
+        { drawPile: [], playedPile: [] },
+        { drawPile: [makeCard('B-draw', ['pear'])], playedPile: [] },
+        'A',
+      ),
+      status: 'finished' as const,
+      winner: 'B' as const,
+    };
+
+    expect(flipCard(finished)).toBe(finished);
+    expect(checkWinner(finished)).toBe('B');
   });
 });

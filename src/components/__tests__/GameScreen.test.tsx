@@ -100,4 +100,51 @@ describe('GameScreen', () => {
     expect(screen.getByText('B played pile: 0')).toBeOnTheScreen();
     expect(screen.getByText('Turn: B')).toBeOnTheScreen();
   });
+
+  it('shows the winner, blocks play actions, and restarts with a fresh 30/30 deal', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      game: {
+        ...makeRingState(false),
+        turn: 'A',
+        status: 'finished',
+        winner: 'B',
+      },
+    });
+    await render(<GameScreen />);
+
+    expect(screen.getByText('YOU WIN')).toBeOnTheScreen();
+    expect(screen.getByText('PLAYER B WINS')).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'FLIP' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Player A ring' })).toBeNull();
+
+    await user.press(screen.getByRole('button', { name: 'Restart Game' }));
+
+    expect(screen.queryByText('YOU WIN')).toBeNull();
+    expect(screen.getByText('A draw pile: 30')).toBeOnTheScreen();
+    expect(screen.getByText('B draw pile: 30')).toBeOnTheScreen();
+    expect(screen.getByText('Turn: A')).toBeOnTheScreen();
+  });
+
+  it('finishes the game when the active player presses FLIP with an empty draw pile', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      game: {
+        status: 'playing',
+        turn: 'A',
+        winner: null,
+        lastRingOutcome: null,
+        players: {
+          A: { drawPile: [], playedPile: [makeCard('A-visible', ['banana'])] },
+          B: { drawPile: [makeCard('B-draw', ['pear'])], playedPile: [] },
+        },
+      },
+    });
+    await render(<GameScreen />);
+
+    await user.press(screen.getByRole('button', { name: 'FLIP' }));
+
+    expect(screen.getByText('PLAYER B WINS')).toBeOnTheScreen();
+    expect(screen.getByText('Turn: A')).toBeOnTheScreen();
+  });
 });
