@@ -3,6 +3,10 @@ import GameScreen from '../GameScreen';
 import { useGameStore } from '../../store/gameStore';
 import type { CardDefinition, GameElement, GameState } from '../../game/types';
 
+jest.mock('expo-audio', () => ({
+  useAudioPlayer: () => ({ isLoaded: false, seekTo: jest.fn(), play: jest.fn() }),
+}));
+
 const makeCard = (id: string, symbols: readonly GameElement[]): CardDefinition => ({
   id,
   symbols,

@@ -1,18 +1,75 @@
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { useAudioPlayer } from 'expo-audio';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DebugPanel } from './DebugPanel';
 import { BellButton } from './BellButton';
+import { CollectionFly } from './CollectionFly';
 import { GameCard } from './GameCard';
 import { PlayerDeck } from './PlayerDeck';
 import { useGameStore } from '../store/gameStore';
+import { triggerGameFeedback } from '../services/gameFeedback';
+import type { PlayerId } from '../game/types';
 
 export default function GameScreen() {
+  const audioPlayer = useAudioPlayer(require('../../assets/audio/bell.wav'));
   const game = useGameStore(state => state.game);
   const startGame = useGameStore(state => state.startGame);
   const restartGame = useGameStore(state => state.restartGame);
   const flip = useGameStore(state => state.flip);
   const flipForPlayer = useGameStore(state => state.flipForPlayer);
   const ringForPlayer = useGameStore(state => state.ringForPlayer);
+  const [collectionCue, setCollectionCue] = useState<{
+    id: number;
+    caller: PlayerId;
+    cards: NonNullable<typeof game>['players']['A']['playedPile'];
+  } | null>(null);
+  const collectionSequence = useRef(0);
+
+  useEffect(() => {
+    if (!collectionCue) return;
+    const timeout = setTimeout(() => {
+      setCollectionCue(current => (current?.id === collectionCue.id ? null : current));
+    }, 560);
+    return () => clearTimeout(timeout);
+  }, [collectionCue]);
+
+  const handleFlip = () => {
+    const currentGame = useGameStore.getState().game;
+    const canFlip =
+      currentGame?.status === 'playing' && currentGame.players[currentGame.turn].drawPile.length > 0;
+    flip();
+    if (canFlip) triggerGameFeedback('flip');
+  };
+
+  const handleDeckFlip = (player: PlayerId) => {
+    const currentGame = useGameStore.getState().game;
+    const canFlip =
+      currentGame?.status === 'playing' &&
+      currentGame.turn === player &&
+      currentGame.players[player].drawPile.length > 0;
+    flipForPlayer(player);
+    if (canFlip) triggerGameFeedback('flip');
+  };
+
+  const handleRing = (player: PlayerId) => {
+    const currentGame = useGameStore.getState().game;
+    const result = ringForPlayer(player);
+    if (!result) return;
+
+    if (result.outcome === 'correct') {
+      triggerGameFeedback('correct', audioPlayer);
+      if (currentGame) {
+        setCollectionCue({
+          id: ++collectionSequence.current,
+          caller: player,
+          cards: [...currentGame.players.A.playedPile, ...currentGame.players.B.playedPile],
+        });
+      }
+    } else {
+      triggerGameFeedback('wrong');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -38,7 +95,7 @@ export default function GameScreen() {
           drawCount={game?.players.B.drawPile.length ?? 0}
           playedCount={game?.players.B.playedPile.length ?? 0}
           active={game?.status === 'playing' && game.turn === 'B'}
-          onPress={() => flipForPlayer('B')}
+          onPress={() => handleDeckFlip('B')}
         />
         <GameCard playerLabel="PLAYER B" card={game?.players.B.playedPile[0]} />
 
@@ -60,14 +117,14 @@ export default function GameScreen() {
               <BellButton
                 disabled={!game || game.status !== 'playing'}
                 outcome={game?.lastRingOutcome ?? null}
-                onRing={player => ringForPlayer(player)}
+                onRing={handleRing}
               />
               <Pressable
                 role="button"
                 aria-label="FLIP"
                 accessibilityState={{ disabled: !game }}
                 disabled={!game}
-                onPress={flip}
+                onPress={handleFlip}
                 style={({ pressed }) => [styles.flipButton, pressed && game && styles.pressed]}
               >
                 <Text style={styles.flipText}>FLIP</Text>
@@ -85,9 +142,16 @@ export default function GameScreen() {
           drawCount={game?.players.A.drawPile.length ?? 0}
           playedCount={game?.players.A.playedPile.length ?? 0}
           active={game?.status === 'playing' && game.turn === 'A'}
-          onPress={() => flipForPlayer('A')}
+          onPress={() => handleDeckFlip('A')}
         />
 
+        {collectionCue ? (
+          <CollectionFly
+            key={collectionCue.id}
+            cards={collectionCue.cards}
+            caller={collectionCue.caller}
+          />
+        ) : null}
         <DebugPanel game={game} />
       </ScrollView>
     </SafeAreaView>
@@ -100,6 +164,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7F3EA',
   },
   content: {
+    position: 'relative',
     flexGrow: 1,
     paddingHorizontal: 18,
     paddingTop: 10,

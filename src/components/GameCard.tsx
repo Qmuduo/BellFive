@@ -1,4 +1,11 @@
+import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import type { CardDefinition, GameElement } from '../game/types';
 
 const ELEMENT_EMOJI: Record<GameElement, string> = {
@@ -16,17 +23,40 @@ type GameCardProps = {
 };
 
 export function GameCard({ playerLabel, card }: GameCardProps) {
+  const rotation = useSharedValue(0);
+  const slide = useSharedValue(0);
+  const opacity = useSharedValue(1);
+  const revealStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [
+      { perspective: 700 },
+      { translateX: slide.value },
+      { rotateY: `${rotation.value}deg` },
+    ],
+  }));
+
+  useEffect(() => {
+    if (!card) return;
+
+    rotation.value = 82;
+    slide.value = playerLabel.endsWith('A') ? -28 : 28;
+    opacity.value = 0.55;
+    rotation.value = withTiming(0, { duration: 230, easing: Easing.out(Easing.cubic) });
+    slide.value = withTiming(0, { duration: 230, easing: Easing.out(Easing.cubic) });
+    opacity.value = withTiming(1, { duration: 190 });
+  }, [card?.id, opacity, playerLabel, rotation, slide]);
+
   return (
     <View style={styles.card}>
       <Text style={styles.label}>{playerLabel} CURRENT CARD</Text>
       {card ? (
-        <View style={styles.symbols}>
+        <Animated.View style={[styles.symbols, revealStyle]}>
           {card.symbols.map((symbol, index) => (
             <Text key={`${card.id}-${index}`} style={styles.symbol}>
               {ELEMENT_EMOJI[symbol]}
             </Text>
           ))}
-        </View>
+        </Animated.View>
       ) : (
         <Text style={styles.empty}>No card flipped</Text>
       )}

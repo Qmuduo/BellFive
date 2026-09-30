@@ -1,4 +1,12 @@
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import type { PlayerId, RingOutcome } from '../game/types';
 
 type BellButtonProps = {
@@ -8,9 +16,35 @@ type BellButtonProps = {
 };
 
 export function BellButton({ disabled, outcome, onRing }: BellButtonProps) {
+  const scale = useSharedValue(1);
+  const shake = useSharedValue(0);
+  const bellAnimation = useAnimatedStyle(() => ({
+    transform: [{ translateX: shake.value }, { scale: scale.value }],
+  }));
+
+  useEffect(() => {
+    if (outcome === 'correct') {
+      scale.value = withSequence(withTiming(1.12, { duration: 100 }), withSpring(1));
+    } else if (outcome === 'wrong') {
+      shake.value = withSequence(
+        withTiming(-7, { duration: 45 }),
+        withTiming(7, { duration: 55 }),
+        withTiming(-5, { duration: 45 }),
+        withTiming(0, { duration: 55 }),
+      );
+    }
+  }, [outcome, scale, shake]);
+
+  const pressIn = () => {
+    scale.value = withSpring(0.94, { damping: 14, stiffness: 280 });
+  };
+  const pressOut = () => {
+    scale.value = withSpring(1, { damping: 12, stiffness: 240 });
+  };
+
   return (
     <View style={styles.container}>
-      <View style={styles.bell}>
+      <Animated.View style={[styles.bell, bellAnimation]}>
         <Text style={styles.bellIcon} accessibilityLabel="Bell">🔔</Text>
         <View style={styles.ringZones}>
           <Pressable
@@ -19,6 +53,8 @@ export function BellButton({ disabled, outcome, onRing }: BellButtonProps) {
             accessibilityState={{ disabled }}
             disabled={disabled}
             onPress={() => onRing('B')}
+            onPressIn={pressIn}
+            onPressOut={pressOut}
             style={({ pressed }) => [styles.ringZone, styles.topZone, pressed && styles.pressed]}
           >
             <Text style={styles.zoneText}>PLAYER B RING</Text>
@@ -29,12 +65,14 @@ export function BellButton({ disabled, outcome, onRing }: BellButtonProps) {
             accessibilityState={{ disabled }}
             disabled={disabled}
             onPress={() => onRing('A')}
+            onPressIn={pressIn}
+            onPressOut={pressOut}
             style={({ pressed }) => [styles.ringZone, styles.bottomZone, pressed && styles.pressed]}
           >
             <Text style={styles.zoneText}>PLAYER A RING</Text>
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
       <Text
         accessibilityLiveRegion="polite"
         style={[
@@ -101,7 +139,6 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.72,
-    transform: [{ scale: 0.97 }],
   },
   feedback: {
     minHeight: 21,
