@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import { createGame, flipCard, restartGame as restartGameEngine } from '../game/engine';
+import {
+  createGame,
+  flipCard,
+  restartGame as restartGameEngine,
+  ringBell,
+} from '../game/engine';
+import type { RingResult } from '../game/engine';
 import type { GameState, PlayerId } from '../game/types';
 
 type GameStore = {
@@ -8,6 +14,7 @@ type GameStore = {
   restartGame: () => void;
   flip: () => void;
   flipForPlayer: (player: PlayerId) => void;
+  ringForPlayer: (player: PlayerId) => RingResult | null;
 };
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -25,5 +32,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!game || game.status !== 'playing' || game.turn !== player) return;
 
     set({ game: flipCard(game) });
+  },
+  ringForPlayer: player => {
+    const game = get().game;
+    if (!game || game.status !== 'playing') return null;
+
+    const result = ringBell(game, player);
+    set({ game: result.state });
+    return result;
   },
 }));

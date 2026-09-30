@@ -1,6 +1,7 @@
 import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DebugPanel } from './DebugPanel';
+import { BellButton } from './BellButton';
 import { GameCard } from './GameCard';
 import { PlayerDeck } from './PlayerDeck';
 import { useGameStore } from '../store/gameStore';
@@ -11,6 +12,7 @@ export default function GameScreen() {
   const restartGame = useGameStore(state => state.restartGame);
   const flip = useGameStore(state => state.flip);
   const flipForPlayer = useGameStore(state => state.flipForPlayer);
+  const ringForPlayer = useGameStore(state => state.ringForPlayer);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -44,6 +46,11 @@ export default function GameScreen() {
           <Text style={styles.turnLabel}>
             {game ? `PLAYER ${game.turn}'S TURN` : 'Ready to play?'}
           </Text>
+          <BellButton
+            disabled={!game || game.status !== 'playing'}
+            outcome={game?.lastRingOutcome ?? null}
+            onRing={player => ringForPlayer(player)}
+          />
           <Pressable
             role="button"
             aria-label="FLIP"

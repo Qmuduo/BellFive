@@ -1,6 +1,18 @@
 import { CARD_DEFINITIONS } from '../cards';
-import { createGame, flipCard, restartGame, shuffleDeck } from '../engine';
-import type { CardDefinition, GameState, PlayerId } from '../types';
+import {
+  createGame,
+  flipCard,
+  restartGame,
+  ringBell,
+  shuffleDeck,
+  transferPenaltyCards,
+} from '../engine';
+import type { CardDefinition, GameElement, GameState, PlayerId } from '../types';
+
+const makeCard = (id: string, symbols: readonly GameElement[]): CardDefinition => ({
+  id,
+  symbols,
+});
 
 const makeState = (
   playerA: { drawPile: readonly CardDefinition[]; playedPile: readonly CardDefinition[] },
@@ -76,5 +88,91 @@ describe('deck setup and flips', () => {
     expect(restarted.players.B.drawPile).toHaveLength(30);
     expect(restarted.players.A.playedPile).toEqual([]);
     expect(restarted.players.B.playedPile).toEqual([]);
+  });
+});
+
+describe('ring and pile transitions', () => {
+  it('collects both entire played piles to the caller draw-pile bottom on a correct ring', () => {
+    const aDrawTop = makeCard('A-draw-top', ['banana']);
+    const aDrawBottom = makeCard('A-draw-bottom', ['grape']);
+    const bDrawTop = makeCard('B-draw-top', ['pear']);
+    const aVisible = makeCard('A-visible', ['strawberry', 'strawberry', 'strawberry']);
+    const aHidden = makeCard('A-hidden', ['peach']);
+    const bVisible = makeCard('B-visible', ['strawberry', 'bell']);
+    const bHidden = makeCard('B-hidden', ['banana']);
+    const original = makeState(
+      { drawPile: [aDrawTop, aDrawBottom], playedPile: [aVisible, aHidden] },
+      { drawPile: [bDrawTop], playedPile: [bVisible, bHidden] },
+      'A',
+    );
+
+    const result = ringBell(original, 'B');
+
+    expect(result.outcome).toBe('correct');
+    expect(result.movedCardCount).toBe(4);
+    expect(result.state.players.B.drawPile).toEqual([
+      bDrawTop,
+      aVisible,
+      aHidden,
+      bVisible,
+      bHidden,
+    ]);
+    expect(result.state.players.A.playedPile).toEqual([]);
+    expect(result.state.players.B.playedPile).toEqual([]);
+    expect(result.state.turn).toBe('A');
+    expect(result.state.lastRingOutcome).toBe('correct');
+    expect(original.players.B.drawPile).toEqual([bDrawTop]);
+    expect(original.players.A.playedPile).toEqual([aVisible, aHidden]);
+  });
+
+  it.each([
+    { available: 0, moved: 0 },
+    { available: 1, moved: 1 },
+    { available: 3, moved: 2 },
+  ])(
+    'transfers at most two caller cards when $available are available',
+    ({ available, moved }) => {
+      const callerCards = CARD_DEFINITIONS.slice(0, available);
+      const opponentCard = CARD_DEFINITIONS[10];
+      const state = makeState(
+        { drawPile: callerCards, playedPile: [makeCard('A-top', ['banana'])] },
+        { drawPile: [opponentCard], playedPile: [makeCard('B-top', ['pear'])] },
+        'B',
+      );
+
+      const result = transferPenaltyCards(state, 'A');
+
+      expect(result.movedCardCount).toBe(moved);
+      expect(result.state.players.A.drawPile).toEqual(callerCards.slice(moved));
+      expect(result.state.players.B.drawPile).toEqual([
+        opponentCard,
+        ...callerCards.slice(0, moved),
+      ]);
+      expect(result.state.turn).toBe('B');
+      expect(state.players.A.drawPile).toEqual(callerCards);
+    },
+  );
+
+  it('marks an invalid caller ring wrong and keeps the already-selected turn', () => {
+    const state = makeState(
+      {
+        drawPile: CARD_DEFINITIONS.slice(0, 3),
+        playedPile: [makeCard('A-top', ['banana'])],
+      },
+      {
+        drawPile: [],
+        playedPile: [makeCard('B-top', ['pear'])],
+      },
+      'B',
+    );
+
+    const result = ringBell(state, 'A');
+
+    expect(result.outcome).toBe('wrong');
+    expect(result.movedCardCount).toBe(2);
+    expect(result.state.players.A.drawPile).toEqual(CARD_DEFINITIONS.slice(2, 3));
+    expect(result.state.players.B.drawPile).toEqual(CARD_DEFINITIONS.slice(0, 2));
+    expect(result.state.turn).toBe('B');
+    expect(result.state.lastRingOutcome).toBe('wrong');
   });
 });

@@ -1,7 +1,14 @@
 import { CARD_DEFINITIONS } from './cards';
-import type { CardDefinition, GameState, PlayerId } from './types';
+import { canRing, countVisibleItems } from './rules';
+import type { CardDefinition, GameState, PlayerId, RingOutcome } from './types';
 
 export type RandomSource = () => number;
+
+export type RingResult = Readonly<{
+  state: GameState;
+  outcome: RingOutcome;
+  movedCardCount: number;
+}>;
 
 export function shuffleDeck(
   deck: readonly CardDefinition[],
@@ -52,6 +59,82 @@ export function flipCard(state: GameState): GameState {
         playedPile: [card, ...playerState.playedPile],
       },
     },
+  };
+}
+
+export function collectPlayedCards(state: GameState, caller: PlayerId): GameState {
+  const opponent: PlayerId = caller === 'A' ? 'B' : 'A';
+  const collectedCards = [
+    ...state.players.A.playedPile,
+    ...state.players.B.playedPile,
+  ];
+
+  return {
+    ...state,
+    players: {
+      ...state.players,
+      [caller]: {
+        ...state.players[caller],
+        drawPile: [...state.players[caller].drawPile, ...collectedCards],
+        playedPile: [],
+      },
+      [opponent]: {
+        ...state.players[opponent],
+        playedPile: [],
+      },
+    },
+  };
+}
+
+export function transferPenaltyCards(
+  state: GameState,
+  caller: PlayerId,
+): Pick<RingResult, 'state' | 'movedCardCount'> {
+  const opponent: PlayerId = caller === 'A' ? 'B' : 'A';
+  const movedCards = state.players[caller].drawPile.slice(0, 2);
+  const remainingCards = state.players[caller].drawPile.slice(movedCards.length);
+
+  return {
+    movedCardCount: movedCards.length,
+    state: {
+      ...state,
+      players: {
+        ...state.players,
+        [caller]: {
+          ...state.players[caller],
+          drawPile: remainingCards,
+        },
+        [opponent]: {
+          ...state.players[opponent],
+          drawPile: [...state.players[opponent].drawPile, ...movedCards],
+        },
+      },
+    },
+  };
+}
+
+export function ringBell(state: GameState, caller: PlayerId): RingResult {
+  const outcome: RingOutcome = canRing(countVisibleItems(state)) ? 'correct' : 'wrong';
+
+  if (outcome === 'correct') {
+    const movedCardCount =
+      state.players.A.playedPile.length + state.players.B.playedPile.length;
+
+    return {
+      state: {
+        ...collectPlayedCards(state, caller),
+        lastRingOutcome: outcome,
+      },
+      outcome,
+      movedCardCount,
+    };
+  }
+
+  const penalty = transferPenaltyCards(state, caller);
+  return {
+    state: { ...penalty.state, lastRingOutcome: outcome },
+    outcome,
+    movedCardCount: penalty.movedCardCount,
   };
 }
 
