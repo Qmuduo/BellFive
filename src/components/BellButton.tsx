@@ -12,11 +12,18 @@ import type { RingOutcome } from '../game/types';
 type BellButtonProps = Readonly<{
   disabled: boolean;
   outcome: RingOutcome | null;
+  animateOutcome?: boolean;
   feedbackKey?: string | number | null;
   onRing: () => void;
 }>;
 
-export function BellButton({ disabled, outcome, feedbackKey, onRing }: BellButtonProps) {
+export function BellButton({
+  disabled,
+  outcome,
+  animateOutcome = true,
+  feedbackKey,
+  onRing,
+}: BellButtonProps) {
   const scale = useSharedValue(1);
   const shake = useSharedValue(0);
   const bellAnimation = useAnimatedStyle(() => ({
@@ -24,6 +31,7 @@ export function BellButton({ disabled, outcome, feedbackKey, onRing }: BellButto
   }));
 
   useEffect(() => {
+    if (!animateOutcome) return;
     if (outcome === 'correct') {
       scale.value = withSequence(withTiming(1.12, { duration: 100 }), withSpring(1));
     } else if (outcome === 'wrong') {
@@ -34,7 +42,7 @@ export function BellButton({ disabled, outcome, feedbackKey, onRing }: BellButto
         withTiming(0, { duration: 55 }),
       );
     }
-  }, [outcome, feedbackKey, scale, shake]);
+  }, [animateOutcome, outcome, feedbackKey, scale, shake]);
 
   return (
     <View style={styles.container}>

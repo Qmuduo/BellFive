@@ -279,6 +279,10 @@ function makeSession(
     },
     canRing: false,
     tableVersion: 0,
+    ringVersion: 0,
+    remainingSeconds: 300,
+    ringBlockedUntilFlip: { A: false, B: false },
+    lastRingEvent: null,
   };
 
   return {

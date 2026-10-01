@@ -4,12 +4,24 @@ import GameScreen from '../GameScreen';
 import { useGameStore } from '../../store/gameStore';
 import type { RoomSnapshot } from '../../network/protocol';
 
+const mockAudioPlayer = {
+  isLoaded: true,
+  volume: 1,
+  seekTo: jest.fn(async () => undefined),
+  play: jest.fn(),
+  pause: jest.fn(),
+};
+
 jest.mock('expo-audio', () => ({
-  useAudioPlayer: () => ({ isLoaded: false, seekTo: jest.fn(), play: jest.fn() }),
+  useAudioPlayer: () => mockAudioPlayer,
 }));
 
 describe('GameScreen friend-room flow', () => {
   beforeEach(() => {
+    mockAudioPlayer.play.mockClear();
+    mockAudioPlayer.pause.mockClear();
+    mockAudioPlayer.seekTo.mockClear();
+    mockAudioPlayer.volume = 1;
     useGameStore.setState({
       connectionStatus: 'idle',
       roomSnapshot: null,
@@ -206,6 +218,72 @@ describe('GameScreen friend-room flow', () => {
     expect(screen.getByText('YOU LOSE')).toBeOnTheScreen();
     expect(screen.queryByRole('button', { name: 'PLAY AGAIN' })).toBeNull();
   });
+
+  it('shows the countdown and cooldown reminder while keeping Ring available', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      error: { code: 'RING_COOLDOWN', message: 'Flip one card before ringing again.' },
+      roomSnapshot: makeSnapshot('playing', 'A', {
+        turn: 'B',
+        remainingSeconds: 300,
+        ringBlockedUntilFlip: { A: true, B: false },
+      }),
+    });
+    await render(<GameScreen />);
+
+    expect(screen.getByText('05:00')).toBeOnTheScreen();
+    expect(screen.getByText('Flip one card before ringing again.')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeEnabled();
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.snapshot',
+        snapshot: makeSnapshot('playing', 'A', { turn: 'B', remainingSeconds: 299 }),
+      });
+    });
+    expect(screen.getByText('04:59')).toBeOnTheScreen();
+  });
+
+  it('shows DRAW when timeout leaves both players with the same number of cards', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('finished', 'A', { winner: null, remainingSeconds: 0 }),
+    });
+    await render(<GameScreen />);
+
+    expect(screen.getByText('DRAW')).toBeOnTheScreen();
+    expect(screen.getByText('00:00')).toBeOnTheScreen();
+  });
+
+  it('plays one shared sound for a new remote ring event without repeating it', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    const ringSnapshot = makeSnapshot('playing', 'A', {
+      turn: 'A',
+      lastRingOutcome: 'correct',
+      ringVersion: 1,
+      lastRingEvent: { version: 1, caller: 'B', outcome: 'correct', movedCardCount: 4 },
+    });
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({ type: 'room.snapshot', snapshot: ringSnapshot });
+    });
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({ type: 'room.snapshot', snapshot: ringSnapshot });
+    });
+
+    expect(mockAudioPlayer.seekTo).toHaveBeenCalledTimes(1);
+    expect(mockAudioPlayer.play).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('DING! Correct Ring')).toBeOnTheScreen();
+  });
 });
 
 function makeSnapshot(
@@ -227,6 +305,10 @@ function makeSnapshot(
     visibleCounts: { banana: 0, grape: 0, pear: 0, strawberry: 0, peach: 0, wildBellCount: 0 },
     canRing: false,
     tableVersion: 4,
+    ringVersion: 0,
+    remainingSeconds: phase === 'waiting' ? null : 300,
+    ringBlockedUntilFlip: { A: false, B: false },
+    lastRingEvent: null,
     ...overrides,
   };
 }

@@ -17,6 +17,22 @@ jest.mock('react-native-reanimated', () => {
 });
 
 describe('BellButton', () => {
+  it('shows shared result text without animating for a remote ringer', async () => {
+    mockWithTiming.mockClear();
+    await render(
+      <BellButton
+        disabled={false}
+        outcome="correct"
+        animateOutcome={false}
+        feedbackKey={1}
+        onRing={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('DING! Correct Ring')).toBeOnTheScreen();
+    expect(mockWithTiming).not.toHaveBeenCalled();
+  });
+
   it('replays wrong-ring shake feedback when the ring version changes', async () => {
     const view = await render(
       <BellButton disabled={false} outcome="wrong" feedbackKey={1} onRing={jest.fn()} />,

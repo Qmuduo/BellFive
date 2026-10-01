@@ -184,6 +184,10 @@ function makeSession(localPlayerId: 'A' | 'B'): Extract<ServerMessage, { type: '
     visibleCounts: null,
     canRing: false,
     tableVersion: 4,
+    ringVersion: 0,
+    remainingSeconds: null,
+    ringBlockedUntilFlip: { A: false, B: false },
+    lastRingEvent: null,
   };
   return {
     type: 'room.session',

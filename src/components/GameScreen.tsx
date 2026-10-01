@@ -11,7 +11,7 @@ import { PlayerDeck } from './PlayerDeck';
 import { RoomEntry } from './RoomEntry';
 import { WaitingRoom } from './WaitingRoom';
 import { useGameStore } from '../store/gameStore';
-import { triggerGameFeedback } from '../services/gameFeedback';
+import { playRingOutcomeSound, triggerGameFeedback } from '../services/gameFeedback';
 
 type CollectionCue = { id: number; caller: PlayerId; count: number };
 
@@ -33,6 +33,7 @@ export default function GameScreen() {
   const [collectionCue, setCollectionCue] = useState<CollectionCue | null>(null);
   const collectionSequence = useRef(0);
   const lastProcessedAction = useRef<string | null>(null);
+  const lastProcessedRingVersion = useRef<number | null>(null);
 
   useEffect(() => {
     if (!collectionCue) return;
@@ -48,7 +49,7 @@ export default function GameScreen() {
     if (!lastActionResult.accepted || !lastActionResult.outcome) return;
 
     if (lastActionResult.outcome === 'correct') {
-      triggerGameFeedback('correct', audioPlayer);
+      triggerGameFeedback('correct');
       const count = lastActionResult.movedCardCount ?? 0;
       if (count > 0 && localPlayerId) {
         setCollectionCue({ id: ++collectionSequence.current, caller: localPlayerId, count });
@@ -56,7 +57,20 @@ export default function GameScreen() {
     } else {
       triggerGameFeedback('wrong');
     }
-  }, [audioPlayer, lastActionResult, localPlayerId]);
+  }, [lastActionResult, localPlayerId]);
+
+  useEffect(() => {
+    if (!roomSnapshot) return;
+    const ringEvent = roomSnapshot.lastRingEvent;
+    if (lastProcessedRingVersion.current === null) {
+      lastProcessedRingVersion.current = ringEvent?.version ?? roomSnapshot.ringVersion ?? 0;
+      return;
+    }
+    if (!ringEvent || ringEvent.version <= lastProcessedRingVersion.current) return;
+
+    lastProcessedRingVersion.current = ringEvent.version;
+    void playRingOutcomeSound(ringEvent.outcome, audioPlayer);
+  }, [audioPlayer, roomSnapshot]);
 
   if (!roomSnapshot) {
     return (
@@ -94,6 +108,7 @@ export default function GameScreen() {
   const canInteract = isPlaying && connectionStatus === 'connected';
   const canFlip = canInteract && Boolean(localPlayerId && localPlayerId === roomSnapshot.turn);
   const localWinner = roomSnapshot.winner === localPlayerId;
+  const formattedTime = formatRemainingTime(roomSnapshot.remainingSeconds);
   const handleFlip = () => {
     if (!canFlip) return;
     flip();
@@ -104,6 +119,7 @@ export default function GameScreen() {
   };
   const handleRing = () => {
     if (!canInteract) return;
+    triggerGameFeedback('press');
     ring();
   };
 
@@ -116,9 +132,12 @@ export default function GameScreen() {
             <Text style={styles.eyebrow}>PRIVATE ROOM · PLAYER {localPlayerId}</Text>
             <Text style={styles.title}>BellFive</Text>
           </View>
-          <Pressable role="button" accessibilityLabel="Leave Room" onPress={leaveRoom} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
-            <Text style={styles.headerButtonText}>LEAVE</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            {formattedTime ? <View style={styles.timerPill}><Text style={styles.timerText}>{formattedTime}</Text></View> : null}
+            <Pressable role="button" accessibilityLabel="Leave Room" onPress={leaveRoom} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
+              <Text style={styles.headerButtonText}>LEAVE</Text>
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -169,8 +188,16 @@ export default function GameScreen() {
 
           {isFinished ? (
             <View style={styles.gameOver}>
-              <Text style={styles.winnerLabel}>{localWinner ? 'YOU WIN' : 'YOU LOSE'}</Text>
-              <Text style={styles.youWin}>PLAYER {roomSnapshot.winner} WINS</Text>
+              <Text style={styles.winnerLabel}>
+                {roomSnapshot.winner === null ? 'DRAW' : localWinner ? 'YOU WIN' : 'YOU LOSE'}
+              </Text>
+              <Text style={styles.youWin}>
+                {roomSnapshot.winner === null
+                  ? roomSnapshot.remainingSeconds === 0 ? 'TIME UP · TIED GAME' : 'THE MATCH IS TIED'
+                  : roomSnapshot.remainingSeconds === 0
+                    ? `TIME UP · PLAYER ${roomSnapshot.winner} WINS`
+                    : `PLAYER ${roomSnapshot.winner} WINS`}
+              </Text>
             </View>
           ) : null}
           <DebugPanel snapshot={roomSnapshot} connectionStatus={connectionStatus} />
@@ -200,6 +227,7 @@ export default function GameScreen() {
             <BellButton
               disabled={!canInteract}
               outcome={roomSnapshot.lastRingOutcome}
+              animateOutcome={roomSnapshot.lastRingEvent?.caller === localPlayerId}
               feedbackKey={roomSnapshot.ringVersion ?? roomSnapshot.tableVersion}
               onRing={handleRing}
             />
@@ -210,12 +238,22 @@ export default function GameScreen() {
   );
 }
 
+function formatRemainingTime(remainingSeconds: number | null): string | null {
+  if (remainingSeconds === null) return null;
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F6F5F1' },
   screen: { flex: 1, paddingHorizontal: 18 },
   header: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   eyebrow: { color: '#87909B', fontSize: 9, fontWeight: '800', letterSpacing: 1.4 },
   title: { color: '#202B37', fontSize: 24, fontWeight: '900', letterSpacing: -0.6 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  timerPill: { minWidth: 66, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, paddingVertical: 10, borderRadius: 15, backgroundColor: '#FFF4D5' },
+  timerText: { color: '#A97613', fontSize: 15, fontWeight: '900', fontVariant: ['tabular-nums'] },
   headerButton: { minWidth: 83, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 11, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E1E3E7' },
   headerButtonText: { color: '#596674', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
   scroll: { flex: 1 },

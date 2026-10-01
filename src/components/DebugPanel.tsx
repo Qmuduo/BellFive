@@ -21,6 +21,11 @@ export function DebugPanel({ snapshot, connectionStatus }: DebugPanelProps) {
         <Text style={styles.summary}>Turn: {snapshot.turn ?? '—'}</Text>
         <Text style={styles.summary}>Can Ring: {String(snapshot.canRing)}</Text>
       </View>
+      <View style={styles.headingRow}>
+        <Text style={styles.summary}>Timer: {snapshot.remainingSeconds === null ? '—' : `${snapshot.remainingSeconds}s`}</Text>
+        <Text style={styles.summary}>Ring blocked A: {String(snapshot.ringBlockedUntilFlip.A)}</Text>
+        <Text style={styles.summary}>B: {String(snapshot.ringBlockedUntilFlip.B)}</Text>
+      </View>
 
       <View style={styles.pileGrid}>
         <View style={styles.pileColumn}>
