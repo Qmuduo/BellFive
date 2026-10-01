@@ -1,4 +1,6 @@
 import { CARD_DEFINITIONS } from '../cards';
+import { canRing } from '../rules';
+import type { CardDefinition, VisibleCounts } from '../types';
 
 const allowedElements = [
   'banana',
@@ -61,4 +63,38 @@ describe('CARD_DEFINITIONS', () => {
       }),
     ).toBe(true);
   });
+
+  it('has a ring opportunity in at least ten percent of distinct card pairs', () => {
+    let ringPairs = 0;
+
+    for (let firstIndex = 0; firstIndex < CARD_DEFINITIONS.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < CARD_DEFINITIONS.length; secondIndex += 1) {
+        const first = CARD_DEFINITIONS[firstIndex];
+        const second = CARD_DEFINITIONS[secondIndex];
+        if (first && second && canRing(countsForPair(first, second))) ringPairs += 1;
+      }
+    }
+
+    const totalPairs = (CARD_DEFINITIONS.length * (CARD_DEFINITIONS.length - 1)) / 2;
+    expect(totalPairs).toBe(1770);
+    expect(ringPairs).toBeGreaterThanOrEqual(177);
+  });
 });
+
+function countsForPair(first: CardDefinition, second: CardDefinition): VisibleCounts {
+  const counts = {
+    banana: 0,
+    grape: 0,
+    pear: 0,
+    strawberry: 0,
+    peach: 0,
+    wildBellCount: 0,
+  };
+
+  for (const symbol of [...first.symbols, ...second.symbols]) {
+    if (symbol === 'bell') counts.wildBellCount += 1;
+    else counts[symbol] += 1;
+  }
+
+  return counts;
+}
