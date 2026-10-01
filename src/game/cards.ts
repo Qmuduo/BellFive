@@ -59,6 +59,6 @@ export const CARD_DEFINITIONS = [
   { id: 'C056', symbols: ['banana', 'banana', 'grape', 'pear', 'bell'] },
   { id: 'C057', symbols: ['grape', 'grape', 'pear', 'strawberry', 'bell'] },
   { id: 'C058', symbols: ['pear', 'pear', 'strawberry', 'peach', 'bell'] },
-  { id: 'C059', symbols: ['peach', 'peach', 'strawberry', 'bell', 'bell'] },
-  { id: 'C060', symbols: ['strawberry', 'banana', 'grape', 'bell', 'bell'] },
+  { id: 'C059', symbols: ['peach', 'peach', 'strawberry', 'bell', 'banana'] },
+  { id: 'C060', symbols: ['strawberry', 'banana', 'grape', 'bell', 'pear'] },
 ] as const satisfies readonly CardDefinition[];

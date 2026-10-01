@@ -29,6 +29,15 @@ describe('CARD_DEFINITIONS', () => {
     ).toBe(true);
   });
 
+  it('defines no more than one Wild Bell on any fixed card', () => {
+    expect(CARD_DEFINITIONS).toHaveLength(60);
+    expect(
+      CARD_DEFINITIONS.every(
+        card => card.symbols.filter(symbol => symbol === 'bell').length <= 1,
+      ),
+    ).toBe(true);
+  });
+
   it('includes every fruit and the Wild Bell in the fixed set', () => {
     const deckElements = new Set(CARD_DEFINITIONS.flatMap(card => card.symbols));
 
