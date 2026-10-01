@@ -249,6 +249,7 @@ export class GameClient {
         }
         if (this.status === 'reconnecting' && TERMINAL_RECONNECT_ERRORS.has(message.code)) {
           this.clearReconnectTimer();
+          this.intentionalDisconnect = true;
           this.roomCode = null;
           this.seatToken = null;
           this.localPlayerId = null;

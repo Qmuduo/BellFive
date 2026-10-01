@@ -114,6 +114,29 @@ describe('GameClient room commands', () => {
     expect(client.getStatus()).toBe('disconnected');
     jest.useRealTimers();
   });
+
+  it('stops reconnecting when the server rejects the saved seat token', () => {
+    jest.useFakeTimers();
+    const { client, sockets } = createClient({ reconnectDelayMs: 100 });
+    client.createRoom();
+    sockets[0].open();
+    sockets[0].receive(makeSession('A'));
+    sockets[0].closeFromServer();
+    jest.advanceTimersByTime(100);
+    sockets[1].open();
+    const reconnect = sockets[1].sentMessages()[0] as { requestId: string };
+    sockets[1].receive({
+      type: 'error',
+      requestId: reconnect.requestId,
+      code: 'INVALID_SEAT_TOKEN',
+      message: 'The session is no longer valid.',
+    });
+    jest.advanceTimersByTime(1_000);
+
+    expect(client.getStatus()).toBe('error');
+    expect(sockets).toHaveLength(2);
+    jest.useRealTimers();
+  });
 });
 
 function createClient(options: { reconnectDelayMs?: number; handlers?: GameClientHandlers } = {}) {
