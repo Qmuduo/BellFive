@@ -20,17 +20,28 @@ export function CardTransferFly({ event }: CardTransferFlyProps) {
   const opponent: PlayerId = event.caller === 'A' ? 'B' : 'A';
   const isCollection = event.outcome === 'correct';
   const testId = isCollection ? `collect-to-${event.caller}` : `transfer-${event.caller}-to-${opponent}`;
+  const feedbackByPlayer: Record<PlayerId, string | null> = { A: null, B: null };
+  if (isCollection) {
+    feedbackByPlayer[event.caller] = `+${event.movedCardCount}`;
+  } else {
+    feedbackByPlayer[event.caller] = `−${event.movedCardCount}`;
+    feedbackByPlayer[opponent] = `+${event.movedCardCount}`;
+  }
 
   return (
     <View testID={testId} pointerEvents="none" style={styles.flightLayer}>
       {Array.from({ length: cardCount }, (_, index) => (
         <FlyingCard key={`${event.version}-${index}`} event={event} index={index} cardCount={cardCount} />
       ))}
-      {event.movedCardCount > 5 ? (
-        <Text style={[styles.countBadge, !isCollection && event.caller === 'A' && styles.badgeA, !isCollection && event.caller === 'B' && styles.badgeB]}>
-          +{event.movedCardCount - 5}
+      {(['A', 'B'] as const).map(player => feedbackByPlayer[player] ? (
+        <Text
+          key={player}
+          testID={`player-feedback-${player}`}
+          style={[styles.feedbackBadge, player === 'A' ? styles.badgeA : styles.badgeB]}
+        >
+          {feedbackByPlayer[player]}
         </Text>
-      ) : null}
+      ) : null)}
     </View>
   );
 }
@@ -85,7 +96,7 @@ const styles = StyleSheet.create({
   flightLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, alignItems: 'center' },
   flyingCard: { position: 'absolute', top: '47%', left: '50%', marginLeft: -27, marginTop: -35, width: 54, height: 70, alignItems: 'center', justifyContent: 'center', borderRadius: 9, borderWidth: 1, borderColor: '#C7B98F', backgroundColor: '#FFFDF8', shadowColor: '#352A11', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 },
   cardBack: { color: '#CFB65E', fontSize: 23, fontWeight: '900' },
-  countBadge: { position: 'absolute', top: -195, left: '55%', paddingHorizontal: 6, paddingVertical: 3, overflow: 'hidden', borderRadius: 9, color: '#FFFFFF', backgroundColor: '#566C8D', fontSize: 10, fontWeight: '900' },
-  badgeA: { left: '17%' },
-  badgeB: { left: '70%' },
+  feedbackBadge: { position: 'absolute', top: -195, minWidth: 42, alignItems: 'center', paddingHorizontal: 8, paddingVertical: 5, overflow: 'hidden', borderRadius: 12, color: '#FFFFFF', fontSize: 12, fontWeight: '900', elevation: 4 },
+  badgeA: { left: '17%', backgroundColor: '#D66B69' },
+  badgeB: { left: '70%', backgroundColor: '#568CAB' },
 });
