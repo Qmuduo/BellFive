@@ -135,7 +135,7 @@ describe('RoomManager authoritative game transitions', () => {
     expect(snapshot.ringVersion).toBe(1);
   });
 
-  it('transfers at most two cards on a wrong ring and never decrements below zero', () => {
+  it('transfers at most one card on a wrong ring and never decrements below zero', () => {
     const rooms = joinBothPlayers(
       makeRoomManager({
         gameFactory: () =>
@@ -153,12 +153,80 @@ describe('RoomManager authoritative game transitions', () => {
     });
     const result = messageOf(events, 'socket-a', 'action.result');
     const snapshot = messageOf(events, 'socket-b', 'room.snapshot').snapshot;
+    const remoteSnapshot = messageOf(events, 'socket-a', 'room.snapshot').snapshot;
 
-    expect(result).toMatchObject({ accepted: true, outcome: 'wrong', movedCardCount: 2 });
-    expect(snapshot.players.A.drawCount).toBe(1);
-    expect(snapshot.players.B.drawCount).toBe(3);
+    expect(result).toMatchObject({ accepted: true, outcome: 'wrong', movedCardCount: 1 });
+    expect(snapshot.players.A.drawCount).toBe(2);
+    expect(snapshot.players.B.drawCount).toBe(2);
     expect(snapshot.tableVersion).toBe(0);
     expect(snapshot.ringVersion).toBe(1);
+    expect(snapshot.lastRingEvent).toEqual({
+      version: 1,
+      caller: 'A',
+      outcome: 'wrong',
+      movedCardCount: 1,
+    });
+    expect(snapshot.ringBlockedUntilFlip).toEqual({ A: true, B: false });
+    expect(remoteSnapshot.lastRingEvent).toEqual(snapshot.lastRingEvent);
+  });
+
+  it('blocks only the false ringer until their next flip and still accepts the opponent ring', () => {
+    const rooms = joinBothPlayers(
+      makeRoomManager({
+        gameFactory: () =>
+          customGame({
+            A: { drawPile: [card('C001', ['banana']), card('C002', ['pear'])], playedPile: [] },
+            B: { drawPile: [card('C003', ['grape'])], playedPile: [] },
+          }),
+      }),
+    );
+    rooms.manager.handleMessage('socket-a', {
+      type: 'game.ring',
+      actionId: 'a-first-wrong-ring',
+      tableVersion: 0,
+    });
+
+    const blocked = rooms.manager.handleMessage('socket-a', {
+      type: 'game.ring',
+      actionId: 'a-blocked-ring',
+      tableVersion: 0,
+    });
+    expect(messageOf(blocked, 'socket-a', 'error').code).toBe('RING_COOLDOWN');
+    expect(messageOf(blocked, 'socket-a', 'room.snapshot').snapshot.players.A.drawCount).toBe(1);
+    expect(messageOf(blocked, 'socket-a', 'room.snapshot').snapshot.ringVersion).toBe(1);
+
+    const opponentRing = rooms.manager.handleMessage('socket-b', {
+      type: 'game.ring',
+      actionId: 'b-opponent-ring',
+      tableVersion: 0,
+    });
+    expect(messageOf(opponentRing, 'socket-b', 'action.result')).toMatchObject({
+      accepted: true,
+      outcome: 'wrong',
+      movedCardCount: 1,
+    });
+    expect(messageOf(opponentRing, 'socket-b', 'room.snapshot').snapshot.lastRingEvent).toMatchObject({
+      caller: 'B',
+      version: 2,
+    });
+
+    const aFlip = rooms.manager.handleMessage('socket-a', {
+      type: 'game.flip',
+      actionId: 'a-after-cooldown-flip',
+    });
+    expect(messageOf(aFlip, 'socket-a', 'room.snapshot').snapshot.ringBlockedUntilFlip).toEqual({
+      A: false,
+      B: true,
+    });
+
+    const bFlip = rooms.manager.handleMessage('socket-b', {
+      type: 'game.flip',
+      actionId: 'b-after-cooldown-flip',
+    });
+    expect(messageOf(bFlip, 'socket-b', 'room.snapshot').snapshot.ringBlockedUntilFlip).toEqual({
+      A: false,
+      B: false,
+    });
   });
 
   it('advances ring feedback version for each wrong ring without changing the table version', () => {
@@ -231,10 +299,10 @@ describe('RoomManager authoritative game transitions', () => {
     expect(messageOf(duplicate, 'socket-a', 'action.result')).toMatchObject({
       actionId: 'same-action-id',
       accepted: true,
-      movedCardCount: 2,
+      movedCardCount: 1,
     });
-    expect(messageOf(duplicate, 'socket-a', 'room.snapshot').snapshot.players.A.drawCount).toBe(1);
-    expect(messageOf(duplicate, 'socket-a', 'room.snapshot').snapshot.players.B.drawCount).toBe(3);
+    expect(messageOf(duplicate, 'socket-a', 'room.snapshot').snapshot.players.A.drawCount).toBe(2);
+    expect(messageOf(duplicate, 'socket-a', 'room.snapshot').snapshot.players.B.drawCount).toBe(2);
   });
 
   it('declares the opponent winner only when the empty player is required to flip', () => {
@@ -442,6 +510,7 @@ function customGame(players: CustomPlayers): GameState {
     status: 'playing',
     turn: 'A',
     winner: null,
+    ringBlockedUntilFlip: { A: false, B: false },
     lastRingOutcome: null,
     players,
   };

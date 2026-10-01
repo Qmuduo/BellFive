@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { createGame, flipCard, ringBell } from '../../src/game/engine';
+import { canPlayerRing, createGame, flipCard, ringBell } from '../../src/game/engine';
 import { createRoomSnapshot } from '../../src/network/protocol';
 import type {
   ClientMessage,
   RoomPhase,
   RoomSnapshot,
   RoomSnapshotSource,
+  RingFeedbackEvent,
   ServerMessage,
 } from '../../src/network/protocol';
 import type { GameState, PlayerId } from '../../src/game/types';
@@ -31,6 +32,7 @@ type RoomRecord = {
   game: GameState | null;
   tableVersion: number;
   ringVersion: number;
+  lastRingEvent: RingFeedbackEvent | null;
   actionResults: Record<PlayerId, Map<string, Extract<ServerMessage, { type: 'action.result' }>>>;
 };
 
@@ -142,6 +144,7 @@ export class RoomManager {
       game: null,
       tableVersion: 0,
       ringVersion: 0,
+      lastRingEvent: null,
       actionResults: { A: new Map(), B: new Map() },
     };
 
@@ -322,6 +325,16 @@ export class RoomManager {
     }
 
     if (message.type === 'game.ring') {
+      if (!canPlayerRing(room.game, connection.playerId)) {
+        return this.rejectedAction(
+          room,
+          connectionId,
+          connection.playerId,
+          message.actionId,
+          'RING_COOLDOWN',
+          'Flip one card before ringing again.',
+        );
+      }
       if (message.tableVersion !== room.tableVersion) {
         return this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'STALE_TABLE', 'The visible cards changed before this ring reached the server.');
       }
@@ -329,6 +342,12 @@ export class RoomManager {
       const result = ringBell(room.game, connection.playerId);
       room.game = result.state;
       room.ringVersion += 1;
+      room.lastRingEvent = {
+        version: room.ringVersion,
+        caller: connection.playerId,
+        outcome: result.outcome,
+        movedCardCount: result.movedCardCount,
+      };
       if (result.outcome === 'correct') room.tableVersion += 1;
       this.updateRoomPhase(room);
       room.lastActivityAt = this.now();
@@ -350,6 +369,7 @@ export class RoomManager {
 
     room.game = this.gameFactory();
     room.tableVersion += 1;
+    room.lastRingEvent = null;
     room.phase = 'playing';
     room.lastActivityAt = this.now();
     return this.acceptedAction(room, connectionId, connection.playerId, {
@@ -429,6 +449,8 @@ export class RoomManager {
       },
       tableVersion: room.tableVersion,
       ringVersion: room.ringVersion,
+      remainingSeconds: null,
+      lastRingEvent: room.lastRingEvent,
     };
     return createRoomSnapshot(source, localPlayerId);
   }
