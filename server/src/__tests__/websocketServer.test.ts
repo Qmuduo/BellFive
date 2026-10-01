@@ -62,6 +62,42 @@ describe('WebSocket room transport', () => {
     });
   });
 
+  it('broadcasts countdown updates from the server timer', async () => {
+    await server.close();
+    let now = 1_000;
+    server = await createWebSocketServer({
+      roomManager: new RoomManager({ now: () => now, matchDurationMs: 2_000 }),
+      host: '127.0.0.1',
+      port: 0,
+      tickIntervalMs: 10,
+    });
+    const { playerA, playerB } = await createJoinedSockets();
+    now += 1_000;
+
+    const aCountdown = nextMessage(
+      playerA,
+      message => message.type === 'room.snapshot' && message.snapshot.remainingSeconds === 1,
+    );
+    const bCountdown = nextMessage(
+      playerB,
+      message => message.type === 'room.snapshot' && message.snapshot.remainingSeconds === 1,
+    );
+
+    await Promise.all([aCountdown, bCountdown]);
+    now += 1_000;
+    const aFinished = nextMessage(
+      playerA,
+      message => message.type === 'room.snapshot' && message.snapshot.phase === 'finished',
+    );
+    const bFinished = nextMessage(
+      playerB,
+      message => message.type === 'room.snapshot' && message.snapshot.phase === 'finished',
+    );
+    const [aTimeout, bTimeout] = await Promise.all([aFinished, bFinished]);
+    expect(aTimeout).toMatchObject({ type: 'room.snapshot', snapshot: { remainingSeconds: 0 } });
+    expect(bTimeout).toMatchObject({ type: 'room.snapshot', snapshot: { remainingSeconds: 0 } });
+  });
+
   it('rejects out-of-turn flips and malformed protocol messages without ending the socket', async () => {
     const { playerA, playerB, roomCode } = await createJoinedSockets();
     const wrongTurnErrorPromise = nextMessage(

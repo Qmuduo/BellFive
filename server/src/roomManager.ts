@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { canPlayerRing, createGame, flipCard, ringBell } from '../../src/game/engine';
+import { canPlayerRing, createGame, finishGameByTimeout, flipCard, ringBell } from '../../src/game/engine';
 import { createRoomSnapshot } from '../../src/network/protocol';
 import type {
   ClientMessage,
@@ -15,6 +15,7 @@ const ROOM_CODE_CHARACTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_CODE_LENGTH = 6;
 export const WAITING_ROOM_TTL_MS = 15 * 60 * 1000;
 export const ROOM_IDLE_TTL_MS = 30 * 60 * 1000;
+export const MATCH_DURATION_MS = 5 * 60 * 1000;
 const REMEMBERED_ACTION_LIMIT = 128;
 
 type RoomSeat = {
@@ -33,6 +34,9 @@ type RoomRecord = {
   tableVersion: number;
   ringVersion: number;
   lastRingEvent: RingFeedbackEvent | null;
+  matchDeadlineAt: number | null;
+  pausedRemainingMs: number | null;
+  lastPublishedSeconds: number | null;
   actionResults: Record<PlayerId, Map<string, Extract<ServerMessage, { type: 'action.result' }>>>;
 };
 
@@ -46,6 +50,7 @@ export type RoomManagerOptions = Readonly<{
   random?: () => number;
   tokenFactory?: () => string;
   gameFactory?: () => GameState;
+  matchDurationMs?: number;
 }>;
 
 type ActionMessage = Extract<ClientMessage, { type: 'game.flip' | 'game.ring' | 'game.rematch' }>;
@@ -57,12 +62,14 @@ export class RoomManager {
   private readonly random: () => number;
   private readonly tokenFactory: () => string;
   private readonly gameFactory: () => GameState;
+  private readonly matchDurationMs: number;
 
   constructor(options: RoomManagerOptions = {}) {
     this.now = options.now ?? Date.now;
     this.random = options.random ?? Math.random;
     this.tokenFactory = options.tokenFactory ?? randomUUID;
     this.gameFactory = options.gameFactory ?? (() => createGame(this.random));
+    this.matchDurationMs = options.matchDurationMs ?? MATCH_DURATION_MS;
   }
 
   handleMessage(connectionId: string, message: ClientMessage): RoomManagerEvent[] {
@@ -97,8 +104,9 @@ export class RoomManager {
     if (!room || !seat || seat.connectionId !== connectionId) return [];
 
     seat.connectionId = null;
-    room.lastActivityAt = this.now();
-    this.updateRoomPhase(room);
+    const now = this.now();
+    room.lastActivityAt = now;
+    this.updateRoomPhase(room, now);
     return this.snapshotEvents(room);
   }
 
@@ -119,6 +127,33 @@ export class RoomManager {
     }
 
     return expiredCodes;
+  }
+
+  tick(now = this.now()): RoomManagerEvent[] {
+    this.pruneExpiredRooms(now);
+    const events: RoomManagerEvent[] = [];
+
+    for (const room of this.rooms.values()) {
+      if (room.phase !== 'playing' || room.matchDeadlineAt === null || !room.game) continue;
+
+      const remainingSeconds = this.secondsRemaining(room, now);
+      if (remainingSeconds === 0) {
+        room.game = finishGameByTimeout(room.game);
+        room.phase = 'finished';
+        room.matchDeadlineAt = null;
+        room.pausedRemainingMs = 0;
+        room.lastPublishedSeconds = 0;
+        events.push(...this.snapshotEvents(room, undefined, now));
+        continue;
+      }
+
+      if (remainingSeconds !== room.lastPublishedSeconds) {
+        room.lastPublishedSeconds = remainingSeconds;
+        events.push(...this.snapshotEvents(room, undefined, now));
+      }
+    }
+
+    return events;
   }
 
   private createRoom(connectionId: string, requestId: string): RoomManagerEvent[] {
@@ -145,6 +180,9 @@ export class RoomManager {
       tableVersion: 0,
       ringVersion: 0,
       lastRingEvent: null,
+      matchDeadlineAt: null,
+      pausedRemainingMs: null,
+      lastPublishedSeconds: null,
       actionResults: { A: new Map(), B: new Map() },
     };
 
@@ -183,8 +221,9 @@ export class RoomManager {
     const token = this.tokenFactory();
     room.seats.B = { playerId: 'B', token, connectionId };
     this.connectionToSeat.set(connectionId, { roomCode, playerId: 'B' });
-    room.lastActivityAt = this.now();
-    this.updateRoomPhase(room);
+    const now = this.now();
+    room.lastActivityAt = now;
+    this.updateRoomPhase(room, now);
 
     const events: RoomManagerEvent[] = [
       this.event(connectionId, {
@@ -229,8 +268,9 @@ export class RoomManager {
     if (seat.connectionId) this.connectionToSeat.delete(seat.connectionId);
     seat.connectionId = connectionId;
     this.connectionToSeat.set(connectionId, { roomCode, playerId });
-    room.lastActivityAt = this.now();
-    this.updateRoomPhase(room);
+    const now = this.now();
+    room.lastActivityAt = now;
+    this.updateRoomPhase(room, now);
 
     const events: RoomManagerEvent[] = [
       this.event(connectionId, {
@@ -294,6 +334,15 @@ export class RoomManager {
       ];
     }
 
+    const now = this.now();
+    const expiredEvents = this.finishMatchIfExpired(room, now);
+    if (expiredEvents.length > 0 && message.type !== 'game.rematch') {
+      return [
+        ...expiredEvents,
+        ...this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'GAME_FINISHED', 'The match has finished.'),
+      ];
+    }
+
     if (room.phase === 'connection-paused') {
       return this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'CONNECTION_PAUSED', 'Wait for both players to reconnect.');
     }
@@ -316,12 +365,13 @@ export class RoomManager {
       room.game = flipCard(room.game);
       if (hadCard) room.tableVersion += 1;
       this.updateRoomPhase(room);
-      room.lastActivityAt = this.now();
-      return this.acceptedAction(room, connectionId, connection.playerId, {
+      room.lastActivityAt = now;
+      const actionEvents = this.acceptedAction(room, connectionId, connection.playerId, {
         type: 'action.result',
         actionId: message.actionId,
         accepted: true,
       });
+      return [...expiredEvents, ...actionEvents];
     }
 
     if (message.type === 'game.ring') {
@@ -350,14 +400,15 @@ export class RoomManager {
       };
       if (result.outcome === 'correct') room.tableVersion += 1;
       this.updateRoomPhase(room);
-      room.lastActivityAt = this.now();
-      return this.acceptedAction(room, connectionId, connection.playerId, {
+      room.lastActivityAt = now;
+      const actionEvents = this.acceptedAction(room, connectionId, connection.playerId, {
         type: 'action.result',
         actionId: message.actionId,
         accepted: true,
         outcome: result.outcome,
         movedCardCount: result.movedCardCount,
       });
+      return [...expiredEvents, ...actionEvents];
     }
 
     if (connection.playerId !== 'A') {
@@ -371,12 +422,16 @@ export class RoomManager {
     room.tableVersion += 1;
     room.lastRingEvent = null;
     room.phase = 'playing';
-    room.lastActivityAt = this.now();
-    return this.acceptedAction(room, connectionId, connection.playerId, {
+    room.matchDeadlineAt = now + this.matchDurationMs;
+    room.pausedRemainingMs = null;
+    room.lastPublishedSeconds = Math.ceil(this.matchDurationMs / 1000);
+    room.lastActivityAt = now;
+    const actionEvents = this.acceptedAction(room, connectionId, connection.playerId, {
       type: 'action.result',
       actionId: message.actionId,
       accepted: true,
     });
+    return [...expiredEvents, ...actionEvents];
   }
 
   private acceptedAction(
@@ -409,36 +464,55 @@ export class RoomManager {
     ];
   }
 
-  private updateRoomPhase(room: RoomRecord): void {
+  private updateRoomPhase(room: RoomRecord, now = this.now()): void {
     const bothSeatsAssigned = Boolean(room.seats.A && room.seats.B);
     const bothConnected = Boolean(room.seats.A?.connectionId && room.seats.B?.connectionId);
 
     if (!bothSeatsAssigned) {
+      this.pauseClock(room, now);
       room.phase = 'waiting';
       return;
     }
     if (!bothConnected) {
+      this.pauseClock(room, now);
       room.phase = 'connection-paused';
       return;
     }
     if (!room.game) room.game = this.gameFactory();
-    room.phase = room.game.status === 'finished' ? 'finished' : 'playing';
+    if (room.game.status === 'finished') {
+      this.freezeClock(room, now);
+      room.phase = 'finished';
+      return;
+    }
+
+    if (room.pausedRemainingMs !== null) {
+      room.matchDeadlineAt = now + room.pausedRemainingMs;
+      room.lastPublishedSeconds = Math.ceil(room.pausedRemainingMs / 1000);
+      room.pausedRemainingMs = null;
+    } else if (room.matchDeadlineAt === null && room.lastPublishedSeconds === null) {
+      this.startClock(room, now);
+    }
+    room.phase = 'playing';
   }
 
-  private snapshotEvents(room: RoomRecord, excludedConnectionId?: string): RoomManagerEvent[] {
+  private snapshotEvents(
+    room: RoomRecord,
+    excludedConnectionId?: string,
+    now = this.now(),
+  ): RoomManagerEvent[] {
     const events: RoomManagerEvent[] = [];
     for (const playerId of ['A', 'B'] as const) {
       const connectionId = room.seats[playerId]?.connectionId;
       if (!connectionId || connectionId === excludedConnectionId) continue;
       events.push(this.event(connectionId, {
         type: 'room.snapshot',
-        snapshot: this.snapshotFor(room, playerId),
+        snapshot: this.snapshotFor(room, playerId, now),
       }));
     }
     return events;
   }
 
-  private snapshotFor(room: RoomRecord, localPlayerId: PlayerId): RoomSnapshot {
+  private snapshotFor(room: RoomRecord, localPlayerId: PlayerId, now = this.now()): RoomSnapshot {
     const source: RoomSnapshotSource = {
       roomCode: room.roomCode,
       phase: room.phase,
@@ -449,10 +523,64 @@ export class RoomManager {
       },
       tableVersion: room.tableVersion,
       ringVersion: room.ringVersion,
-      remainingSeconds: null,
+      remainingSeconds: this.snapshotSecondsRemaining(room, now),
       lastRingEvent: room.lastRingEvent,
     };
     return createRoomSnapshot(source, localPlayerId);
+  }
+
+  private startClock(room: RoomRecord, now: number): void {
+    room.matchDeadlineAt = now + this.matchDurationMs;
+    room.pausedRemainingMs = null;
+    room.lastPublishedSeconds = Math.ceil(this.matchDurationMs / 1000);
+  }
+
+  private pauseClock(room: RoomRecord, now: number): void {
+    if (room.matchDeadlineAt === null) return;
+    room.pausedRemainingMs = Math.max(0, room.matchDeadlineAt - now);
+    room.matchDeadlineAt = null;
+    room.lastPublishedSeconds = Math.ceil(room.pausedRemainingMs / 1000);
+  }
+
+  private freezeClock(room: RoomRecord, now: number): void {
+    if (room.matchDeadlineAt === null) return;
+    room.pausedRemainingMs = Math.max(0, room.matchDeadlineAt - now);
+    room.matchDeadlineAt = null;
+    room.lastPublishedSeconds = Math.ceil(room.pausedRemainingMs / 1000);
+  }
+
+  private secondsRemaining(room: RoomRecord, now: number): number {
+    const remainingMs = room.matchDeadlineAt === null
+      ? room.pausedRemainingMs
+      : Math.max(0, room.matchDeadlineAt - now);
+    if (remainingMs === null) return 0;
+    return Math.ceil(remainingMs / 1000);
+  }
+
+  private snapshotSecondsRemaining(room: RoomRecord, now: number): number | null {
+    if (room.game === null) return null;
+    if (room.matchDeadlineAt === null && room.pausedRemainingMs === null) {
+      return room.lastPublishedSeconds;
+    }
+    return this.secondsRemaining(room, now);
+  }
+
+  private finishMatchIfExpired(room: RoomRecord, now: number): RoomManagerEvent[] {
+    if (
+      room.phase !== 'playing' ||
+      !room.game ||
+      room.matchDeadlineAt === null ||
+      room.matchDeadlineAt > now
+    ) {
+      return [];
+    }
+
+    room.game = finishGameByTimeout(room.game);
+    room.phase = 'finished';
+    room.matchDeadlineAt = null;
+    room.pausedRemainingMs = 0;
+    room.lastPublishedSeconds = 0;
+    return this.snapshotEvents(room, undefined, now);
   }
 
   private generateRoomCode(): string | null {

@@ -328,9 +328,12 @@ describe('RoomManager authoritative game transitions', () => {
   });
 
   it('allows only Player A to rematch after game over and keeps the room seats', () => {
+    let now = 1_000;
     let gameCount = 0;
     const rooms = joinBothPlayers(
       makeRoomManager({
+        now: () => now,
+        matchDurationMs: 5_000,
         gameFactory: () => {
           gameCount += 1;
           return customGame({
@@ -340,6 +343,8 @@ describe('RoomManager authoritative game transitions', () => {
         },
       }),
     );
+    now += 2_000;
+    expect(messageOf(rooms.manager.tick(now), 'socket-a', 'room.snapshot').snapshot.remainingSeconds).toBe(3);
     rooms.manager.handleMessage('socket-a', { type: 'game.flip', actionId: 'last-card' });
     rooms.manager.handleMessage('socket-b', { type: 'game.flip', actionId: 'empty-flip' });
 
@@ -358,6 +363,7 @@ describe('RoomManager authoritative game transitions', () => {
       phase: 'playing',
       localPlayerId: 'A',
       turn: 'A',
+      remainingSeconds: 5,
     });
     expect(messageOf(rematch, 'socket-b', 'room.snapshot').snapshot.localPlayerId).toBe('B');
   });
@@ -427,6 +433,86 @@ describe('RoomManager reconnect and expiry', () => {
     expect(messageOf(resumed, 'socket-a', 'room.snapshot').snapshot.players.B.connected).toBe(true);
   });
 
+  it('pauses the match clock during reconnect and resumes with the saved time', () => {
+    let now = 1_000;
+    const manager = makeRoomManager({ now: () => now });
+    const waiting = messageOf(
+      manager.handleMessage('socket-a', { type: 'room.create', requestId: 'create-clock-a' }),
+      'socket-a',
+      'room.session',
+    );
+    expect(waiting.snapshot.remainingSeconds).toBeNull();
+
+    const joined = manager.handleMessage('socket-b', {
+      type: 'room.join',
+      requestId: 'join-clock-b',
+      roomCode: waiting.roomCode,
+    });
+    const bSession = messageOf(joined, 'socket-b', 'room.session');
+    expect(bSession.snapshot.remainingSeconds).toBe(300);
+
+    now += 60_000;
+    const oneMinute = manager.tick(now);
+    expect(messageOf(oneMinute, 'socket-a', 'room.snapshot').snapshot.remainingSeconds).toBe(240);
+    expect(messageOf(oneMinute, 'socket-b', 'room.snapshot').snapshot.remainingSeconds).toBe(240);
+
+    const disconnected = manager.disconnect('socket-b');
+    expect(messageOf(disconnected, 'socket-a', 'room.snapshot').snapshot.remainingSeconds).toBe(240);
+    now += 120_000;
+    expect(manager.tick(now)).toEqual([]);
+
+    const resumed = manager.handleMessage('socket-b2', {
+      type: 'room.reconnect',
+      requestId: 'reconnect-clock-b',
+      roomCode: waiting.roomCode,
+      seatToken: bSession.seatToken,
+    });
+    expect(messageOf(resumed, 'socket-b2', 'room.session').snapshot.remainingSeconds).toBe(240);
+
+    now += 30_000;
+    expect(messageOf(manager.tick(now), 'socket-a', 'room.snapshot').snapshot.remainingSeconds).toBe(210);
+  });
+
+  it.each([
+    { playerACards: 3, playerBCards: 2, winner: 'A' },
+    { playerACards: 2, playerBCards: 3, winner: 'B' },
+    { playerACards: 2, playerBCards: 2, winner: null },
+  ] as const)(
+    'finishes on time and scores $playerACards versus $playerBCards cards',
+    ({ playerACards, playerBCards, winner }) => {
+      let now = 10_000;
+      const manager = makeRoomManager({
+        now: () => now,
+        matchDurationMs: 5_000,
+        gameFactory: () => customGame({
+          A: { drawPile: Array.from({ length: playerACards }, (_, i) => card(`A${i}`, ['banana'])), playedPile: [] },
+          B: { drawPile: Array.from({ length: playerBCards }, (_, i) => card(`B${i}`, ['pear'])), playedPile: [] },
+        }),
+      });
+      const room = createWaitingRoom(manager);
+      manager.handleMessage('socket-b', {
+        type: 'room.join',
+        requestId: 'join-timeout-b',
+        roomCode: room.roomCode,
+      });
+
+      now += 5_000;
+      const timeout = manager.tick(now);
+
+      expect(messageOf(timeout, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
+        phase: 'finished',
+        winner,
+        remainingSeconds: 0,
+      });
+      expect(messageOf(timeout, 'socket-b', 'room.snapshot').snapshot.winner).toBe(winner);
+      const afterTimeout = manager.handleMessage('socket-a', {
+        type: 'game.flip',
+        actionId: 'flip-after-timeout',
+      });
+      expect(messageOf(afterTimeout, 'socket-a', 'error').code).toBe('GAME_FINISHED');
+    },
+  );
+
   it('rejects a mismatched reconnect token and expires waiting rooms after fifteen minutes', () => {
     let now = 100;
     const rooms = makeRoomManager({ now: () => now });
@@ -457,6 +543,7 @@ function makeRoomManager(overrides: {
   random?: () => number;
   tokenFactory?: () => string;
   gameFactory?: () => GameState;
+  matchDurationMs?: number;
 } = {}): RoomManager {
   let tokenCount = 0;
   return new RoomManager({
@@ -464,6 +551,7 @@ function makeRoomManager(overrides: {
     random: overrides.random ?? (() => 0),
     tokenFactory: overrides.tokenFactory ?? (() => `seat-${++tokenCount}`),
     gameFactory: overrides.gameFactory,
+    matchDurationMs: overrides.matchDurationMs,
   });
 }
 

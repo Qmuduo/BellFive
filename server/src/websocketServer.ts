@@ -12,6 +12,7 @@ export type CreateWebSocketServerOptions = Readonly<{
   roomManager: RoomManager;
   host: string;
   port: number;
+  tickIntervalMs?: number;
 }>;
 
 export type RunningRoomServer = Readonly<{
@@ -94,9 +95,13 @@ export async function createWebSocketServer(
   });
 
   await listen(httpServer, options.port, options.host);
+  const ticker = setInterval(
+    () => sendEvents(roomManager.tick()),
+    options.tickIntervalMs ?? 1_000,
+  );
   const address = httpServer.address();
   if (!address || typeof address === 'string') {
-    await closeServers(httpServer, webSocketServer, connections);
+    await closeServers(httpServer, webSocketServer, connections, ticker);
     throw new Error('The room service did not bind to a TCP address.');
   }
 
@@ -109,7 +114,7 @@ export async function createWebSocketServer(
     port: boundAddress.port,
     httpUrl: `${baseUrl}/health`,
     webSocketUrl: `ws://${urlHost}:${boundAddress.port}`,
-    close: () => closeServers(httpServer, webSocketServer, connections),
+    close: () => closeServers(httpServer, webSocketServer, connections, ticker),
   };
 }
 
@@ -137,7 +142,9 @@ async function closeServers(
   httpServer: HttpServer,
   webSocketServer: WebSocketServer,
   connections: Map<string, WebSocket>,
+  ticker?: ReturnType<typeof setInterval>,
 ): Promise<void> {
+  if (ticker) clearInterval(ticker);
   for (const socket of connections.values()) socket.terminate();
   connections.clear();
 
