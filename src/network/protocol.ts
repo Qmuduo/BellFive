@@ -1,5 +1,7 @@
 import { canRing, countVisibleItems } from '../game/rules';
 import { FRUIT_TYPES, GAME_ELEMENTS } from '../game/types';
+import { isAvatarId } from '../profile';
+import type { PlayerProfile, PlayerProfileInput } from '../profile';
 import type {
   CardDefinition,
   GameState,
@@ -11,8 +13,8 @@ import type {
 export type RoomPhase = 'waiting' | 'playing' | 'connection-paused' | 'finished';
 
 export type ClientMessage =
-  | { type: 'room.create'; requestId: string }
-  | { type: 'room.join'; requestId: string; roomCode: string }
+  | { type: 'room.create'; requestId: string; profile?: PlayerProfileInput }
+  | { type: 'room.join'; requestId: string; roomCode: string; profile?: PlayerProfileInput }
   | { type: 'room.leave'; requestId: string }
   | {
       type: 'room.reconnect';
@@ -29,6 +31,7 @@ export type PlayerSnapshot = Readonly<{
   drawCount: number | null;
   playedCount: number | null;
   topCard: CardDefinition | null;
+  profile: PlayerProfile;
 }>;
 
 export type RingFeedbackEvent = Readonly<{
@@ -66,6 +69,7 @@ export type RoomSnapshotSource = Readonly<{
   phase: RoomPhase;
   game: GameState | null;
   connected: Readonly<Record<PlayerId, boolean>>;
+  profiles: Readonly<Record<PlayerId, PlayerProfile>>;
   tableVersion: number;
   ringVersion?: number;
   remainingSeconds: number | null;
@@ -108,14 +112,28 @@ export function decodeClientMessage(raw: string): ClientMessage | null {
 
   switch (value.type) {
     case 'room.create':
+      if (!isNonEmptyString(value.requestId) || !isOptionalPlayerProfileInput(value.profile)) return null;
+      return {
+        type: 'room.create',
+        requestId: value.requestId,
+        ...(value.profile === undefined ? {} : { profile: value.profile }),
+      };
     case 'room.leave':
       return isNonEmptyString(value.requestId)
-        ? { type: value.type, requestId: value.requestId }
+        ? { type: 'room.leave', requestId: value.requestId }
         : null;
     case 'room.join':
-      return isNonEmptyString(value.requestId) && isRoomCode(value.roomCode)
-        ? { type: 'room.join', requestId: value.requestId, roomCode: value.roomCode }
-        : null;
+      if (
+        !isNonEmptyString(value.requestId) ||
+        !isRoomCode(value.roomCode) ||
+        !isOptionalPlayerProfileInput(value.profile)
+      ) return null;
+      return {
+        type: 'room.join',
+        requestId: value.requestId,
+        roomCode: value.roomCode,
+        ...(value.profile === undefined ? {} : { profile: value.profile }),
+      };
     case 'room.reconnect':
       return isNonEmptyString(value.requestId) &&
         isRoomCode(value.roomCode) &&
@@ -237,6 +255,7 @@ export function createRoomSnapshot(
       drawCount: player ? player.drawPile.length : null,
       playedCount: player ? player.playedPile.length : null,
       topCard: topCard ? { id: topCard.id, symbols: [...topCard.symbols] } : null,
+      profile: source.profiles[playerId],
     };
   }
 
@@ -306,7 +325,27 @@ function isPlayerSnapshot(value: unknown): value is PlayerSnapshot {
     typeof value.connected === 'boolean' &&
     isNullableNonNegativeInteger(value.drawCount) &&
     isNullableNonNegativeInteger(value.playedCount) &&
+    isPlayerProfile(value.profile) &&
     (value.topCard === null || isCardDefinition(value.topCard))
+  );
+}
+
+function isPlayerProfile(value: unknown): value is PlayerProfile {
+  if (
+    !isRecord(value) ||
+    typeof value.nickname !== 'string' ||
+    typeof value.avatarId !== 'string' ||
+    !isAvatarId(value.avatarId)
+  ) return false;
+  const nickname = Array.from(value.nickname);
+  return nickname.length > 0 && nickname.length <= 12 && value.nickname.trim() === value.nickname;
+}
+
+function isOptionalPlayerProfileInput(value: unknown): value is PlayerProfileInput | undefined {
+  return value === undefined || (
+    isRecord(value) &&
+    typeof value.nickname === 'string' &&
+    typeof value.avatarId === 'string'
   );
 }
 

@@ -165,8 +165,8 @@ describe('GameScreen friend-room flow', () => {
       roomSnapshot: makeSnapshot('playing', 'A', {
         turn: 'A',
         players: {
-          A: { connected: true, drawCount: 29, playedCount: 1, topCard: { id: 'C001', symbols: ['banana'] } },
-          B: { connected: true, drawCount: 30, playedCount: 0, topCard: null },
+          A: { connected: true, drawCount: 29, playedCount: 1, topCard: { id: 'C001', symbols: ['banana'] }, profile: { nickname: 'Player A', avatarId: 'strawberry' } },
+          B: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: 'Player B', avatarId: 'strawberry' } },
         },
       }),
     });
@@ -509,8 +509,8 @@ function makeSnapshot(
     phase,
     localPlayerId,
     players: {
-      A: { connected: true, drawCount: 30, playedCount: 0, topCard: null },
-      B: { connected: true, drawCount: 30, playedCount: 0, topCard: null },
+      A: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: 'Player A', avatarId: 'strawberry' } },
+      B: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: 'Player B', avatarId: 'strawberry' } },
     },
     turn: null,
     winner: null,

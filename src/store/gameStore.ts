@@ -7,10 +7,11 @@ import type {
 } from '../network/GameClient';
 import type { RoomSnapshot, ServerMessage } from '../network/protocol';
 import type { PlayerId } from '../game/types';
+import type { PlayerProfileInput } from '../profile';
 
 export interface GameClientPort {
-  createRoom(): string;
-  joinRoom(code: string): string;
+  createRoom(profile?: PlayerProfileInput): string;
+  joinRoom(code: string, profile?: PlayerProfileInput): string;
   flip(): string;
   ring(tableVersion: number): string;
   rematch(): string;
@@ -30,8 +31,8 @@ type GameStore = {
   lastActionResult: Extract<ServerMessage, { type: 'action.result' }> | null;
   roomSessionVersion: number;
   client: GameClientPort | null;
-  createRoom: () => void;
-  joinRoom: (code: string) => void;
+  createRoom: (profile?: PlayerProfileInput) => void;
+  joinRoom: (code: string, profile?: PlayerProfileInput) => void;
   flip: () => void;
   ring: () => void;
   rematch: () => void;
@@ -107,15 +108,15 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
       lastActionResult: null,
       roomSessionVersion: 0,
       client: null,
-      createRoom: () => {
+      createRoom: profile => {
         if (get().leavingRoom) return;
         set({ roomSnapshot: null, roomCode: null, localPlayerId: null, error: null, lastActionResult: null });
-        getClient().createRoom();
+        getClient().createRoom(profile);
       },
-      joinRoom: code => {
+      joinRoom: (code, profile) => {
         if (get().leavingRoom) return;
         set({ roomSnapshot: null, roomCode: null, localPlayerId: null, error: null, lastActionResult: null });
-        getClient().joinRoom(code);
+        getClient().joinRoom(code, profile);
       },
       flip: () => {
         set({ error: null });

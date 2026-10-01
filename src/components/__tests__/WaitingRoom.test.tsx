@@ -56,8 +56,8 @@ function makeSnapshot(): RoomSnapshot {
     phase: 'waiting',
     localPlayerId: 'A',
     players: {
-      A: { connected: true, drawCount: null, playedCount: null, topCard: null },
-      B: { connected: false, drawCount: null, playedCount: null, topCard: null },
+      A: { connected: true, drawCount: null, playedCount: null, topCard: null, profile: { nickname: 'Player A', avatarId: 'strawberry' } },
+      B: { connected: false, drawCount: null, playedCount: null, topCard: null, profile: { nickname: 'Player B', avatarId: 'strawberry' } },
     },
     turn: null,
     winner: null,

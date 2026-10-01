@@ -1,6 +1,8 @@
 import { decodeServerMessage } from './protocol';
 import type { RoomSnapshot, ServerMessage } from './protocol';
 import type { PlayerId } from '../game/types';
+import { DEFAULT_PLAYER_PROFILE } from '../profile';
+import type { PlayerProfileInput } from '../profile';
 
 export type GameClientStatus =
   | 'idle'
@@ -49,8 +51,8 @@ export type GameClientOptions = Readonly<{
 }>;
 
 type RoomRequest =
-  | { type: 'room.create'; requestId: string }
-  | { type: 'room.join'; requestId: string; roomCode: string };
+  | { type: 'room.create'; requestId: string; profile: PlayerProfileInput }
+  | { type: 'room.join'; requestId: string; roomCode: string; profile: PlayerProfileInput };
 
 type PendingAction =
   | { type: 'game.flip'; actionId: string }
@@ -106,19 +108,19 @@ export class GameClient {
     return this.localPlayerId;
   }
 
-  createRoom(): string {
+  createRoom(profile: PlayerProfileInput = DEFAULT_PLAYER_PROFILE): string {
     this.resetForNewRoomRequest();
     const requestId = this.createIdentifier('request');
-    this.roomRequest = { type: 'room.create', requestId };
+    this.roomRequest = { type: 'room.create', requestId, profile: { ...profile } };
     this.connect(false);
     return requestId;
   }
 
-  joinRoom(code: string): string {
+  joinRoom(code: string, profile: PlayerProfileInput = DEFAULT_PLAYER_PROFILE): string {
     this.resetForNewRoomRequest();
     const requestId = this.createIdentifier('request');
     const roomCode = code.trim().toUpperCase();
-    this.roomRequest = { type: 'room.join', requestId, roomCode };
+    this.roomRequest = { type: 'room.join', requestId, roomCode, profile: { ...profile } };
     this.connect(false);
     return requestId;
   }

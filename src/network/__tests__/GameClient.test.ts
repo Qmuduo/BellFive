@@ -5,18 +5,20 @@ import type { GameClientHandlers, SocketHandlers, SocketLike } from '../GameClie
 describe('GameClient room commands', () => {
   it('sends create and join requests after the socket opens', () => {
     const { client, sockets } = createClient();
-    const createRequestId = client.createRoom();
+    const profileA = { nickname: 'Mira', avatarId: 'peach' };
+    const profileB = { nickname: 'Kai', avatarId: 'banana' };
+    const createRequestId = client.createRoom(profileA);
     expect(client.getStatus()).toBe('connecting');
     sockets[0].open();
     expect(sockets[0].sentMessages()).toEqual([
-      { type: 'room.create', requestId: createRequestId },
+      { type: 'room.create', requestId: createRequestId, profile: profileA },
     ]);
 
     client.disconnect();
-    client.joinRoom(' abcd23 ');
+    client.joinRoom(' abcd23 ', profileB);
     sockets[1].open();
     expect(sockets[1].sentMessages()).toMatchObject([
-      { type: 'room.join', roomCode: 'ABCD23' },
+      { type: 'room.join', roomCode: 'ABCD23', profile: profileB },
     ]);
   });
 
@@ -263,8 +265,8 @@ function makeSession(
     phase: 'playing',
     localPlayerId,
     players: {
-      A: { connected: true, drawCount: 30, playedCount: 0, topCard: null },
-      B: { connected: true, drawCount: 30, playedCount: 0, topCard: null },
+      A: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: 'Player A', avatarId: 'strawberry' } },
+      B: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: 'Player B', avatarId: 'strawberry' } },
     },
     turn: 'A',
     winner: null,

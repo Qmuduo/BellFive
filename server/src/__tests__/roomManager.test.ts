@@ -25,6 +25,8 @@ describe('RoomManager room lifecycle', () => {
     expect(session.snapshot.players.A.connected).toBe(true);
     expect(session.snapshot.players.B.connected).toBe(false);
     expect(session.snapshot.players.A.drawCount).toBeNull();
+    expect(session.snapshot.players.A.profile).toEqual({ nickname: 'Player A', avatarId: 'strawberry' });
+    expect(session.snapshot.players.B.profile).toEqual({ nickname: 'Player B', avatarId: 'strawberry' });
     expect(session.snapshot.lastFlipEvent).toBeNull();
 
     const secondRoom = rooms.handleMessage('socket-a2', {
@@ -34,6 +36,37 @@ describe('RoomManager room lifecycle', () => {
     expect(messageOf(secondRoom, 'socket-a2', 'room.session').roomCode).not.toBe(
       session.roomCode,
     );
+  });
+
+  it('sanitizes, shares, and preserves each player profile across room sessions', () => {
+    const rooms = makeRoomManager();
+    const created = rooms.handleMessage('socket-a', {
+      type: 'room.create',
+      requestId: 'profile-create',
+      profile: { nickname: ' 🍐ABCDEFGHIJKLM ', avatarId: 'not-a-preset' },
+    });
+    const aSession = messageOf(created, 'socket-a', 'room.session');
+    expect(aSession.snapshot.players.A.profile).toEqual({ nickname: '🍐ABCDEFGHIJK', avatarId: 'strawberry' });
+
+    const joined = rooms.handleMessage('socket-b', {
+      type: 'room.join',
+      requestId: 'profile-join',
+      roomCode: aSession.roomCode,
+      profile: { nickname: '   ', avatarId: 'bell' },
+    });
+    const bSession = messageOf(joined, 'socket-b', 'room.session');
+    const aSnapshot = messageOf(joined, 'socket-a', 'room.snapshot').snapshot;
+    expect(bSession.snapshot.players).toEqual(aSnapshot.players);
+    expect(bSession.snapshot.players.B.profile).toEqual({ nickname: 'Player B', avatarId: 'bell' });
+
+    const reconnected = rooms.handleMessage('socket-a-reconnected', {
+      type: 'room.reconnect',
+      requestId: 'profile-reconnect',
+      roomCode: aSession.roomCode,
+      seatToken: aSession.seatToken,
+    });
+    expect(messageOf(reconnected, 'socket-a-reconnected', 'room.session').snapshot.players.A.profile)
+      .toEqual({ nickname: '🍐ABCDEFGHIJK', avatarId: 'strawberry' });
   });
 
   it('starts a shuffled 30/30 match when Player B joins and updates both clients', () => {

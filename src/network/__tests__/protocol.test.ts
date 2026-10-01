@@ -10,6 +10,8 @@ describe('room protocol decoding', () => {
   it.each([
     { type: 'room.create', requestId: 'request-1' },
     { type: 'room.join', requestId: 'request-2', roomCode: 'ABCD23' },
+    { type: 'room.create', requestId: 'request-profile', profile: { nickname: 'Mira', avatarId: 'peach' } },
+    { type: 'room.join', requestId: 'join-profile', roomCode: 'ABCD23', profile: { nickname: 'Kai', avatarId: 'banana' } },
     {
       type: 'room.reconnect',
       requestId: 'request-3',
@@ -29,6 +31,7 @@ describe('room protocol decoding', () => {
     JSON.stringify({ type: 'game.flip' }),
     JSON.stringify({ type: 'game.ring', actionId: 'a', tableVersion: -1 }),
     JSON.stringify({ type: 'room.join', requestId: 'r', roomCode: 'bad' }),
+    JSON.stringify({ type: 'room.join', requestId: 'r', roomCode: 'ABCD23', profile: { nickname: 12, avatarId: 'pear' } }),
     JSON.stringify({ type: 'unknown.action', actionId: 'a' }),
   ])('rejects malformed client message %p', raw => {
     expect(decodeClientMessage(raw)).toBeNull();
@@ -77,6 +80,20 @@ describe('room protocol decoding', () => {
         }),
       ),
     ).toBeNull();
+    expect(
+      decodeServerMessage(
+        JSON.stringify({
+          type: 'room.snapshot',
+          snapshot: {
+            ...snapshot,
+            players: {
+              ...snapshot.players,
+              A: { ...snapshot.players.A, profile: { nickname: 'Mira', avatarId: 'upload' } },
+            },
+          },
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('accepts room closure notifications and rejects malformed ones', () => {
@@ -108,6 +125,8 @@ describe('room snapshots', () => {
     expect(snapshot.players.A.playedCount).toBe(2);
     expect(snapshot.players.A.topCard?.id).toBe('C009');
     expect(snapshot.players.B.topCard?.id).toBe('C021');
+    expect(snapshot.players.A.profile).toEqual({ nickname: 'Mira', avatarId: 'banana' });
+    expect(snapshot.players.B.profile).toEqual({ nickname: 'Kai', avatarId: 'peach' });
     expect(snapshot.visibleCounts?.strawberry).toBe(1);
     expect(serialized).not.toContain('C004');
     expect(serialized).not.toContain('C030');
@@ -127,6 +146,10 @@ describe('room snapshots', () => {
         phase: 'waiting',
         game: null,
         connected: { A: true, B: false },
+        profiles: {
+          A: { nickname: 'Mira', avatarId: 'banana' },
+          B: { nickname: 'Player B', avatarId: 'strawberry' },
+        },
         tableVersion: 0,
         remainingSeconds: null,
         lastRingEvent: null,
@@ -138,6 +161,7 @@ describe('room snapshots', () => {
     expect(snapshot.turn).toBeNull();
     expect(snapshot.players.A.drawCount).toBeNull();
     expect(snapshot.players.B.connected).toBe(false);
+    expect(snapshot.players.B.profile).toEqual({ nickname: 'Player B', avatarId: 'strawberry' });
     expect(snapshot.visibleCounts).toBeNull();
     expect(snapshot.canRing).toBe(false);
     expect(snapshot.remainingSeconds).toBeNull();
@@ -173,6 +197,10 @@ function createRoomSource(): RoomSnapshotSource {
     phase: 'playing',
     game,
     connected: { A: true, B: true },
+    profiles: {
+      A: { nickname: 'Mira', avatarId: 'banana' },
+      B: { nickname: 'Kai', avatarId: 'peach' },
+    },
     tableVersion: 2,
     ringVersion: 1,
     remainingSeconds: 300,

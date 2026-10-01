@@ -1,5 +1,6 @@
 import type { RoomSnapshot, ServerMessage } from '../../network/protocol';
 import type { GameClientHandlers } from '../../network/GameClient';
+import type { PlayerProfileInput } from '../../profile';
 import { createGameStore } from '../gameStore';
 import type { GameClientPort } from '../gameStore';
 
@@ -16,6 +17,18 @@ describe('friend room game store', () => {
       roomSnapshot: { phase: 'waiting' },
       error: null,
     });
+  });
+
+  it('forwards the saved profile when creating or joining a room', () => {
+    const fixture = makeStore();
+    const creatorProfile = { nickname: 'Mira', avatarId: 'peach' };
+    const joinerProfile = { nickname: 'Kai', avatarId: 'banana' };
+
+    fixture.store.getState().createRoom(creatorProfile);
+    fixture.store.getState().joinRoom('ABCD23', joinerProfile);
+
+    expect(fixture.client.createRoomProfiles).toEqual([creatorProfile]);
+    expect(fixture.client.joinRoomProfiles).toEqual([{ code: 'ABCD23', profile: joinerProfile }]);
   });
 
   it('sends flip and ring requests without changing the authoritative snapshot', () => {
@@ -139,20 +152,24 @@ function makeStore() {
 
 class FakeGameClient implements GameClientPort {
   createRoomCalls = 0;
+  createRoomProfiles: (PlayerProfileInput | undefined)[] = [];
   joinRoomCalls: string[] = [];
+  joinRoomProfiles: { code: string; profile: PlayerProfileInput | undefined }[] = [];
   flipCalls = 0;
   ringCalls: number[] = [];
   rematchCalls = 0;
   disconnectCalls = 0;
   leaveRoomCalls = 0;
 
-  createRoom(): string {
+  createRoom(profile?: PlayerProfileInput): string {
     this.createRoomCalls += 1;
+    this.createRoomProfiles.push(profile);
     return 'request-create';
   }
 
-  joinRoom(code: string): string {
+  joinRoom(code: string, profile?: PlayerProfileInput): string {
     this.joinRoomCalls.push(code);
+    this.joinRoomProfiles.push({ code, profile });
     return 'request-join';
   }
 
@@ -186,8 +203,8 @@ function makeSession(localPlayerId: 'A' | 'B'): Extract<ServerMessage, { type: '
     phase: 'waiting',
     localPlayerId,
     players: {
-      A: { connected: true, drawCount: null, playedCount: null, topCard: null },
-      B: { connected: false, drawCount: null, playedCount: null, topCard: null },
+      A: { connected: true, drawCount: null, playedCount: null, topCard: null, profile: { nickname: 'Mira', avatarId: 'strawberry' } },
+      B: { connected: false, drawCount: null, playedCount: null, topCard: null, profile: { nickname: 'Player B', avatarId: 'strawberry' } },
     },
     turn: null,
     winner: null,
