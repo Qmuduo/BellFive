@@ -283,6 +283,7 @@ function makeSession(
     remainingSeconds: 300,
     ringBlockedUntilFlip: { A: false, B: false },
     lastRingEvent: null,
+    lastFlipEvent: null,
   };
 
   return {

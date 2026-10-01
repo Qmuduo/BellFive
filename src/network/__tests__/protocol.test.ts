@@ -46,6 +46,11 @@ describe('room protocol decoding', () => {
     };
 
     expect(decodeServerMessage(JSON.stringify(message))).toEqual(message);
+    const flipSnapshot = { ...snapshot, lastFlipEvent: { version: 2, player: 'B' } };
+    expect(decodeServerMessage(JSON.stringify({ type: 'room.snapshot', snapshot: flipSnapshot }))).toEqual({
+      type: 'room.snapshot',
+      snapshot: flipSnapshot,
+    });
     expect(
       decodeServerMessage(
         JSON.stringify({ type: 'room.snapshot', snapshot: { ...snapshot, tableVersion: -1 } }),
@@ -61,6 +66,14 @@ describe('room protocol decoding', () => {
         JSON.stringify({
           type: 'room.snapshot',
           snapshot: { ...snapshot, lastRingEvent: { version: 1, caller: 'C', outcome: 'wrong', movedCardCount: 1 } },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      decodeServerMessage(
+        JSON.stringify({
+          type: 'room.snapshot',
+          snapshot: { ...snapshot, lastFlipEvent: { version: -1, player: 'A' } },
         }),
       ),
     ).toBeNull();
@@ -103,6 +116,7 @@ describe('room snapshots', () => {
       remainingSeconds: 300,
       ringBlockedUntilFlip: { A: false, B: false },
       lastRingEvent: { version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 },
+      lastFlipEvent: null,
     });
   });
 
@@ -116,6 +130,7 @@ describe('room snapshots', () => {
         tableVersion: 0,
         remainingSeconds: null,
         lastRingEvent: null,
+        lastFlipEvent: null,
       },
       'A',
     );
@@ -127,6 +142,7 @@ describe('room snapshots', () => {
     expect(snapshot.canRing).toBe(false);
     expect(snapshot.remainingSeconds).toBeNull();
     expect(snapshot.lastRingEvent).toBeNull();
+    expect(snapshot.lastFlipEvent).toBeNull();
   });
 });
 
@@ -161,5 +177,6 @@ function createRoomSource(): RoomSnapshotSource {
     ringVersion: 1,
     remainingSeconds: 300,
     lastRingEvent: { version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 },
+    lastFlipEvent: null,
   };
 }

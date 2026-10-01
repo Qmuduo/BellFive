@@ -38,6 +38,11 @@ export type RingFeedbackEvent = Readonly<{
   movedCardCount: number;
 }>;
 
+export type FlipFeedbackEvent = Readonly<{
+  version: number;
+  player: PlayerId;
+}>;
+
 export type RoomSnapshot = Readonly<{
   roomCode: string;
   phase: RoomPhase;
@@ -53,6 +58,7 @@ export type RoomSnapshot = Readonly<{
   remainingSeconds: number | null;
   ringBlockedUntilFlip: Readonly<Record<PlayerId, boolean>>;
   lastRingEvent: RingFeedbackEvent | null;
+  lastFlipEvent: FlipFeedbackEvent | null;
 }>;
 
 export type RoomSnapshotSource = Readonly<{
@@ -64,6 +70,7 @@ export type RoomSnapshotSource = Readonly<{
   ringVersion?: number;
   remainingSeconds: number | null;
   lastRingEvent: RingFeedbackEvent | null;
+  lastFlipEvent: FlipFeedbackEvent | null;
 }>;
 
 export type ServerMessage =
@@ -250,6 +257,7 @@ export function createRoomSnapshot(
     remainingSeconds: source.remainingSeconds,
     ringBlockedUntilFlip: source.game?.ringBlockedUntilFlip ?? { A: false, B: false },
     lastRingEvent: source.lastRingEvent,
+    lastFlipEvent: source.lastFlipEvent,
   };
 }
 
@@ -284,7 +292,8 @@ function isRoomSnapshot(value: unknown): value is RoomSnapshot {
     (value.ringVersion !== undefined && !isNonNegativeInteger(value.ringVersion)) ||
     !isNullableNonNegativeInteger(value.remainingSeconds) ||
     !isPlayerBooleanRecord(value.ringBlockedUntilFlip) ||
-    !(value.lastRingEvent === null || isRingFeedbackEvent(value.lastRingEvent))
+    !(value.lastRingEvent === null || isRingFeedbackEvent(value.lastRingEvent)) ||
+    !(value.lastFlipEvent === null || isFlipFeedbackEvent(value.lastFlipEvent))
   ) {
     return false;
   }
@@ -333,6 +342,15 @@ function isRingFeedbackEvent(value: unknown): value is RingFeedbackEvent {
     isPlayerId(value.caller) &&
     isRingOutcome(value.outcome) &&
     isNonNegativeInteger(value.movedCardCount)
+  );
+}
+
+function isFlipFeedbackEvent(value: unknown): value is FlipFeedbackEvent {
+  return (
+    isRecord(value) &&
+    isNonNegativeInteger(value.version) &&
+    value.version > 0 &&
+    isPlayerId(value.player)
   );
 }
 

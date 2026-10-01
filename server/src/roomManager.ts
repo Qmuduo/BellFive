@@ -34,6 +34,8 @@ type RoomRecord = {
   tableVersion: number;
   ringVersion: number;
   lastRingEvent: RingFeedbackEvent | null;
+  flipVersion: number;
+  lastFlipEvent: { version: number; player: PlayerId } | null;
   matchDeadlineAt: number | null;
   pausedRemainingMs: number | null;
   lastPublishedSeconds: number | null;
@@ -180,6 +182,8 @@ export class RoomManager {
       tableVersion: 0,
       ringVersion: 0,
       lastRingEvent: null,
+      flipVersion: 0,
+      lastFlipEvent: null,
       matchDeadlineAt: null,
       pausedRemainingMs: null,
       lastPublishedSeconds: null,
@@ -364,7 +368,11 @@ export class RoomManager {
 
       const hadCard = room.game.players[connection.playerId].drawPile.length > 0;
       room.game = flipCard(room.game);
-      if (hadCard) room.tableVersion += 1;
+      if (hadCard) {
+        room.tableVersion += 1;
+        room.flipVersion += 1;
+        room.lastFlipEvent = { version: room.flipVersion, player: connection.playerId };
+      }
       this.updateRoomPhase(room);
       room.lastActivityAt = now;
       const actionEvents = this.acceptedAction(room, connectionId, connection.playerId, {
@@ -422,6 +430,7 @@ export class RoomManager {
     room.game = this.gameFactory();
     room.tableVersion += 1;
     room.lastRingEvent = null;
+    room.lastFlipEvent = null;
     room.phase = 'playing';
     room.matchDeadlineAt = now + this.matchDurationMs;
     room.pausedRemainingMs = null;
@@ -526,6 +535,7 @@ export class RoomManager {
       ringVersion: room.ringVersion,
       remainingSeconds: this.snapshotSecondsRemaining(room, now),
       lastRingEvent: room.lastRingEvent,
+      lastFlipEvent: room.lastFlipEvent,
     };
     return createRoomSnapshot(source, localPlayerId);
   }

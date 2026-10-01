@@ -68,5 +68,6 @@ function makeSnapshot(): RoomSnapshot {
     remainingSeconds: null,
     ringBlockedUntilFlip: { A: false, B: false },
     lastRingEvent: null,
+    lastFlipEvent: null,
   };
 }

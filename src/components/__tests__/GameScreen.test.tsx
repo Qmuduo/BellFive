@@ -351,6 +351,7 @@ function makeSnapshot(
     remainingSeconds: phase === 'waiting' ? null : 300,
     ringBlockedUntilFlip: { A: false, B: false },
     lastRingEvent: null,
+    lastFlipEvent: null,
     ...overrides,
   };
 }

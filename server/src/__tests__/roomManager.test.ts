@@ -25,6 +25,7 @@ describe('RoomManager room lifecycle', () => {
     expect(session.snapshot.players.A.connected).toBe(true);
     expect(session.snapshot.players.B.connected).toBe(false);
     expect(session.snapshot.players.A.drawCount).toBeNull();
+    expect(session.snapshot.lastFlipEvent).toBeNull();
 
     const secondRoom = rooms.handleMessage('socket-a2', {
       type: 'room.create',
@@ -96,8 +97,39 @@ describe('RoomManager room lifecycle', () => {
     expect(messageOf(flipped, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
       turn: 'B',
       players: { A: { drawCount: 29, playedCount: 1 } },
+      lastFlipEvent: { version: 1, player: 'A' },
     });
-    expect(messageOf(flipped, 'socket-b', 'room.snapshot').snapshot.localPlayerId).toBe('B');
+    expect(messageOf(flipped, 'socket-b', 'room.snapshot').snapshot).toMatchObject({
+      localPlayerId: 'B',
+      lastFlipEvent: { version: 1, player: 'A' },
+    });
+  });
+
+  it('versions each accepted flip independently of correct ring table changes', () => {
+    const rooms = joinBothPlayers(
+      makeRoomManager({
+        gameFactory: () => customGame({
+          A: { drawPile: [card('A1', ['strawberry', 'strawberry', 'strawberry'])], playedPile: [] },
+          B: { drawPile: [card('B1', ['strawberry', 'strawberry'])], playedPile: [] },
+        }),
+      }),
+    );
+
+    rooms.manager.handleMessage('socket-a', { type: 'game.flip', actionId: 'flip-a' });
+    const bFlip = rooms.manager.handleMessage('socket-b', { type: 'game.flip', actionId: 'flip-b' });
+    const bSnapshot = messageOf(bFlip, 'socket-b', 'room.snapshot').snapshot;
+    expect(bSnapshot.lastFlipEvent).toEqual({ version: 2, player: 'B' });
+
+    const ring = rooms.manager.handleMessage('socket-b', {
+      type: 'game.ring',
+      actionId: 'correct-after-flips',
+      tableVersion: bSnapshot.tableVersion,
+    });
+    const afterRing = messageOf(ring, 'socket-a', 'room.snapshot').snapshot;
+
+    expect(messageOf(ring, 'socket-b', 'action.result')).toMatchObject({ outcome: 'correct' });
+    expect(afterRing.tableVersion).toBe(bSnapshot.tableVersion + 1);
+    expect(afterRing.lastFlipEvent).toEqual({ version: 2, player: 'B' });
   });
 });
 
@@ -324,6 +356,7 @@ describe('RoomManager authoritative game transitions', () => {
     expect(messageOf(finished, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
       phase: 'finished',
       winner: 'A',
+      lastFlipEvent: { version: 1, player: 'A' },
     });
   });
 
