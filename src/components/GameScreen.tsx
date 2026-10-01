@@ -4,7 +4,7 @@ import { useAudioPlayer } from 'expo-audio';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { PlayerId } from '../game/types';
 import { BellButton } from './BellButton';
-import { CollectionFly } from './CollectionFly';
+import { CardTransferFly } from './CardTransferFly';
 import { DebugPanel } from './DebugPanel';
 import { GameCard } from './GameCard';
 import { PlayerDeck } from './PlayerDeck';
@@ -12,8 +12,7 @@ import { RoomEntry } from './RoomEntry';
 import { WaitingRoom } from './WaitingRoom';
 import { useGameStore } from '../store/gameStore';
 import { playRingOutcomeSound, triggerGameFeedback } from '../services/gameFeedback';
-
-type CollectionCue = { id: number; caller: PlayerId; count: number };
+import type { RingFeedbackEvent } from '../network/protocol';
 
 export default function GameScreen() {
   const audioPlayer = useAudioPlayer(require('../../assets/audio/bell.wav'));
@@ -30,18 +29,17 @@ export default function GameScreen() {
   const ring = useGameStore(state => state.ring);
   const rematch = useGameStore(state => state.rematch);
   const leaveRoom = useGameStore(state => state.leaveRoom);
-  const [collectionCue, setCollectionCue] = useState<CollectionCue | null>(null);
-  const collectionSequence = useRef(0);
+  const [ringCue, setRingCue] = useState<RingFeedbackEvent | null>(null);
   const lastProcessedAction = useRef<string | null>(null);
   const lastProcessedRingVersion = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!collectionCue) return;
+    if (!ringCue) return;
     const timeout = setTimeout(() => {
-      setCollectionCue(current => (current?.id === collectionCue.id ? null : current));
-    }, 560);
+      setRingCue(current => (current?.version === ringCue.version ? null : current));
+    }, 650);
     return () => clearTimeout(timeout);
-  }, [collectionCue]);
+  }, [ringCue]);
 
   useEffect(() => {
     if (!lastActionResult || lastProcessedAction.current === lastActionResult.actionId) return;
@@ -50,10 +48,6 @@ export default function GameScreen() {
 
     if (lastActionResult.outcome === 'correct') {
       triggerGameFeedback('correct');
-      const count = lastActionResult.movedCardCount ?? 0;
-      if (count > 0 && localPlayerId) {
-        setCollectionCue({ id: ++collectionSequence.current, caller: localPlayerId, count });
-      }
     } else {
       triggerGameFeedback('wrong');
     }
@@ -69,6 +63,7 @@ export default function GameScreen() {
     if (!ringEvent || ringEvent.version <= lastProcessedRingVersion.current) return;
 
     lastProcessedRingVersion.current = ringEvent.version;
+    setRingCue(ringEvent);
     void playRingOutcomeSound(ringEvent.outcome, audioPlayer);
   }, [audioPlayer, roomSnapshot]);
 
@@ -182,7 +177,7 @@ export default function GameScreen() {
             <View testID="play-mat" style={styles.playMat}>
               <GameCard playerLabel="PLAYER A" card={roomSnapshot.players.A.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'A'} />
               <GameCard playerLabel="PLAYER B" card={roomSnapshot.players.B.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'B'} />
-              {collectionCue ? <CollectionFly key={collectionCue.id} count={collectionCue.count} caller={collectionCue.caller} /> : null}
+              {ringCue ? <CardTransferFly key={ringCue.version} event={ringCue} /> : null}
             </View>
           </View>
 

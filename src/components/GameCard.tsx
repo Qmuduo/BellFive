@@ -7,6 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import type { CardDefinition, GameElement } from '../game/types';
+import { getCardSymbolPositions } from '../game/cardLayout';
 
 const ELEMENT_EMOJI: Record<GameElement, string> = {
   banana: '🍌',
@@ -48,17 +49,26 @@ export function GameCard({ playerLabel, card, active = false }: GameCardProps) {
   }, [card?.id, opacity, playerLabel, rotation, slide]);
 
   const activeStyle = playerLabel.endsWith('A') ? styles.activeA : styles.activeB;
+  const symbolPositions = card
+    ? getCardSymbolPositions(card.id, card.symbols.length)
+    : [];
 
   return (
     <View style={[styles.card, active && activeStyle]}>
       <Text style={styles.label}>{playerLabel}</Text>
       {card ? (
         <Animated.View style={[styles.symbols, revealStyle]}>
-          {card.symbols.map((symbol, index) => (
-            <Text key={`${card.id}-${index}`} style={styles.symbol}>
-              {ELEMENT_EMOJI[symbol]}
-            </Text>
-          ))}
+          {card.symbols.map((symbol, index) => {
+            const position = symbolPositions[index];
+            return (
+              <Text
+                key={`${card.id}-${index}`}
+                style={[styles.symbol, { left: `${position.x * 100}%`, top: `${position.y * 100}%` }]}
+              >
+                {ELEMENT_EMOJI[symbol]}
+              </Text>
+            );
+          })}
         </Animated.View>
       ) : (
         <View style={styles.emptyArea}>
@@ -109,18 +119,17 @@ const styles = StyleSheet.create({
   },
   symbols: {
     flex: 1,
-    alignContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
+    width: '100%',
     marginTop: 5,
   },
   symbol: {
-    marginHorizontal: 2,
-    marginVertical: 1,
+    position: 'absolute',
+    width: 38,
+    marginLeft: -19,
+    marginTop: -20,
     fontSize: 30,
     lineHeight: 40,
+    textAlign: 'center',
   },
   emptyArea: {
     flex: 1,

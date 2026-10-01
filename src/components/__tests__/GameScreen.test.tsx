@@ -283,6 +283,48 @@ describe('GameScreen friend-room flow', () => {
     expect(mockAudioPlayer.seekTo).toHaveBeenCalledTimes(1);
     expect(mockAudioPlayer.play).toHaveBeenCalledTimes(1);
     expect(screen.getByText('DING! Correct Ring')).toBeOnTheScreen();
+    expect(screen.getByTestId('collect-to-B')).toBeOnTheScreen();
+  });
+
+  it('uses the first observed ring event as a reconnect baseline', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', {
+        ringVersion: 8,
+        lastRingOutcome: 'correct',
+        lastRingEvent: { version: 8, caller: 'B', outcome: 'correct', movedCardCount: 6 },
+      }),
+    });
+    await render(<GameScreen />);
+
+    expect(mockAudioPlayer.play).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('collect-to-B')).toBeNull();
+  });
+
+  it('shows a wrong-ring card moving from the caller to the opponent on both phones', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'B',
+      roomSnapshot: makeSnapshot('playing', 'B', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.snapshot',
+        snapshot: makeSnapshot('playing', 'B', {
+          turn: 'A',
+          lastRingOutcome: 'wrong',
+          ringVersion: 1,
+          lastRingEvent: { version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 },
+        }),
+      });
+    });
+
+    expect(screen.getByTestId('transfer-A-to-B')).toBeOnTheScreen();
   });
 });
 
