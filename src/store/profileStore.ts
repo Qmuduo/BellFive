@@ -46,11 +46,15 @@ export function createProfileStore(storage: StateStorage = AsyncStorage) {
           ...currentState,
           profile: {
             ...sanitized,
-            nickname: normalizeNickname(persistedProfile.nickname),
+            nickname: normalizeNickname(
+              typeof persistedProfile === 'object' && persistedProfile !== null
+                ? (persistedProfile as { nickname?: unknown }).nickname
+                : undefined,
+            ),
           },
         };
       },
-      onRehydrateStorage: () => state => state?.markHydrated(),
+      onRehydrateStorage: initialState => () => initialState.markHydrated(),
     },
   ));
 }

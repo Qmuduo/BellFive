@@ -63,6 +63,7 @@ export function RoomEntry({
         />
         <AvatarPicker
           selected={profile.avatarId}
+          disabled={roomActionsBusy}
           onSelect={avatarId => onProfileChange({ ...profile, avatarId })}
         />
       </View>

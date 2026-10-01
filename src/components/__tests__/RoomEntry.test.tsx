@@ -63,6 +63,7 @@ describe('RoomEntry', () => {
     expect(screen.getByRole('button', { name: 'Join Room' })).toBeDisabled();
     expect(screen.getByLabelText('Room code')).toBeDisabled();
     expect(screen.getByLabelText('Nickname')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'banana avatar' })).toBeDisabled();
   });
 
   it('shows a caller-provided busy label while room controls are disabled', async () => {

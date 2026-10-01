@@ -60,6 +60,31 @@ describe('local player profile store', () => {
     }));
   });
 
+  it('recovers from malformed persisted profile fields and completes hydration', async () => {
+    const storage = createAsyncMemoryStorage(JSON.stringify({
+      state: { profile: { nickname: 42, avatarId: null } },
+      version: 0,
+    }));
+    const store = createProfileStore(storage);
+
+    await waitFor(() => expect(store.getState()).toMatchObject({
+      hydrated: true,
+      profile: { nickname: '', avatarId: 'strawberry' },
+    }));
+  });
+
+  it('completes hydration when local storage cannot be read', async () => {
+    const storage: StateStorage = {
+      getItem: async () => { throw new Error('storage unavailable'); },
+      setItem: async () => undefined,
+      removeItem: async () => undefined,
+    };
+    const store = createProfileStore(storage);
+
+    await waitFor(() => expect(store.getState().hydrated).toBe(true));
+    expect(store.getState().profile).toEqual({ nickname: '', avatarId: 'strawberry' });
+  });
+
   it('persists profile edits without persisting hydration state', () => {
     const storage = createMemoryStorage();
     const store = createProfileStore(storage);
@@ -81,4 +106,12 @@ function createMemoryStorage() {
     removeItem: name => { values.delete(name); },
   };
   return Object.assign(storage, { values });
+}
+
+function createAsyncMemoryStorage(value: string): StateStorage {
+  return {
+    getItem: async () => value,
+    setItem: async () => undefined,
+    removeItem: async () => undefined,
+  };
 }

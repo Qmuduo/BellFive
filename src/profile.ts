@@ -29,11 +29,14 @@ export const DEFAULT_PLAYER_PROFILE: PlayerProfile = {
 };
 
 export function sanitizePlayerProfile(
-  profile: PlayerProfileInput,
+  profile: unknown,
   playerId: PlayerId,
 ): PlayerProfile {
-  const nickname = normalizeNickname(profile.nickname);
-  const avatarId = isAvatarId(profile.avatarId) ? profile.avatarId : 'strawberry';
+  const fields = isProfileRecord(profile) ? profile : {};
+  const nickname = normalizeNickname(fields.nickname);
+  const avatarId = typeof fields.avatarId === 'string' && isAvatarId(fields.avatarId)
+    ? fields.avatarId
+    : 'strawberry';
   return {
     nickname: nickname || `Player ${playerId}`,
     avatarId,
@@ -44,8 +47,12 @@ export function isAvatarId(value: string): value is AvatarId {
   return AVATAR_OPTIONS.includes(value as AvatarId);
 }
 
-export function normalizeNickname(value: string): string {
-  return Array.from(value.trim()).slice(0, 12).join('');
+export function normalizeNickname(value: unknown): string {
+  return typeof value === 'string' ? Array.from(value.trim()).slice(0, 12).join('') : '';
+}
+
+function isProfileRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function getPlayerDisplayName(profile: PlayerProfile, playerId: PlayerId): string {
