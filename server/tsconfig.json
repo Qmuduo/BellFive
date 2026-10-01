@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "../src/game/**/*.ts",
+    "../src/network/protocol.ts"
+  ],
+  "exclude": [
+    "src/__tests__",
+    "../src/**/__tests__/**"
+  ]
+}
