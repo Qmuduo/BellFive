@@ -31,6 +31,7 @@ export function createGame(random: RandomSource = Math.random): GameState {
     status: 'playing',
     turn: 'A',
     winner: null,
+    ringBlockedUntilFlip: { A: false, B: false },
     lastRingOutcome: null,
     players: {
       A: { drawPile: shuffledDeck.slice(0, 30), playedPile: [] },
@@ -54,6 +55,10 @@ export function flipCard(state: GameState): GameState {
   return {
     ...state,
     turn: nextTurn,
+    ringBlockedUntilFlip: {
+      ...state.ringBlockedUntilFlip,
+      [state.turn]: false,
+    },
     lastRingOutcome: null,
     players: {
       ...state.players,
@@ -70,6 +75,32 @@ export function checkWinner(state: GameState): PlayerId | null {
   if (state.players[state.turn].drawPile.length > 0) return null;
 
   return state.turn === 'A' ? 'B' : 'A';
+}
+
+export function canPlayerRing(state: GameState, caller: PlayerId): boolean {
+  return state.status === 'playing' && !state.ringBlockedUntilFlip[caller];
+}
+
+export function finishGameByTimeout(state: GameState): GameState {
+  if (state.status === 'finished') return state;
+
+  const totalCards = (playerId: PlayerId) => {
+    const player = state.players[playerId];
+    return player.drawPile.length + player.playedPile.length;
+  };
+  const playerATotal = totalCards('A');
+  const playerBTotal = totalCards('B');
+
+  return {
+    ...state,
+    status: 'finished',
+    winner:
+      playerATotal === playerBTotal
+        ? null
+        : playerATotal > playerBTotal
+          ? 'A'
+          : 'B',
+  };
 }
 
 export function collectPlayedCards(state: GameState, caller: PlayerId): GameState {
@@ -101,7 +132,7 @@ export function transferPenaltyCards(
   caller: PlayerId,
 ): Pick<RingResult, 'state' | 'movedCardCount'> {
   const opponent: PlayerId = caller === 'A' ? 'B' : 'A';
-  const movedCards = state.players[caller].drawPile.slice(0, 2);
+  const movedCards = state.players[caller].drawPile.slice(0, 1);
   const remainingCards = state.players[caller].drawPile.slice(movedCards.length);
 
   return {
@@ -142,7 +173,14 @@ export function ringBell(state: GameState, caller: PlayerId): RingResult {
 
   const penalty = transferPenaltyCards(state, caller);
   return {
-    state: { ...penalty.state, lastRingOutcome: outcome },
+    state: {
+      ...penalty.state,
+      ringBlockedUntilFlip: {
+        ...penalty.state.ringBlockedUntilFlip,
+        [caller]: true,
+      },
+      lastRingOutcome: outcome,
+    },
     outcome,
     movedCardCount: penalty.movedCardCount,
   };

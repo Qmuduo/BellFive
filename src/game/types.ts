@@ -33,6 +33,7 @@ export type GameState = Readonly<{
   status: GameStatus;
   turn: PlayerId;
   winner: PlayerId | null;
+  ringBlockedUntilFlip: Readonly<Record<PlayerId, boolean>>;
   players: Readonly<Record<PlayerId, PlayerState>>;
   lastRingOutcome: RingOutcome | null;
 }>;

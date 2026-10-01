@@ -1,6 +1,8 @@
 import { CARD_DEFINITIONS } from '../cards';
 import {
   createGame,
+  canPlayerRing,
+  finishGameByTimeout,
   flipCard,
   restartGame,
   ringBell,
@@ -23,6 +25,7 @@ const makeState = (
   status: 'playing',
   turn,
   winner: null,
+  ringBlockedUntilFlip: { A: false, B: false },
   lastRingOutcome: null,
   players: { A: playerA, B: playerB },
 });
@@ -49,6 +52,7 @@ describe('deck setup and flips', () => {
     expect(game.status).toBe('playing');
     expect(game.turn).toBe('A');
     expect(game.winner).toBeNull();
+    expect(game.ringBlockedUntilFlip).toEqual({ A: false, B: false });
     expect(game.players.A.drawPile).toHaveLength(30);
     expect(game.players.B.drawPile).toHaveLength(30);
     expect(game.players.A.playedPile).toEqual([]);
@@ -129,10 +133,10 @@ describe('ring and pile transitions', () => {
   it.each([
     { available: 0, moved: 0 },
     { available: 1, moved: 1 },
-    { available: 2, moved: 2 },
-    { available: 3, moved: 2 },
+    { available: 2, moved: 1 },
+    { available: 3, moved: 1 },
   ])(
-    'transfers at most two caller cards when $available are available',
+    'transfers at most one caller card when $available are available',
     ({ available, moved }) => {
       const callerCards = CARD_DEFINITIONS.slice(0, available);
       const opponentCard = CARD_DEFINITIONS[10];
@@ -171,11 +175,42 @@ describe('ring and pile transitions', () => {
     const result = ringBell(state, 'A');
 
     expect(result.outcome).toBe('wrong');
-    expect(result.movedCardCount).toBe(2);
-    expect(result.state.players.A.drawPile).toEqual(CARD_DEFINITIONS.slice(2, 3));
-    expect(result.state.players.B.drawPile).toEqual(CARD_DEFINITIONS.slice(0, 2));
+    expect(result.movedCardCount).toBe(1);
+    expect(result.state.players.A.drawPile).toEqual(CARD_DEFINITIONS.slice(1, 3));
+    expect(result.state.players.B.drawPile).toEqual(CARD_DEFINITIONS.slice(0, 1));
     expect(result.state.turn).toBe('B');
     expect(result.state.lastRingOutcome).toBe('wrong');
+    expect(canPlayerRing(result.state, 'A')).toBe(false);
+    expect(canPlayerRing(result.state, 'B')).toBe(true);
+  });
+
+  it('unblocks a false ringer after that player successfully flips their next card', () => {
+    const state = makeState(
+      { drawPile: CARD_DEFINITIONS.slice(0, 3), playedPile: [makeCard('A-top', ['banana'])] },
+      { drawPile: CARD_DEFINITIONS.slice(3, 5), playedPile: [makeCard('B-top', ['pear'])] },
+      'B',
+    );
+    const afterWrongRing = ringBell(state, 'A').state;
+    const afterBFlip = flipCard(afterWrongRing);
+    const afterANextFlip = flipCard(afterBFlip);
+
+    expect(canPlayerRing(afterWrongRing, 'A')).toBe(false);
+    expect(canPlayerRing(afterBFlip, 'A')).toBe(false);
+    expect(canPlayerRing(afterANextFlip, 'A')).toBe(true);
+  });
+
+  it('counts draw and played cards for timeout scoring and draws on equal totals', () => {
+    const aLeads = makeState(
+      { drawPile: CARD_DEFINITIONS.slice(0, 2), playedPile: [makeCard('A-played', ['banana'])] },
+      { drawPile: [CARD_DEFINITIONS[2]], playedPile: [makeCard('B-played', ['pear'])] },
+    );
+    const tied = makeState(
+      { drawPile: [CARD_DEFINITIONS[0]], playedPile: [makeCard('A-played', ['banana'])] },
+      { drawPile: [CARD_DEFINITIONS[1]], playedPile: [makeCard('B-played', ['pear'])] },
+    );
+
+    expect(finishGameByTimeout(aLeads)).toMatchObject({ status: 'finished', winner: 'A' });
+    expect(finishGameByTimeout(tied)).toMatchObject({ status: 'finished', winner: null });
   });
 });
 

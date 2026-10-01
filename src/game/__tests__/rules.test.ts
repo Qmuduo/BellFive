@@ -13,6 +13,7 @@ const makeState = (
   status: 'playing',
   turn: 'A',
   winner: null,
+  ringBlockedUntilFlip: { A: false, B: false },
   lastRingOutcome: null,
   players: {
     A: { drawPile: [], playedPile: playerAPlayed },
