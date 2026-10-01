@@ -51,6 +51,19 @@ describe('room protocol decoding', () => {
         JSON.stringify({ type: 'room.snapshot', snapshot: { ...snapshot, tableVersion: -1 } }),
       ),
     ).toBeNull();
+    expect(
+      decodeServerMessage(
+        JSON.stringify({ type: 'room.snapshot', snapshot: { ...snapshot, remainingSeconds: -1 } }),
+      ),
+    ).toBeNull();
+    expect(
+      decodeServerMessage(
+        JSON.stringify({
+          type: 'room.snapshot',
+          snapshot: { ...snapshot, lastRingEvent: { version: 1, caller: 'C', outcome: 'wrong', movedCardCount: 1 } },
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('accepts room closure notifications and rejects malformed ones', () => {
@@ -86,6 +99,11 @@ describe('room snapshots', () => {
     expect(serialized).not.toContain('C004');
     expect(serialized).not.toContain('C030');
     expect(serialized).not.toContain('drawPile');
+    expect(snapshot).toMatchObject({
+      remainingSeconds: 300,
+      ringBlockedUntilFlip: { A: false, B: false },
+      lastRingEvent: { version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 },
+    });
   });
 
   it('represents the waiting room without inventing cards or a turn', () => {
@@ -96,6 +114,8 @@ describe('room snapshots', () => {
         game: null,
         connected: { A: true, B: false },
         tableVersion: 0,
+        remainingSeconds: null,
+        lastRingEvent: null,
       },
       'A',
     );
@@ -105,6 +125,8 @@ describe('room snapshots', () => {
     expect(snapshot.players.B.connected).toBe(false);
     expect(snapshot.visibleCounts).toBeNull();
     expect(snapshot.canRing).toBe(false);
+    expect(snapshot.remainingSeconds).toBeNull();
+    expect(snapshot.lastRingEvent).toBeNull();
   });
 });
 
@@ -113,6 +135,7 @@ function createRoomSource(): RoomSnapshotSource {
     status: 'playing',
     turn: 'A',
     winner: null,
+    ringBlockedUntilFlip: { A: false, B: false },
     lastRingOutcome: null,
     players: {
       A: {
@@ -135,5 +158,8 @@ function createRoomSource(): RoomSnapshotSource {
     game,
     connected: { A: true, B: true },
     tableVersion: 2,
+    ringVersion: 1,
+    remainingSeconds: 300,
+    lastRingEvent: { version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 },
   };
 }

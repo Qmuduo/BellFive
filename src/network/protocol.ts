@@ -31,6 +31,13 @@ export type PlayerSnapshot = Readonly<{
   topCard: CardDefinition | null;
 }>;
 
+export type RingFeedbackEvent = Readonly<{
+  version: number;
+  caller: PlayerId;
+  outcome: RingOutcome;
+  movedCardCount: number;
+}>;
+
 export type RoomSnapshot = Readonly<{
   roomCode: string;
   phase: RoomPhase;
@@ -43,6 +50,9 @@ export type RoomSnapshot = Readonly<{
   canRing: boolean;
   tableVersion: number;
   ringVersion?: number;
+  remainingSeconds: number | null;
+  ringBlockedUntilFlip: Readonly<Record<PlayerId, boolean>>;
+  lastRingEvent: RingFeedbackEvent | null;
 }>;
 
 export type RoomSnapshotSource = Readonly<{
@@ -52,6 +62,8 @@ export type RoomSnapshotSource = Readonly<{
   connected: Readonly<Record<PlayerId, boolean>>;
   tableVersion: number;
   ringVersion?: number;
+  remainingSeconds: number | null;
+  lastRingEvent: RingFeedbackEvent | null;
 }>;
 
 export type ServerMessage =
@@ -235,6 +247,9 @@ export function createRoomSnapshot(
     canRing: visibleCounts ? canRing(visibleCounts) : false,
     tableVersion: source.tableVersion,
     ringVersion: source.ringVersion ?? 0,
+    remainingSeconds: source.remainingSeconds,
+    ringBlockedUntilFlip: source.game?.ringBlockedUntilFlip ?? { A: false, B: false },
+    lastRingEvent: source.lastRingEvent,
   };
 }
 
@@ -266,7 +281,10 @@ function isRoomSnapshot(value: unknown): value is RoomSnapshot {
     !(value.visibleCounts === null || isVisibleCounts(value.visibleCounts)) ||
     typeof value.canRing !== 'boolean' ||
     !isNonNegativeInteger(value.tableVersion) ||
-    (value.ringVersion !== undefined && !isNonNegativeInteger(value.ringVersion))
+    (value.ringVersion !== undefined && !isNonNegativeInteger(value.ringVersion)) ||
+    !isNullableNonNegativeInteger(value.remainingSeconds) ||
+    !isPlayerBooleanRecord(value.ringBlockedUntilFlip) ||
+    !(value.lastRingEvent === null || isRingFeedbackEvent(value.lastRingEvent))
   ) {
     return false;
   }
@@ -297,6 +315,25 @@ function isCardDefinition(value: unknown): value is CardDefinition {
 function isVisibleCounts(value: unknown): value is VisibleCounts {
   if (!isRecord(value) || !isNonNegativeInteger(value.wildBellCount)) return false;
   return FRUIT_TYPES.every(fruit => isNonNegativeInteger(value[fruit]));
+}
+
+function isPlayerBooleanRecord(value: unknown): value is Record<PlayerId, boolean> {
+  return (
+    isRecord(value) &&
+    typeof value.A === 'boolean' &&
+    typeof value.B === 'boolean'
+  );
+}
+
+function isRingFeedbackEvent(value: unknown): value is RingFeedbackEvent {
+  return (
+    isRecord(value) &&
+    isNonNegativeInteger(value.version) &&
+    value.version > 0 &&
+    isPlayerId(value.caller) &&
+    isRingOutcome(value.outcome) &&
+    isNonNegativeInteger(value.movedCardCount)
+  );
 }
 
 function isRoomCode(value: unknown): value is string {
