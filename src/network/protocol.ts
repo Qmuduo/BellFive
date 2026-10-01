@@ -13,6 +13,7 @@ export type RoomPhase = 'waiting' | 'playing' | 'connection-paused' | 'finished'
 export type ClientMessage =
   | { type: 'room.create'; requestId: string }
   | { type: 'room.join'; requestId: string; roomCode: string }
+  | { type: 'room.leave'; requestId: string }
   | {
       type: 'room.reconnect';
       requestId: string;
@@ -41,6 +42,7 @@ export type RoomSnapshot = Readonly<{
   visibleCounts: VisibleCounts | null;
   canRing: boolean;
   tableVersion: number;
+  ringVersion?: number;
 }>;
 
 export type RoomSnapshotSource = Readonly<{
@@ -49,6 +51,7 @@ export type RoomSnapshotSource = Readonly<{
   game: GameState | null;
   connected: Readonly<Record<PlayerId, boolean>>;
   tableVersion: number;
+  ringVersion?: number;
 }>;
 
 export type ServerMessage =
@@ -61,6 +64,8 @@ export type ServerMessage =
       snapshot: RoomSnapshot;
     }
   | { type: 'room.snapshot'; snapshot: RoomSnapshot }
+  | { type: 'room.left'; requestId: string }
+  | { type: 'room.closed'; code: string; message: string }
   | {
       type: 'action.result';
       actionId: string;
@@ -84,8 +89,9 @@ export function decodeClientMessage(raw: string): ClientMessage | null {
 
   switch (value.type) {
     case 'room.create':
+    case 'room.leave':
       return isNonEmptyString(value.requestId)
-        ? { type: 'room.create', requestId: value.requestId }
+        ? { type: value.type, requestId: value.requestId }
         : null;
     case 'room.join':
       return isNonEmptyString(value.requestId) && isRoomCode(value.roomCode)
@@ -149,6 +155,14 @@ export function decodeServerMessage(raw: string): ServerMessage | null {
     case 'room.snapshot':
       return isRoomSnapshot(value.snapshot)
         ? { type: 'room.snapshot', snapshot: value.snapshot }
+        : null;
+    case 'room.left':
+      return isNonEmptyString(value.requestId)
+        ? { type: 'room.left', requestId: value.requestId }
+        : null;
+    case 'room.closed':
+      return isNonEmptyString(value.code) && isNonEmptyString(value.message)
+        ? { type: 'room.closed', code: value.code, message: value.message }
         : null;
     case 'action.result':
       if (
@@ -220,6 +234,7 @@ export function createRoomSnapshot(
     visibleCounts,
     canRing: visibleCounts ? canRing(visibleCounts) : false,
     tableVersion: source.tableVersion,
+    ringVersion: source.ringVersion ?? 0,
   };
 }
 
@@ -250,7 +265,8 @@ function isRoomSnapshot(value: unknown): value is RoomSnapshot {
     !(value.lastRingOutcome === null || isRingOutcome(value.lastRingOutcome)) ||
     !(value.visibleCounts === null || isVisibleCounts(value.visibleCounts)) ||
     typeof value.canRing !== 'boolean' ||
-    !isNonNegativeInteger(value.tableVersion)
+    !isNonNegativeInteger(value.tableVersion) ||
+    (value.ringVersion !== undefined && !isNonNegativeInteger(value.ringVersion))
   ) {
     return false;
   }

@@ -52,12 +52,54 @@ describe('friend room game store', () => {
 
     fixture.handlers.onSession?.(makeSession('B'));
     fixture.store.getState().leaveRoom();
-    expect(fixture.client.disconnectCalls).toBe(1);
+    expect(fixture.client.leaveRoomCalls).toBe(1);
+    expect(fixture.store.getState()).toMatchObject({
+      roomCode: null,
+      localPlayerId: null,
+      roomSnapshot: null,
+      leavingRoom: true,
+    });
+    fixture.store.getState().createRoom();
+    fixture.store.getState().joinRoom('XYZ234');
+    expect(fixture.client.createRoomCalls).toBe(0);
+    expect(fixture.client.joinRoomCalls).toEqual(['BAD123']);
+    fixture.handlers.onRoomLeft?.();
+    expect(fixture.store.getState().leavingRoom).toBe(false);
+  });
+
+  it('returns to the lobby when the server reports that the room closed', () => {
+    const fixture = makeStore();
+    fixture.store.getState().createRoom();
+    fixture.handlers.onSession?.(makeSession('B'));
+
+    fixture.handlers.onRoomClosed?.({
+      type: 'room.closed',
+      code: 'PEER_LEFT',
+      message: 'The other player left the room.',
+    });
+
     expect(fixture.store.getState()).toMatchObject({
       roomCode: null,
       localPlayerId: null,
       roomSnapshot: null,
       connectionStatus: 'disconnected',
+      leavingRoom: false,
+      error: { code: 'PEER_LEFT' },
+    });
+  });
+
+  it('returns to the lobby when a reconnect discovers the room no longer exists', () => {
+    const fixture = makeStore();
+    fixture.store.getState().createRoom();
+    fixture.handlers.onSession?.(makeSession('A'));
+    fixture.handlers.onError?.({ code: 'ROOM_NOT_FOUND', message: 'The room service restarted.' });
+
+    expect(fixture.store.getState()).toMatchObject({
+      roomCode: null,
+      localPlayerId: null,
+      roomSnapshot: null,
+      leavingRoom: false,
+      error: { code: 'ROOM_NOT_FOUND' },
     });
   });
 
@@ -91,6 +133,7 @@ class FakeGameClient implements GameClientPort {
   ringCalls: number[] = [];
   rematchCalls = 0;
   disconnectCalls = 0;
+  leaveRoomCalls = 0;
 
   createRoom(): string {
     this.createRoomCalls += 1;
@@ -119,6 +162,10 @@ class FakeGameClient implements GameClientPort {
 
   disconnect(): void {
     this.disconnectCalls += 1;
+  }
+
+  leaveRoom(): void {
+    this.leaveRoomCalls += 1;
   }
 }
 

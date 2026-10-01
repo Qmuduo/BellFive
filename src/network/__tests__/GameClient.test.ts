@@ -137,6 +137,107 @@ describe('GameClient room commands', () => {
     expect(sockets).toHaveLength(2);
     jest.useRealTimers();
   });
+
+  it('reports a failed create or join connection so the lobby can offer a retry', () => {
+    const errors: string[] = [];
+    const { client, sockets } = createClient({
+      handlers: { onError: error => errors.push(error.code) },
+    });
+    client.createRoom();
+    sockets[0].closeFromServer();
+
+    expect(client.getStatus()).toBe('disconnected');
+    expect(errors).toEqual(['CONNECTION_CLOSED']);
+  });
+
+  it('sends a room leave request and closes its session after acknowledgment', () => {
+    const completed: string[] = [];
+    const { client, sockets } = createClient({ handlers: { onRoomLeft: () => completed.push('left') } });
+    client.createRoom();
+    sockets[0].open();
+    sockets[0].receive(makeSession('A'));
+
+    const requestId = client.leaveRoom();
+    if (!requestId) throw new Error('Expected an active room leave request.');
+
+    expect(sockets[0].sentMessages()).toContainEqual({ type: 'room.leave', requestId });
+    expect(client.getRoomCode()).toBe('ABCD23');
+    sockets[0].receive({ type: 'room.left', requestId });
+    expect(client.getRoomCode()).toBeNull();
+    expect(client.getStatus()).toBe('disconnected');
+    expect(sockets[0].closed).toBe(true);
+    expect(completed).toEqual(['left']);
+  });
+
+  it('clears its session and reports when the other player closes the room', () => {
+    const closed: string[] = [];
+    const { client, sockets } = createClient({
+      handlers: { onRoomClosed: message => closed.push(message.code) },
+    });
+    client.createRoom();
+    sockets[0].open();
+    sockets[0].receive(makeSession('B'));
+
+    sockets[0].receive({
+      type: 'room.closed',
+      code: 'PEER_LEFT',
+      message: 'The other player left the room.',
+    });
+
+    expect(closed).toEqual(['PEER_LEFT']);
+    expect(client.getRoomCode()).toBeNull();
+    expect(client.getStatus()).toBe('disconnected');
+    expect(sockets[0].closed).toBe(true);
+  });
+
+  it('sends a pending leave after reconnect without restoring the match UI', () => {
+    jest.useFakeTimers();
+    const sessions: string[] = [];
+    const { client, sockets } = createClient({
+      reconnectDelayMs: 100,
+      handlers: { onSession: session => sessions.push(session.roomCode) },
+    });
+    client.createRoom();
+    sockets[0].open();
+    sockets[0].receive(makeSession('A'));
+    sockets[0].closeFromServer();
+
+    client.leaveRoom();
+    expect(sockets).toHaveLength(2);
+    sockets[1].open();
+    expect(sockets[1].sentMessages()[0]).toMatchObject({ type: 'room.reconnect' });
+    sockets[1].receive(makeSession('A'));
+
+    const leave = sockets[1].sentMessages().find(message => (message as { type: string }).type === 'room.leave') as { requestId: string } | undefined;
+    expect(leave).toBeDefined();
+    expect(sessions).toEqual(['ABCD23']);
+    sockets[1].receive({ type: 'room.left', requestId: leave!.requestId });
+    expect(client.getRoomCode()).toBeNull();
+    jest.useRealTimers();
+  });
+
+  it('retries an unacknowledged leave with the same request ID', () => {
+    jest.useFakeTimers();
+    const { client, sockets } = createClient();
+    client.createRoom();
+    sockets[0].open();
+    sockets[0].receive(makeSession('A'));
+    const requestId = client.leaveRoom();
+    if (!requestId) throw new Error('Expected an active room leave request.');
+
+    jest.advanceTimersByTime(2_000);
+
+    expect(sockets[0].sentMessages()).toEqual([
+      expect.objectContaining({ type: 'room.create' }),
+      { type: 'room.leave', requestId },
+      { type: 'room.leave', requestId },
+    ]);
+    sockets[0].receive({ type: 'room.left', requestId });
+    jest.advanceTimersByTime(4_000);
+    expect(client.getRoomCode()).toBeNull();
+    expect(sockets[0].sentMessages()).toHaveLength(3);
+    jest.useRealTimers();
+  });
 });
 
 function createClient(options: { reconnectDelayMs?: number; handlers?: GameClientHandlers } = {}) {

@@ -107,6 +107,49 @@ describe('WebSocket room transport', () => {
     });
   });
 
+  it('closes a connection after an invalid seat token reconnect attempt', async () => {
+    const playerA = await connect(server.webSocketUrl);
+    const sessionPromise = nextMessage(playerA, message => message.type === 'room.session');
+    playerA.send(JSON.stringify({ type: 'room.create', requestId: 'create-a' }));
+    const session = await sessionPromise;
+    if (session.type !== 'room.session') throw new Error('Expected Player A room session.');
+
+    const invalidClient = await connect(server.webSocketUrl);
+    const errorPromise = nextMessage(
+      invalidClient,
+      message => message.type === 'error' && message.code === 'INVALID_SEAT_TOKEN',
+    );
+    const closePromise = new Promise<number>(resolve => invalidClient.once('close', code => resolve(code)));
+    invalidClient.send(JSON.stringify({
+      type: 'room.reconnect',
+      requestId: 'bad-reconnect',
+      roomCode: session.roomCode,
+      seatToken: 'not-the-seat-token',
+    }));
+
+    await expect(errorPromise).resolves.toMatchObject({ code: 'INVALID_SEAT_TOKEN' });
+    expect(await closePromise).toBe(4401);
+  });
+
+  it('notifies the remaining phone and releases both seats when a player leaves', async () => {
+    const { playerA, playerB } = await createJoinedSockets();
+    const ackPromise = nextMessage(playerA, message => message.type === 'room.left');
+    const peerClosedPromise = nextMessage(playerB, message => message.type === 'room.closed');
+
+    playerA.send(JSON.stringify({ type: 'room.leave', requestId: 'leave-a' }));
+
+    await expect(ackPromise).resolves.toEqual({ type: 'room.left', requestId: 'leave-a' });
+    await expect(peerClosedPromise).resolves.toMatchObject({ type: 'room.closed', code: 'PEER_LEFT' });
+
+    const newSessionPromise = nextMessage(playerB, message => message.type === 'room.session');
+    playerB.send(JSON.stringify({ type: 'room.create', requestId: 'new-room' }));
+    await expect(newSessionPromise).resolves.toMatchObject({
+      type: 'room.session',
+      requestId: 'new-room',
+      localPlayerId: 'A',
+    });
+  });
+
   async function createJoinedSockets() {
     const playerA = await connect(server.webSocketUrl);
     const aSessionPromise = nextMessage(playerA, message => message.type === 'room.session');

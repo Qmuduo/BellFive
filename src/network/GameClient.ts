@@ -35,6 +35,8 @@ export type GameClientHandlers = Readonly<{
   onSession?: (message: Extract<ServerMessage, { type: 'room.session' }>) => void;
   onSnapshot?: (snapshot: RoomSnapshot) => void;
   onActionResult?: (message: Extract<ServerMessage, { type: 'action.result' }>) => void;
+  onRoomLeft?: () => void;
+  onRoomClosed?: (message: Extract<ServerMessage, { type: 'room.closed' }>) => void;
   onError?: (error: GameClientError) => void;
 }>;
 
@@ -74,6 +76,9 @@ export class GameClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private roomRequest: RoomRequest | null = null;
+  private leaveRequestId: string | null = null;
+  private leaveRequested = false;
+  private leaveTimer: ReturnType<typeof setTimeout> | null = null;
   private roomCode: string | null = null;
   private seatToken: string | null = null;
   private localPlayerId: PlayerId | null = null;
@@ -134,9 +139,30 @@ export class GameClient {
     return this.enqueueAction({ type: 'game.rematch', actionId: this.createIdentifier('action') });
   }
 
+  leaveRoom(): string | null {
+    this.clearReconnectTimer();
+    this.pendingActions.clear();
+    if (!this.roomCode || !this.seatToken) {
+      this.disconnect();
+      return null;
+    }
+
+    this.leaveRequested = true;
+    if (this.socketOpen) {
+      this.beginLeaveRequest();
+    } else {
+      this.setStatus('reconnecting');
+      if (!this.socket) this.connect(true);
+    }
+    return this.leaveRequestId;
+  }
+
   disconnect(): void {
     this.intentionalDisconnect = true;
     this.clearReconnectTimer();
+    this.clearLeaveTimer();
+    this.leaveRequestId = null;
+    this.leaveRequested = false;
     this.roomRequest = null;
     this.roomCode = null;
     this.seatToken = null;
@@ -154,6 +180,9 @@ export class GameClient {
   private resetForNewRoomRequest(): void {
     this.intentionalDisconnect = false;
     this.clearReconnectTimer();
+    this.clearLeaveTimer();
+    this.leaveRequestId = null;
+    this.leaveRequested = false;
     this.roomCode = null;
     this.seatToken = null;
     this.localPlayerId = null;
@@ -230,12 +259,26 @@ export class GameClient {
         this.roomRequest = null;
         this.reconnectAttempts = 0;
         this.clearReconnectTimer();
+        if (this.leaveRequested) {
+          this.beginLeaveRequest();
+          return;
+        }
         this.setStatus('connected');
         this.handlers.onSession?.(message);
         this.flushPendingActions();
         return;
       case 'room.snapshot':
         this.handlers.onSnapshot?.(message.snapshot);
+        return;
+      case 'room.left':
+        if (message.requestId === this.leaveRequestId) {
+          this.finishLeave();
+          this.handlers.onRoomLeft?.();
+        }
+        return;
+      case 'room.closed':
+        this.finishLeave();
+        this.handlers.onRoomClosed?.(message);
         return;
       case 'action.result':
         this.pendingActions.delete(message.actionId);
@@ -249,7 +292,10 @@ export class GameClient {
         }
         if (this.status === 'reconnecting' && TERMINAL_RECONNECT_ERRORS.has(message.code)) {
           this.clearReconnectTimer();
+          this.clearLeaveTimer();
           this.intentionalDisconnect = true;
+          this.leaveRequested = false;
+          this.leaveRequestId = null;
           this.roomCode = null;
           this.seatToken = null;
           this.localPlayerId = null;
@@ -283,7 +329,15 @@ export class GameClient {
 
   private handleSocketClose(): void {
     if (this.intentionalDisconnect) return;
+    if (this.leaveRequested) this.clearLeaveTimer();
     if (!this.seatToken || !this.roomCode) {
+      if (this.roomRequest) {
+        this.roomRequest = null;
+        this.handlers.onError?.({
+          code: 'CONNECTION_CLOSED',
+          message: 'The connection closed before the room response. Check the server and try again.',
+        });
+      }
       this.setStatus('disconnected');
       return;
     }
@@ -324,6 +378,55 @@ export class GameClient {
   private clearReconnectTimer(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+  }
+
+  private clearLeaveTimer(): void {
+    if (this.leaveTimer) clearTimeout(this.leaveTimer);
+    this.leaveTimer = null;
+  }
+
+  private beginLeaveRequest(): void {
+    if (!this.leaveRequested || !this.socketOpen || !this.roomCode || !this.seatToken) return;
+    this.leaveRequestId ??= this.createIdentifier('leave');
+    this.send({ type: 'room.leave', requestId: this.leaveRequestId });
+    this.scheduleLeaveRetry();
+  }
+
+  private scheduleLeaveRetry(): void {
+    this.clearLeaveTimer();
+    this.leaveTimer = setTimeout(() => {
+      this.leaveTimer = null;
+      if (!this.leaveRequested) return;
+      if (this.socketOpen) {
+        this.beginLeaveRequest();
+        return;
+      }
+      if (!this.socket && !this.reconnectTimer && this.roomCode && this.seatToken) {
+        this.connect(true);
+      } else {
+        this.scheduleLeaveRetry();
+      }
+    }, 2_000);
+  }
+
+  private finishLeave(): void {
+    this.intentionalDisconnect = true;
+    this.clearReconnectTimer();
+    this.clearLeaveTimer();
+    this.leaveRequestId = null;
+    this.leaveRequested = false;
+    this.roomRequest = null;
+    this.roomCode = null;
+    this.seatToken = null;
+    this.localPlayerId = null;
+    this.pendingActions.clear();
+
+    const socket = this.socket;
+    this.socket = null;
+    this.socketOpen = false;
+    this.connectionGeneration += 1;
+    socket?.close();
+    this.setStatus('disconnected');
   }
 
   private isCurrentSocket(socket: SocketLike, generation: number): boolean {

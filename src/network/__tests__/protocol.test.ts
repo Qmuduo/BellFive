@@ -16,6 +16,7 @@ describe('room protocol decoding', () => {
       roomCode: 'ABCD23',
       seatToken: 'seat-secret',
     },
+    { type: 'room.leave', requestId: 'request-4' },
     { type: 'game.flip', actionId: 'action-1' },
     { type: 'game.ring', actionId: 'action-2', tableVersion: 4 },
     { type: 'game.rematch', actionId: 'action-3' },
@@ -50,6 +51,24 @@ describe('room protocol decoding', () => {
         JSON.stringify({ type: 'room.snapshot', snapshot: { ...snapshot, tableVersion: -1 } }),
       ),
     ).toBeNull();
+  });
+
+  it('accepts room closure notifications and rejects malformed ones', () => {
+    expect(decodeServerMessage(JSON.stringify({ type: 'room.left', requestId: 'leave-1' }))).toEqual({
+      type: 'room.left',
+      requestId: 'leave-1',
+    });
+    expect(decodeServerMessage(JSON.stringify({
+      type: 'room.closed',
+      code: 'PEER_LEFT',
+      message: 'The other player left the room.',
+    }))).toEqual({
+      type: 'room.closed',
+      code: 'PEER_LEFT',
+      message: 'The other player left the room.',
+    });
+    expect(decodeServerMessage(JSON.stringify({ type: 'room.left' }))).toBeNull();
+    expect(decodeServerMessage(JSON.stringify({ type: 'room.closed', code: '', message: 'Closed.' }))).toBeNull();
   });
 });
 

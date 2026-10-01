@@ -132,6 +132,7 @@ describe('RoomManager authoritative game transitions', () => {
     expect(snapshot.players.B.playedCount).toBe(0);
     expect(snapshot.players.A.playedCount).toBe(0);
     expect(snapshot.tableVersion).toBe(1);
+    expect(snapshot.ringVersion).toBe(1);
   });
 
   it('transfers at most two cards on a wrong ring and never decrements below zero', () => {
@@ -157,6 +158,28 @@ describe('RoomManager authoritative game transitions', () => {
     expect(snapshot.players.A.drawCount).toBe(1);
     expect(snapshot.players.B.drawCount).toBe(3);
     expect(snapshot.tableVersion).toBe(0);
+    expect(snapshot.ringVersion).toBe(1);
+  });
+
+  it('advances ring feedback version for each wrong ring without changing the table version', () => {
+    const rooms = joinBothPlayers(
+      makeRoomManager({
+        gameFactory: () =>
+          customGame({
+            A: { drawPile: [card('C001', ['banana']), card('C002', ['pear']), card('C003', ['grape']), card('C005', ['peach'])], playedPile: [] },
+            B: { drawPile: [card('C004', ['peach'])], playedPile: [] },
+          }),
+      }),
+    );
+
+    rooms.manager.handleMessage('socket-a', { type: 'game.ring', actionId: 'wrong-1', tableVersion: 0 });
+    const secondRing = rooms.manager.handleMessage('socket-b', { type: 'game.ring', actionId: 'wrong-2', tableVersion: 0 });
+
+    expect(messageOf(secondRing, 'socket-b', 'room.snapshot').snapshot).toMatchObject({
+      tableVersion: 0,
+      ringVersion: 2,
+      lastRingOutcome: 'wrong',
+    });
   });
 
   it('ignores a ring for a table that was already collected without applying a penalty', () => {
@@ -273,6 +296,42 @@ describe('RoomManager authoritative game transitions', () => {
 });
 
 describe('RoomManager reconnect and expiry', () => {
+  it('closes the room when a player leaves and notifies the other seat', () => {
+    const rooms = joinBothPlayers(makeRoomManager());
+
+    const left = rooms.manager.handleMessage('socket-a', {
+      type: 'room.leave',
+      requestId: 'leave-a',
+    });
+
+    expect(messageOf(left, 'socket-a', 'room.left')).toEqual({
+      type: 'room.left',
+      requestId: 'leave-a',
+    });
+    expect(messageOf(left, 'socket-b', 'room.closed')).toMatchObject({
+      code: 'PEER_LEFT',
+      message: expect.stringContaining('left'),
+    });
+    expect(messageOf(
+      rooms.manager.handleMessage('socket-a', { type: 'room.leave', requestId: 'leave-a' }),
+      'socket-a',
+      'room.left',
+    )).toEqual({ type: 'room.left', requestId: 'leave-a' });
+
+    const oldRoomJoin = rooms.manager.handleMessage('socket-c', {
+      type: 'room.join',
+      requestId: 'old-room-join',
+      roomCode: rooms.roomCode,
+    });
+    expect(messageOf(oldRoomJoin, 'socket-c', 'error').code).toBe('ROOM_NOT_FOUND');
+
+    const newRoom = rooms.manager.handleMessage('socket-b', {
+      type: 'room.create',
+      requestId: 'create-after-leave',
+    });
+    expect(messageOf(newRoom, 'socket-b', 'room.session').localPlayerId).toBe('A');
+  });
+
   it('pauses actions while a seat is disconnected and resumes after token reconnect', () => {
     const rooms = joinBothPlayers(makeRoomManager());
     const disconnected = rooms.manager.disconnect('socket-b');

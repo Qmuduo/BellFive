@@ -30,6 +30,7 @@ type RoomRecord = {
   seats: Partial<Record<PlayerId, RoomSeat>>;
   game: GameState | null;
   tableVersion: number;
+  ringVersion: number;
   actionResults: Record<PlayerId, Map<string, Extract<ServerMessage, { type: 'action.result' }>>>;
 };
 
@@ -77,6 +78,8 @@ export class RoomManager {
           message.roomCode,
           message.seatToken,
         );
+      case 'room.leave':
+        return this.leaveRoom(connectionId, message.requestId);
       default:
         return this.handleGameAction(connectionId, message);
     }
@@ -138,6 +141,7 @@ export class RoomManager {
       },
       game: null,
       tableVersion: 0,
+      ringVersion: 0,
       actionResults: { A: new Map(), B: new Map() },
     };
 
@@ -239,6 +243,34 @@ export class RoomManager {
     return events;
   }
 
+  private leaveRoom(connectionId: string, requestId: string): RoomManagerEvent[] {
+    const connection = this.connectionToSeat.get(connectionId);
+    const room = connection ? this.rooms.get(connection.roomCode) : undefined;
+    const seat = connection ? room?.seats[connection.playerId] : undefined;
+    if (!connection || !room || !seat || seat.connectionId !== connectionId) {
+      return [this.event(connectionId, { type: 'room.left', requestId })];
+    }
+
+    const events: RoomManagerEvent[] = [
+      this.event(connectionId, { type: 'room.left', requestId }),
+    ];
+    for (const otherSeat of Object.values(room.seats)) {
+      const otherConnectionId = otherSeat?.connectionId;
+      if (!otherConnectionId) continue;
+      this.connectionToSeat.delete(otherConnectionId);
+      if (otherConnectionId !== connectionId) {
+        events.push(this.event(otherConnectionId, {
+          type: 'room.closed',
+          code: 'PEER_LEFT',
+          message: 'The other player left the room.',
+        }));
+      }
+    }
+
+    this.rooms.delete(room.roomCode);
+    return events;
+  }
+
   private handleGameAction(connectionId: string, message: ActionMessage): RoomManagerEvent[] {
     const connection = this.connectionToSeat.get(connectionId);
     if (!connection) {
@@ -296,6 +328,7 @@ export class RoomManager {
 
       const result = ringBell(room.game, connection.playerId);
       room.game = result.state;
+      room.ringVersion += 1;
       if (result.outcome === 'correct') room.tableVersion += 1;
       this.updateRoomPhase(room);
       room.lastActivityAt = this.now();
@@ -395,6 +428,7 @@ export class RoomManager {
         B: Boolean(room.seats.B?.connectionId),
       },
       tableVersion: room.tableVersion,
+      ringVersion: room.ringVersion,
     };
     return createRoomSnapshot(source, localPlayerId);
   }

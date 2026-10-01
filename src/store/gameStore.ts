@@ -14,6 +14,7 @@ export interface GameClientPort {
   flip(): string;
   ring(tableVersion: number): string;
   rematch(): string;
+  leaveRoom(): void;
   disconnect(): void;
 }
 
@@ -24,6 +25,7 @@ type GameStore = {
   roomSnapshot: RoomSnapshot | null;
   roomCode: string | null;
   localPlayerId: PlayerId | null;
+  leavingRoom: boolean;
   error: GameClientError | null;
   lastActionResult: Extract<ServerMessage, { type: 'action.result' }> | null;
   client: GameClientPort | null;
@@ -47,6 +49,7 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
             roomCode: message.roomCode,
             localPlayerId: message.localPlayerId,
             roomSnapshot: message.snapshot,
+            leavingRoom: false,
             error: null,
           });
           return;
@@ -70,7 +73,22 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
         onSession: message => applyServerMessage(message),
         onSnapshot: snapshot => applyServerMessage({ type: 'room.snapshot', snapshot }),
         onActionResult: message => applyServerMessage(message),
-        onError: error => set({ error }),
+        onRoomLeft: () => set({ connectionStatus: 'disconnected', leavingRoom: false }),
+        onRoomClosed: message => set({
+          connectionStatus: 'disconnected',
+          roomSnapshot: null,
+          roomCode: null,
+          localPlayerId: null,
+          leavingRoom: false,
+          error: { code: message.code, message: message.message },
+          lastActionResult: null,
+        }),
+        onError: error => set({
+          ...(error.code === 'ROOM_NOT_FOUND' || error.code === 'INVALID_SEAT_TOKEN'
+            ? { roomSnapshot: null, roomCode: null, localPlayerId: null, leavingRoom: false }
+            : {}),
+          error,
+        }),
       };
       const client = clientFactory(handlers);
       set({ client });
@@ -82,14 +100,17 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
       roomSnapshot: null,
       roomCode: null,
       localPlayerId: null,
+      leavingRoom: false,
       error: null,
       lastActionResult: null,
       client: null,
       createRoom: () => {
+        if (get().leavingRoom) return;
         set({ roomSnapshot: null, roomCode: null, localPlayerId: null, error: null, lastActionResult: null });
         getClient().createRoom();
       },
       joinRoom: code => {
+        if (get().leavingRoom) return;
         set({ roomSnapshot: null, roomCode: null, localPlayerId: null, error: null, lastActionResult: null });
         getClient().joinRoom(code);
       },
@@ -107,9 +128,10 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
         get().client?.rematch();
       },
       leaveRoom: () => {
-        get().client?.disconnect();
+        if (get().leavingRoom) return;
+        get().client?.leaveRoom();
         set({
-          connectionStatus: 'disconnected',
+          leavingRoom: true,
           roomSnapshot: null,
           roomCode: null,
           localPlayerId: null,

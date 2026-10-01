@@ -64,7 +64,14 @@ export async function createWebSocketServer(
       }
 
       try {
-        sendEvents(roomManager.handleMessage(connectionId, message));
+        const events = roomManager.handleMessage(connectionId, message);
+        sendEvents(events);
+        const invalidSeatToken = message.type === 'room.reconnect' && events.some(event =>
+          event.connectionId === connectionId &&
+          event.message.type === 'error' &&
+          event.message.code === 'INVALID_SEAT_TOKEN'
+        );
+        if (invalidSeatToken) socket.close(4401, 'Invalid seat token');
       } catch {
         sendMessage(socket, {
           type: 'error',
