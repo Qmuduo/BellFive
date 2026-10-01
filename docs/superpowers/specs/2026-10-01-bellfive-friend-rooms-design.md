@@ -56,11 +56,12 @@ The project will use the first approach. No provider-specific hosting choice is 
 - A random seat token is issued at room creation/join. It binds a connection to one seat and is required to reconnect during the current app session. It is a temporary session credential, not an account.
 - Room state is memory-only. A room with no recent activity expires after 30 minutes. A waiting room expires 15 minutes after creation if no second player joins. The server removes expired rooms.
 - If a socket drops while the server is running, the seat remains reserved. The client shows a reconnecting state and retries with its seat token. The room enters a connection-paused phase: the server rejects game actions and the UI suspends the action controls until both seats reconnect. Relaunching the app or restarting the server does not guarantee recovery.
+- If a player explicitly leaves, the server closes and removes the room, acknowledges the leaver, and sends the connected opponent back to room entry. A disconnected opponent discovers the closed room when reconnecting and is also returned to room entry.
 - Player A may request a rematch only after the current game is finished. The server rejects rematch requests from Player B and rejects requests during an active game.
 
 ## Protocol and Authority
 
-The client sends only intents: create room, join room, flip, ring, and rematch. Each gameplay or rematch action has a unique action ID, and the server deduplicates retries from the same seat so a reconnect cannot apply one penalty twice. The server derives the acting player from the validated seat token; the client cannot choose the player identity in an action message.
+The client sends only intents: create room, join room, leave room, flip, ring, and rematch. Each gameplay or rematch action has a unique action ID, and the server deduplicates retries from the same seat so a reconnect cannot apply one penalty twice. Leave requests reuse their request ID until the server confirms the room has closed; repeated leave requests are safe. The client holds room entry controls while a leave is pending. The server derives the acting player from the validated seat token; the client cannot choose the player identity in an action message.
 
 For each room, the server processes messages sequentially:
 
@@ -70,13 +71,13 @@ For each room, the server processes messages sequentially:
 - A wrong ring transfers at most two cards from the caller's draw-pile top to the opponent's draw-pile bottom.
 - A rematch creates a new shuffled game from `CARD_DEFINITIONS`; it does not reuse or extend the previous decks.
 
-Each visible-table state has a monotonically increasing `tableVersion`. A ring request includes the version shown on that phone. A version mismatch means the visible cards changed before the server processed the request, so the request is ignored as stale without a penalty. A wrong ring does not change the visible cards and therefore does not invalidate the other player's ring against the same table. This prevents a delayed duplicate ring after a correct collection from becoming an unintended wrong-ring penalty.
+Each visible-table state has a monotonically increasing `tableVersion`. A ring request includes the version shown on that phone. A version mismatch means the visible cards changed before the server processed the request, so the request is ignored as stale without a penalty. A wrong ring does not change the visible cards and therefore does not invalidate the other player's ring against the same table. This prevents a delayed duplicate ring after a correct collection from becoming an unintended wrong-ring penalty. A separate `ringVersion` advances for every accepted ring so both clients can replay feedback for consecutive equal outcomes.
 
 ## Snapshot and Hidden Cards
 
 The server retains the complete game state. It never sends either draw pile's card definitions or order to a client. A snapshot includes:
 
-- room phase, room code, local player ID, connected state for both seats, turn, winner, and last ring outcome;
+- room phase, room code, local player ID, connected state for both seats, turn, winner, last ring outcome, `tableVersion`, and `ringVersion`;
 - each player's draw-pile count and played-pile count;
 - only the current top card of each played pile;
 - visible fruit counts, wild bell count, `canRing`, and `tableVersion`.
@@ -88,6 +89,7 @@ The same sanitized snapshot is sent to both players except for the recipient-spe
 ## Failure Handling
 
 - Unknown or expired room code: show a join error and allow retry.
+- Explicit leave: delete the room, acknowledge the leaving phone, and notify the other connected phone to return to room entry.
 - Full room: reject the join without displacing either seat.
 - Invalid seat token: reject the command and close the unauthorized connection.
 - Flip from the wrong seat, flip out of turn, or rematch at the wrong phase: reject the command and send the current snapshot.
