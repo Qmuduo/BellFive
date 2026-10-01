@@ -2,7 +2,21 @@ import { act, render, screen, userEvent, within } from '@testing-library/react-n
 import { Share } from 'react-native';
 import GameScreen from '../GameScreen';
 import { useGameStore } from '../../store/gameStore';
+import {
+  playBellSound,
+  playCardFlipSound,
+  playDefeatSound,
+  playVictorySound,
+} from '../../services/gameFeedback';
 import type { RoomSnapshot } from '../../network/protocol';
+
+jest.mock('../../services/gameFeedback', () => ({
+  playBellSound: jest.fn(),
+  playCardFlipSound: jest.fn(),
+  playDefeatSound: jest.fn(),
+  playVictorySound: jest.fn(),
+  triggerGameFeedback: jest.fn(),
+}));
 
 const mockAudioPlayer = {
   isLoaded: true,
@@ -18,6 +32,7 @@ jest.mock('expo-audio', () => ({
 
 describe('GameScreen friend-room flow', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockAudioPlayer.play.mockClear();
     mockAudioPlayer.pause.mockClear();
     mockAudioPlayer.seekTo.mockClear();
@@ -30,6 +45,7 @@ describe('GameScreen friend-room flow', () => {
       leavingRoom: false,
       error: null,
       lastActionResult: null,
+      roomSessionVersion: 0,
       client: null,
       createRoom: jest.fn(),
       joinRoom: jest.fn(),
@@ -280,10 +296,35 @@ describe('GameScreen friend-room flow', () => {
       useGameStore.getState().applyServerMessage({ type: 'room.snapshot', snapshot: ringSnapshot });
     });
 
-    expect(mockAudioPlayer.seekTo).toHaveBeenCalledTimes(1);
-    expect(mockAudioPlayer.play).toHaveBeenCalledTimes(1);
+    expect(playBellSound).toHaveBeenCalledTimes(1);
+    expect(playBellSound).toHaveBeenCalledWith(mockAudioPlayer);
     expect(screen.getByText('DING! Correct Ring')).toBeOnTheScreen();
     expect(screen.getByTestId('collect-to-B')).toBeOnTheScreen();
+  });
+
+  it('uses the same bell sound for a wrong ring event', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.snapshot',
+        snapshot: makeSnapshot('playing', 'A', {
+          turn: 'A',
+          lastRingOutcome: 'wrong',
+          ringVersion: 1,
+          lastRingEvent: { version: 1, caller: 'B', outcome: 'wrong', movedCardCount: 1 },
+        }),
+      });
+    });
+
+    expect(playBellSound).toHaveBeenCalledTimes(1);
+    expect(playBellSound).toHaveBeenCalledWith(mockAudioPlayer);
   });
 
   it('uses the first observed ring event as a reconnect baseline', async () => {
@@ -299,8 +340,138 @@ describe('GameScreen friend-room flow', () => {
     });
     await render(<GameScreen />);
 
-    expect(mockAudioPlayer.play).not.toHaveBeenCalled();
+    expect(playBellSound).not.toHaveBeenCalled();
     expect(screen.queryByTestId('collect-to-B')).toBeNull();
+  });
+
+  it('uses a reconnect room session as the baseline for existing audio events', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.session',
+        requestId: 'reconnect',
+        roomCode: 'ABCD23',
+        localPlayerId: 'A',
+        seatToken: 'seat-token',
+        snapshot: makeSnapshot('finished', 'A', {
+          winner: 'B',
+          ringVersion: 7,
+          lastRingEvent: { version: 7, caller: 'B', outcome: 'correct', movedCardCount: 4 },
+          lastFlipEvent: { version: 11, player: 'B' },
+        }),
+      });
+    });
+
+    expect(playBellSound).not.toHaveBeenCalled();
+    expect(playCardFlipSound).not.toHaveBeenCalled();
+    expect(playVictorySound).not.toHaveBeenCalled();
+    expect(playDefeatSound).not.toHaveBeenCalled();
+  });
+
+  it('plays one shared flip sound for each new accepted flip event', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    const flipped = makeSnapshot('playing', 'A', {
+      turn: 'B',
+      lastFlipEvent: { version: 1, player: 'A' },
+    });
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({ type: 'room.snapshot', snapshot: flipped });
+    });
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({ type: 'room.snapshot', snapshot: flipped });
+    });
+
+    expect(playCardFlipSound).toHaveBeenCalledTimes(1);
+    expect(playCardFlipSound).toHaveBeenCalledWith(mockAudioPlayer);
+  });
+
+  it('plays a local victory sound after observing the match finish', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.snapshot',
+        snapshot: makeSnapshot('finished', 'A', { winner: 'A' }),
+      });
+    });
+
+    expect(playVictorySound).toHaveBeenCalledTimes(1);
+    expect(playVictorySound).toHaveBeenCalledWith(mockAudioPlayer);
+    expect(playDefeatSound).not.toHaveBeenCalled();
+  });
+
+  it('plays a local defeat sound when the opponent wins', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'B',
+      roomSnapshot: makeSnapshot('playing', 'B', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.snapshot',
+        snapshot: makeSnapshot('finished', 'B', { winner: 'A' }),
+      });
+    });
+
+    expect(playDefeatSound).toHaveBeenCalledTimes(1);
+    expect(playDefeatSound).toHaveBeenCalledWith(mockAudioPlayer);
+    expect(playVictorySound).not.toHaveBeenCalled();
+  });
+
+  it('does not play a result cue from an initial finished snapshot', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('finished', 'A', { winner: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    expect(playVictorySound).not.toHaveBeenCalled();
+    expect(playDefeatSound).not.toHaveBeenCalled();
+  });
+
+  it('does not play a victory or defeat cue for a tied game', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.snapshot',
+        snapshot: makeSnapshot('finished', 'A', { winner: null }),
+      });
+    });
+
+    expect(playVictorySound).not.toHaveBeenCalled();
+    expect(playDefeatSound).not.toHaveBeenCalled();
   });
 
   it('shows a wrong-ring card moving from the caller to the opponent on both phones', async () => {

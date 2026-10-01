@@ -1,5 +1,12 @@
 import * as Haptics from 'expo-haptics';
-import { getFeedbackProfile, playRingOutcomeSound, triggerGameFeedback } from '../gameFeedback';
+import {
+  getFeedbackProfile,
+  playBellSound,
+  playCardFlipSound,
+  playDefeatSound,
+  playVictorySound,
+  triggerGameFeedback,
+} from '../gameFeedback';
 
 jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Light: 'light', Soft: 'soft' },
@@ -10,40 +17,51 @@ jest.mock('expo-haptics', () => ({
 
 describe('getFeedbackProfile', () => {
   it.each([
-    ['flip', { haptic: 'light', sound: 'none' }],
-    ['correct', { haptic: 'success', sound: 'bell' }],
-    ['wrong', { haptic: 'soft', sound: 'shortBell' }],
-    ['press', { haptic: 'light', sound: 'none' }],
-    ['collect', { haptic: 'none', sound: 'none' }],
+    ['flip', { haptic: 'light' }],
+    ['correct', { haptic: 'success' }],
+    ['wrong', { haptic: 'soft' }],
+    ['press', { haptic: 'light' }],
+    ['collect', { haptic: 'none' }],
   ] as const)('selects the %s profile', (event, expected) => {
     expect(getFeedbackProfile(event)).toEqual(expected);
   });
 });
 
-describe('playRingOutcomeSound', () => {
-  it('plays a normal bell for a correct ring', async () => {
+describe('game sound cues', () => {
+  it('plays the same full-volume bell cue without shortening it', async () => {
+    jest.useFakeTimers();
     const audio = makeAudioPlayer();
-    await playRingOutcomeSound('correct', audio);
+    await playBellSound(audio);
     expect(audio.seekTo).toHaveBeenCalledWith(0);
     expect(audio.play).toHaveBeenCalledTimes(1);
     expect(audio.volume).toBe(1);
-  });
-
-  it('plays a quiet short bell for a wrong ring, then restores audio', async () => {
-    jest.useFakeTimers();
-    const audio = makeAudioPlayer();
-    await playRingOutcomeSound('wrong', audio);
-    expect(audio.volume).toBe(0.3);
-    expect(audio.play).toHaveBeenCalledTimes(1);
-
-    jest.advanceTimersByTime(220);
-    expect(audio.pause).toHaveBeenCalledTimes(1);
-    expect(audio.volume).toBe(1);
+    jest.advanceTimersByTime(300);
+    expect(audio.pause).not.toHaveBeenCalled();
     jest.useRealTimers();
   });
 
-  it('does not let an older slow cue pause or replay a newer ring sound', async () => {
-    jest.useFakeTimers();
+  it('plays a card flip cue from the start', async () => {
+    const audio = makeAudioPlayer();
+    await playCardFlipSound(audio);
+    expect(audio.seekTo).toHaveBeenCalledWith(0);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('plays a victory cue from the start', async () => {
+    const audio = makeAudioPlayer();
+    await playVictorySound(audio);
+    expect(audio.seekTo).toHaveBeenCalledWith(0);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('plays a defeat cue from the start', async () => {
+    const audio = makeAudioPlayer();
+    await playDefeatSound(audio);
+    expect(audio.seekTo).toHaveBeenCalledWith(0);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replay an older delayed bell cue over a newer ring sound', async () => {
     const audio = makeAudioPlayer();
     let resolveFirst!: () => void;
     let resolveSecond!: () => void;
@@ -51,18 +69,15 @@ describe('playRingOutcomeSound', () => {
       .mockImplementationOnce(() => new Promise<void>(resolve => { resolveFirst = () => resolve(); }))
       .mockImplementationOnce(() => new Promise<void>(resolve => { resolveSecond = () => resolve(); }));
 
-    const firstCue = playRingOutcomeSound('wrong', audio);
-    const secondCue = playRingOutcomeSound('wrong', audio);
+    const firstCue = playBellSound(audio);
+    const secondCue = playBellSound(audio);
     resolveSecond();
     await secondCue;
-    jest.advanceTimersByTime(220);
     resolveFirst();
     await firstCue;
 
     expect(audio.play).toHaveBeenCalledTimes(1);
-    expect(audio.pause).toHaveBeenCalledTimes(1);
     expect(audio.volume).toBe(1);
-    jest.useRealTimers();
   });
 });
 

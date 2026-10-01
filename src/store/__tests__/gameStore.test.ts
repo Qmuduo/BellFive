@@ -44,6 +44,17 @@ describe('friend room game store', () => {
     expect(fixture.store.getState().roomSnapshot).toEqual(nextSnapshot);
   });
 
+  it('increments the local room session version for every session, including reconnects', () => {
+    const fixture = makeStore();
+    fixture.store.getState().createRoom();
+
+    fixture.handlers.onSession?.(makeSession('A'));
+    expect(fixture.store.getState().roomSessionVersion).toBe(1);
+
+    fixture.handlers.onSession?.(makeSession('A'));
+    expect(fixture.store.getState().roomSessionVersion).toBe(2);
+  });
+
   it('keeps server errors visible and clears the room on leave', () => {
     const fixture = makeStore();
     fixture.store.getState().joinRoom('BAD123');

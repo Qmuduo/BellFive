@@ -11,11 +11,20 @@ import { PlayerDeck } from './PlayerDeck';
 import { RoomEntry } from './RoomEntry';
 import { WaitingRoom } from './WaitingRoom';
 import { useGameStore } from '../store/gameStore';
-import { playRingOutcomeSound, triggerGameFeedback } from '../services/gameFeedback';
+import {
+  playBellSound,
+  playCardFlipSound,
+  playDefeatSound,
+  playVictorySound,
+  triggerGameFeedback,
+} from '../services/gameFeedback';
 import type { RingFeedbackEvent } from '../network/protocol';
 
 export default function GameScreen() {
-  const audioPlayer = useAudioPlayer(require('../../assets/audio/bell.wav'));
+  const bellAudioPlayer = useAudioPlayer(require('../../assets/audio/bell.wav'));
+  const flipAudioPlayer = useAudioPlayer(require('../../assets/audio/card-flip.wav'));
+  const victoryAudioPlayer = useAudioPlayer(require('../../assets/audio/victory.wav'));
+  const defeatAudioPlayer = useAudioPlayer(require('../../assets/audio/defeat.wav'));
   const connectionStatus = useGameStore(state => state.connectionStatus);
   const roomSnapshot = useGameStore(state => state.roomSnapshot);
   const roomCode = useGameStore(state => state.roomCode);
@@ -23,6 +32,7 @@ export default function GameScreen() {
   const leavingRoom = useGameStore(state => state.leavingRoom);
   const error = useGameStore(state => state.error);
   const lastActionResult = useGameStore(state => state.lastActionResult);
+  const roomSessionVersion = useGameStore(state => state.roomSessionVersion);
   const createRoom = useGameStore(state => state.createRoom);
   const joinRoom = useGameStore(state => state.joinRoom);
   const flip = useGameStore(state => state.flip);
@@ -32,6 +42,9 @@ export default function GameScreen() {
   const [ringCue, setRingCue] = useState<RingFeedbackEvent | null>(null);
   const lastProcessedAction = useRef<string | null>(null);
   const lastProcessedRingVersion = useRef<number | null>(null);
+  const lastProcessedFlipVersion = useRef<number | null>(null);
+  const lastObservedRoomSessionVersion = useRef<number | null>(null);
+  const lastObservedPhase = useRef<string | null>(null);
 
   useEffect(() => {
     if (!ringCue) return;
@@ -55,17 +68,55 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (!roomSnapshot) return;
-    const ringEvent = roomSnapshot.lastRingEvent;
-    if (lastProcessedRingVersion.current === null) {
-      lastProcessedRingVersion.current = ringEvent?.version ?? roomSnapshot.ringVersion ?? 0;
+
+    if (lastObservedRoomSessionVersion.current !== roomSessionVersion) {
+      lastObservedRoomSessionVersion.current = roomSessionVersion;
+      lastProcessedRingVersion.current = roomSnapshot.lastRingEvent?.version ?? roomSnapshot.ringVersion ?? 0;
+      lastProcessedFlipVersion.current = roomSnapshot.lastFlipEvent?.version ?? 0;
+      lastObservedPhase.current = roomSnapshot.phase;
       return;
     }
-    if (!ringEvent || ringEvent.version <= lastProcessedRingVersion.current) return;
 
-    lastProcessedRingVersion.current = ringEvent.version;
-    setRingCue(ringEvent);
-    void playRingOutcomeSound(ringEvent.outcome, audioPlayer);
-  }, [audioPlayer, roomSnapshot]);
+    const ringEvent = roomSnapshot.lastRingEvent;
+    const ringVersion = ringEvent?.version ?? roomSnapshot.ringVersion ?? 0;
+    if (lastProcessedRingVersion.current === null) {
+      lastProcessedRingVersion.current = ringVersion;
+    }
+    if (ringEvent && ringVersion > lastProcessedRingVersion.current) {
+      lastProcessedRingVersion.current = ringVersion;
+      setRingCue(ringEvent);
+      void playBellSound(bellAudioPlayer);
+    }
+
+    const flipEvent = roomSnapshot.lastFlipEvent;
+    const flipVersion = flipEvent?.version ?? 0;
+    if (lastProcessedFlipVersion.current === null) {
+      lastProcessedFlipVersion.current = flipVersion;
+    } else if (flipEvent && flipVersion > lastProcessedFlipVersion.current) {
+      lastProcessedFlipVersion.current = flipVersion;
+      void playCardFlipSound(flipAudioPlayer);
+    }
+
+    const previousPhase = lastObservedPhase.current;
+    if (
+      previousPhase === 'playing' &&
+      roomSnapshot.phase === 'finished' &&
+      roomSnapshot.winner !== null &&
+      localPlayerId
+    ) {
+      if (roomSnapshot.winner === localPlayerId) void playVictorySound(victoryAudioPlayer);
+      else void playDefeatSound(defeatAudioPlayer);
+    }
+    lastObservedPhase.current = roomSnapshot.phase;
+  }, [
+    bellAudioPlayer,
+    defeatAudioPlayer,
+    flipAudioPlayer,
+    localPlayerId,
+    roomSessionVersion,
+    roomSnapshot,
+    victoryAudioPlayer,
+  ]);
 
   if (!roomSnapshot) {
     return (

@@ -28,6 +28,7 @@ type GameStore = {
   leavingRoom: boolean;
   error: GameClientError | null;
   lastActionResult: Extract<ServerMessage, { type: 'action.result' }> | null;
+  roomSessionVersion: number;
   client: GameClientPort | null;
   createRoom: () => void;
   joinRoom: (code: string) => void;
@@ -44,14 +45,15 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
     const applyServerMessage = (message: ServerMessage) => {
       switch (message.type) {
         case 'room.session':
-          set({
+          set(state => ({
             connectionStatus: 'connected',
             roomCode: message.roomCode,
             localPlayerId: message.localPlayerId,
             roomSnapshot: message.snapshot,
+            roomSessionVersion: state.roomSessionVersion + 1,
             leavingRoom: false,
             error: null,
-          });
+          }));
           return;
         case 'room.snapshot':
           set({ roomSnapshot: message.snapshot });
@@ -103,6 +105,7 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
       leavingRoom: false,
       error: null,
       lastActionResult: null,
+      roomSessionVersion: 0,
       client: null,
       createRoom: () => {
         if (get().leavingRoom) return;
