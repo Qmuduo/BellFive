@@ -2,6 +2,15 @@ import type { PlayerId } from './game/types';
 
 export const AVATAR_OPTIONS = ['banana', 'grape', 'pear', 'strawberry', 'peach', 'bell'] as const;
 
+export const AVATAR_EMOJI: Readonly<Record<(typeof AVATAR_OPTIONS)[number], string>> = {
+  banana: '🍌',
+  grape: '🍇',
+  pear: '🍐',
+  strawberry: '🍓',
+  peach: '🍑',
+  bell: '🔔',
+};
+
 export type AvatarId = (typeof AVATAR_OPTIONS)[number];
 
 export type PlayerProfile = Readonly<{
@@ -37,4 +46,10 @@ export function isAvatarId(value: string): value is AvatarId {
 
 export function normalizeNickname(value: string): string {
   return Array.from(value.trim()).slice(0, 12).join('');
+}
+
+export function getPlayerDisplayName(profile: PlayerProfile, playerId: PlayerId): string {
+  return profile.nickname === `Player ${playerId}`
+    ? profile.nickname
+    : `${profile.nickname} · ${playerId}`;
 }

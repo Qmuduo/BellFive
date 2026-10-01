@@ -6,7 +6,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import type { CardDefinition, GameElement } from '../game/types';
+import type { CardDefinition, GameElement, PlayerId } from '../game/types';
 import { getCardSymbolPositions } from '../game/cardLayout';
 
 const ELEMENT_EMOJI: Record<GameElement, string> = {
@@ -19,12 +19,13 @@ const ELEMENT_EMOJI: Record<GameElement, string> = {
 };
 
 type GameCardProps = {
+  playerId: PlayerId;
   playerLabel: string;
   card?: CardDefinition;
   active?: boolean;
 };
 
-export function GameCard({ playerLabel, card, active = false }: GameCardProps) {
+export function GameCard({ playerId, playerLabel, card, active = false }: GameCardProps) {
   const rotation = useSharedValue(0);
   const slide = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -41,14 +42,14 @@ export function GameCard({ playerLabel, card, active = false }: GameCardProps) {
     if (!card) return;
 
     rotation.value = 82;
-    slide.value = playerLabel.endsWith('A') ? -28 : 28;
+    slide.value = playerId === 'A' ? -28 : 28;
     opacity.value = 0.55;
     rotation.value = withTiming(0, { duration: 230, easing: Easing.out(Easing.cubic) });
     slide.value = withTiming(0, { duration: 230, easing: Easing.out(Easing.cubic) });
     opacity.value = withTiming(1, { duration: 190 });
-  }, [card?.id, opacity, playerLabel, rotation, slide]);
+  }, [card?.id, opacity, playerId, rotation, slide]);
 
-  const activeStyle = playerLabel.endsWith('A') ? styles.activeA : styles.activeB;
+  const activeStyle = playerId === 'A' ? styles.activeA : styles.activeB;
   const symbolPositions = card
     ? getCardSymbolPositions(card.id, card.symbols.length)
     : [];

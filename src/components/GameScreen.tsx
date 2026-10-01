@@ -11,6 +11,8 @@ import { PlayerDeck } from './PlayerDeck';
 import { RoomEntry } from './RoomEntry';
 import { WaitingRoom } from './WaitingRoom';
 import { useGameStore } from '../store/gameStore';
+import { usePlayerProfileStore } from '../store/profileStore';
+import { getPlayerDisplayName } from '../profile';
 import {
   playBellSound,
   playCardFlipSound,
@@ -33,6 +35,9 @@ export default function GameScreen() {
   const error = useGameStore(state => state.error);
   const lastActionResult = useGameStore(state => state.lastActionResult);
   const roomSessionVersion = useGameStore(state => state.roomSessionVersion);
+  const playerProfile = usePlayerProfileStore(state => state.profile);
+  const profileHydrated = usePlayerProfileStore(state => state.hydrated);
+  const setPlayerProfile = usePlayerProfileStore(state => state.setProfile);
   const createRoom = useGameStore(state => state.createRoom);
   const joinRoom = useGameStore(state => state.joinRoom);
   const flip = useGameStore(state => state.flip);
@@ -127,6 +132,9 @@ export default function GameScreen() {
           onJoin={joinRoom}
           error={error}
           busy={leavingRoom || connectionStatus === 'connecting' || connectionStatus === 'reconnecting'}
+          profile={playerProfile}
+          profileHydrated={profileHydrated}
+          onProfileChange={setPlayerProfile}
           busyLabel={leavingRoom ? 'LEAVING…' : undefined}
         />
       </SafeAreaView>
@@ -192,6 +200,7 @@ export default function GameScreen() {
               <PlayerDeck
                 key={player}
                 player={player}
+                profile={roomSnapshot.players[player].profile}
                 drawCount={roomSnapshot.players[player].drawCount ?? 0}
                 playedCount={roomSnapshot.players[player].playedCount ?? 0}
                 isTurnOwner={roomSnapshot.turn === player}
@@ -226,8 +235,8 @@ export default function GameScreen() {
               <Text style={styles.tableHint}>TOP CARDS ONLY</Text>
             </View>
             <View testID="play-mat" style={styles.playMat}>
-              <GameCard playerLabel="PLAYER A" card={roomSnapshot.players.A.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'A'} />
-              <GameCard playerLabel="PLAYER B" card={roomSnapshot.players.B.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'B'} />
+              <GameCard playerId="A" playerLabel={getPlayerDisplayName(roomSnapshot.players.A.profile, 'A')} card={roomSnapshot.players.A.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'A'} />
+              <GameCard playerId="B" playerLabel={getPlayerDisplayName(roomSnapshot.players.B.profile, 'B')} card={roomSnapshot.players.B.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'B'} />
               {ringCue ? <CardTransferFly key={ringCue.version} event={ringCue} /> : null}
             </View>
           </View>

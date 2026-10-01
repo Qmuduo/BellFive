@@ -20,8 +20,10 @@ describe('WaitingRoom', () => {
     );
 
     expect(screen.getByText('ABCD23')).toBeOnTheScreen();
-    expect(screen.getByText('Player A · You')).toBeOnTheScreen();
-    expect(screen.getByText('Player B')).toBeOnTheScreen();
+    expect(screen.getByText('Mira · A · You')).toBeOnTheScreen();
+    expect(screen.getByText('Kai · B')).toBeOnTheScreen();
+    expect(screen.getByText('🍑')).toBeOnTheScreen();
+    expect(screen.getByText('🍌')).toBeOnTheScreen();
     expect(screen.getByText('Waiting')).toBeOnTheScreen();
     await user.press(screen.getByRole('button', { name: 'Share Invite' }));
     expect(share).toHaveBeenCalledWith({
@@ -56,8 +58,8 @@ function makeSnapshot(): RoomSnapshot {
     phase: 'waiting',
     localPlayerId: 'A',
     players: {
-      A: { connected: true, drawCount: null, playedCount: null, topCard: null, profile: { nickname: 'Player A', avatarId: 'strawberry' } },
-      B: { connected: false, drawCount: null, playedCount: null, topCard: null, profile: { nickname: 'Player B', avatarId: 'strawberry' } },
+      A: { connected: true, drawCount: null, playedCount: null, topCard: null, profile: { nickname: 'Mira', avatarId: 'peach' } },
+      B: { connected: false, drawCount: null, playedCount: null, topCard: null, profile: { nickname: 'Kai', avatarId: 'banana' } },
     },
     turn: null,
     winner: null,

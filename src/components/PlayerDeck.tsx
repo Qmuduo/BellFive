@@ -1,8 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { PlayerId } from '../game/types';
+import { AVATAR_EMOJI, getPlayerDisplayName } from '../profile';
+import type { PlayerProfile } from '../profile';
 
 type PlayerDeckProps = {
   player: PlayerId;
+  profile: PlayerProfile;
   drawCount: number;
   playedCount: number;
   isTurnOwner: boolean;
@@ -11,7 +14,7 @@ type PlayerDeckProps = {
   onPress: () => void;
 };
 
-export function PlayerDeck({ player, drawCount, playedCount, isTurnOwner, isLocalPlayer, canFlip, onPress }: PlayerDeckProps) {
+export function PlayerDeck({ player, profile, drawCount, playedCount, isTurnOwner, isLocalPlayer, canFlip, onPress }: PlayerDeckProps) {
   const playerColor = player === 'A' ? styles.accentA : styles.accentB;
   const activeDeck = player === 'A' ? styles.activeDeckA : styles.activeDeckB;
 
@@ -31,11 +34,11 @@ export function PlayerDeck({ player, drawCount, playedCount, isTurnOwner, isLoca
       ]}
     >
       <View style={[styles.stackMark, playerColor]}>
-        <Text style={styles.stackIcon}>▤</Text>
+        <Text style={styles.stackIcon}>{AVATAR_EMOJI[profile.avatarId]}</Text>
       </View>
       <View style={styles.copy}>
         <View style={styles.nameRow}>
-          <Text style={styles.name}>PLAYER {player}</Text>
+          <Text style={styles.name}>{getPlayerDisplayName(profile, player)}</Text>
           {isLocalPlayer ? <Text style={[styles.activeTag, playerColor]}>YOU</Text> : null}
         </View>
         <Text style={styles.count}>{drawCount} cards</Text>
@@ -98,7 +101,7 @@ const styles = StyleSheet.create({
   },
   stackIcon: {
     color: '#43515E',
-    fontSize: 22,
+    fontSize: 21,
   },
   copy: {
     flex: 1,

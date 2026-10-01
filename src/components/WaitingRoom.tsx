@@ -2,6 +2,8 @@ import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import type { GameClientError, GameClientStatus } from '../network/GameClient';
 import type { RoomSnapshot } from '../network/protocol';
 import type { PlayerId } from '../game/types';
+import { AVATAR_EMOJI, getPlayerDisplayName } from '../profile';
+import type { PlayerProfile } from '../profile';
 
 type WaitingRoomProps = Readonly<{
   roomCode: string;
@@ -30,8 +32,8 @@ export function WaitingRoom({ roomCode, localPlayerId, snapshot, connectionStatu
       </View>
 
       <View style={styles.playerCard}>
-        <PlayerStatus playerId={localPlayerId} connected={snapshot.players[localPlayerId].connected} local />
-        <PlayerStatus playerId={otherPlayer} connected={snapshot.players[otherPlayer].connected} />
+        <PlayerStatus playerId={localPlayerId} profile={snapshot.players[localPlayerId].profile} connected={snapshot.players[localPlayerId].connected} local />
+        <PlayerStatus playerId={otherPlayer} profile={snapshot.players[otherPlayer].profile} connected={snapshot.players[otherPlayer].connected} />
       </View>
 
       <Text style={styles.connection}>
@@ -48,11 +50,12 @@ export function WaitingRoom({ roomCode, localPlayerId, snapshot, connectionStatu
   );
 }
 
-function PlayerStatus({ playerId, connected, local = false }: { playerId: PlayerId; connected: boolean; local?: boolean }) {
+function PlayerStatus({ playerId, profile, connected, local = false }: { playerId: PlayerId; profile: PlayerProfile; connected: boolean; local?: boolean }) {
   return (
     <View style={styles.playerRow}>
       <View style={[styles.statusDot, connected ? styles.online : styles.offline]} />
-      <Text style={styles.playerName}>Player {playerId}{local ? ' · You' : ''}</Text>
+      <View style={styles.avatar}><Text style={styles.avatarEmoji}>{AVATAR_EMOJI[profile.avatarId]}</Text></View>
+      <Text style={styles.playerName}>{getPlayerDisplayName(profile, playerId)}{local ? ' · You' : ''}</Text>
       <Text style={[styles.status, connected ? styles.onlineText : null]}>{connected ? 'Connected' : 'Waiting'}</Text>
     </View>
   );
@@ -69,6 +72,8 @@ const styles = StyleSheet.create({
   playerCard: { marginTop: 16, paddingHorizontal: 16, paddingVertical: 5, borderRadius: 18, backgroundColor: '#FFFFFF' },
   playerRow: { minHeight: 47, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F1F1F0' },
   statusDot: { width: 9, height: 9, marginRight: 10, borderRadius: 5 },
+  avatar: { width: 31, height: 31, alignItems: 'center', justifyContent: 'center', marginRight: 10, borderRadius: 16, backgroundColor: '#FFF3CA' },
+  avatarEmoji: { fontSize: 18 },
   online: { backgroundColor: '#48A878' },
   offline: { backgroundColor: '#D7DBDE' },
   playerName: { flex: 1, color: '#364451', fontSize: 13, fontWeight: '800' },

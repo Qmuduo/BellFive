@@ -30,6 +30,18 @@ jest.mock('expo-audio', () => ({
   useAudioPlayer: () => mockAudioPlayer,
 }));
 
+jest.mock('../../store/profileStore', () => ({
+  usePlayerProfileStore: (selector: (state: {
+    profile: { nickname: string; avatarId: string };
+    hydrated: boolean;
+    setProfile: (profile: unknown) => void;
+  }) => unknown) => selector({
+    profile: { nickname: 'Mira', avatarId: 'peach' },
+    hydrated: true,
+    setProfile: jest.fn(),
+  }),
+}));
+
 describe('GameScreen friend-room flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -78,7 +90,7 @@ describe('GameScreen friend-room flow', () => {
     await render(<GameScreen />);
     await user.type(screen.getByLabelText('Room code'), 'ab cd23');
     await user.press(screen.getByRole('button', { name: 'Join Room' }));
-    expect(useGameStore.getState().joinRoom).toHaveBeenCalledWith('ABCD23');
+    expect(useGameStore.getState().joinRoom).toHaveBeenCalledWith('ABCD23', { nickname: 'Mira', avatarId: 'peach' });
   });
 
   it('shows the private room code and invites a friend while waiting', async () => {
@@ -165,15 +177,15 @@ describe('GameScreen friend-room flow', () => {
       roomSnapshot: makeSnapshot('playing', 'A', {
         turn: 'A',
         players: {
-          A: { connected: true, drawCount: 29, playedCount: 1, topCard: { id: 'C001', symbols: ['banana'] }, profile: { nickname: 'Player A', avatarId: 'strawberry' } },
-          B: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: 'Player B', avatarId: 'strawberry' } },
+          A: { connected: true, drawCount: 29, playedCount: 1, topCard: { id: 'C001', symbols: ['banana'] }, profile: { nickname: 'Mira', avatarId: 'peach' } },
+          B: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: 'Kai', avatarId: 'banana' } },
         },
       }),
     });
     await render(<GameScreen />);
     const playMat = screen.getByTestId('play-mat');
-    expect(within(playMat).getByText('PLAYER A')).toBeOnTheScreen();
-    expect(within(playMat).getByText('PLAYER B')).toBeOnTheScreen();
+    expect(within(playMat).getByText('Mira · A')).toBeOnTheScreen();
+    expect(within(playMat).getByText('Kai · B')).toBeOnTheScreen();
     expect(screen.getByText('A draw pile: 29')).toBeOnTheScreen();
     expect(screen.getByText('B draw pile: 30')).toBeOnTheScreen();
     expect(screen.getByText('Turn: A')).toBeOnTheScreen();
