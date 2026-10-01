@@ -326,16 +326,17 @@ export class RoomManager {
       return [this.errorEvent(connectionId, 'NOT_IN_ROOM', 'The room session is no longer active.', undefined, message.actionId)];
     }
 
+    const now = this.now();
+    const expiredEvents = this.finishMatchIfExpired(room, now);
     const previousResult = room.actionResults[connection.playerId].get(message.actionId);
     if (previousResult) {
       return [
+        ...expiredEvents,
         this.event(connectionId, previousResult),
-        this.event(connectionId, { type: 'room.snapshot', snapshot: this.snapshotFor(room, connection.playerId) }),
+        this.event(connectionId, { type: 'room.snapshot', snapshot: this.snapshotFor(room, connection.playerId, now) }),
       ];
     }
 
-    const now = this.now();
-    const expiredEvents = this.finishMatchIfExpired(room, now);
     if (expiredEvents.length > 0 && message.type !== 'game.rematch') {
       return [
         ...expiredEvents,

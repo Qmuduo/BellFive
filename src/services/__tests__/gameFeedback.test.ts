@@ -41,6 +41,29 @@ describe('playRingOutcomeSound', () => {
     expect(audio.volume).toBe(1);
     jest.useRealTimers();
   });
+
+  it('does not let an older slow cue pause or replay a newer ring sound', async () => {
+    jest.useFakeTimers();
+    const audio = makeAudioPlayer();
+    let resolveFirst!: () => void;
+    let resolveSecond!: () => void;
+    audio.seekTo
+      .mockImplementationOnce(() => new Promise<void>(resolve => { resolveFirst = () => resolve(); }))
+      .mockImplementationOnce(() => new Promise<void>(resolve => { resolveSecond = () => resolve(); }));
+
+    const firstCue = playRingOutcomeSound('wrong', audio);
+    const secondCue = playRingOutcomeSound('wrong', audio);
+    resolveSecond();
+    await secondCue;
+    jest.advanceTimersByTime(220);
+    resolveFirst();
+    await firstCue;
+
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    expect(audio.pause).toHaveBeenCalledTimes(1);
+    expect(audio.volume).toBe(1);
+    jest.useRealTimers();
+  });
 });
 
 describe('triggerGameFeedback', () => {
@@ -60,7 +83,7 @@ function makeAudioPlayer() {
   return {
     isLoaded: true,
     volume: 1,
-    seekTo: jest.fn(async () => undefined),
+    seekTo: jest.fn(async (_seconds: number): Promise<void> => {}),
     play: jest.fn(),
     pause: jest.fn(),
   };

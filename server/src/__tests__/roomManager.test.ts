@@ -513,6 +513,37 @@ describe('RoomManager reconnect and expiry', () => {
     },
   );
 
+  it('settles an expired match before replaying a cached action result', () => {
+    let now = 1_000;
+    const manager = makeRoomManager({
+      now: () => now,
+      matchDurationMs: 5_000,
+      gameFactory: () => customGame({
+        A: { drawPile: [card('A1', ['banana'])], playedPile: [] },
+        B: { drawPile: [card('B1', ['pear']), card('B2', ['peach'])], playedPile: [] },
+      }),
+    });
+    const room = createWaitingRoom(manager);
+    manager.handleMessage('socket-b', {
+      type: 'room.join',
+      requestId: 'join-cached-timeout-b',
+      roomCode: room.roomCode,
+    });
+    const action: ClientMessage = { type: 'game.flip', actionId: 'cached-before-timeout' };
+    expect(messageOf(manager.handleMessage('socket-a', action), 'socket-a', 'action.result').accepted).toBe(true);
+
+    now += 5_000;
+    const retry = manager.handleMessage('socket-a', action);
+
+    expect(messageOf(retry, 'socket-a', 'action.result').accepted).toBe(true);
+    expect(messageOf(retry, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
+      phase: 'finished',
+      winner: 'B',
+      remainingSeconds: 0,
+    });
+    expect(messageOf(retry, 'socket-b', 'room.snapshot').snapshot.phase).toBe('finished');
+  });
+
   it('rejects a mismatched reconnect token and expires waiting rooms after fifteen minutes', () => {
     let now = 100;
     const rooms = makeRoomManager({ now: () => now });

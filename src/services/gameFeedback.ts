@@ -24,6 +24,7 @@ const FEEDBACK_PROFILES: Record<GameFeedbackEvent, GameFeedbackProfile> = {
 };
 
 let shortBellTimeout: ReturnType<typeof setTimeout> | null = null;
+let ringSoundGeneration = 0;
 
 export function getFeedbackProfile(event: GameFeedbackEvent): GameFeedbackProfile {
   return FEEDBACK_PROFILES[event];
@@ -57,6 +58,7 @@ export async function playRingOutcomeSound(
   audioPlayer?: BellAudioPlayer,
 ): Promise<void> {
   if (!audioPlayer?.isLoaded) return;
+  const generation = ++ringSoundGeneration;
   if (shortBellTimeout !== null) {
     clearTimeout(shortBellTimeout);
     shortBellTimeout = null;
@@ -66,17 +68,22 @@ export async function playRingOutcomeSound(
   audioPlayer.volume = isShortCue ? 0.3 : 1;
   try {
     await audioPlayer.seekTo(0);
-    audioPlayer.play();
   } catch {
-    audioPlayer.volume = 1;
+    if (generation === ringSoundGeneration) audioPlayer.volume = 1;
     return;
   }
+  if (generation !== ringSoundGeneration) return;
+  audioPlayer.play();
 
   if (isShortCue) {
     shortBellTimeout = setTimeout(() => {
-      audioPlayer.pause();
-      audioPlayer.volume = 1;
-      shortBellTimeout = null;
+      if (generation !== ringSoundGeneration) return;
+      try {
+        audioPlayer.pause();
+      } finally {
+        audioPlayer.volume = 1;
+        shortBellTimeout = null;
+      }
     }, 220);
   }
 }
