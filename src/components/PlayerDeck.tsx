@@ -5,32 +5,41 @@ type PlayerDeckProps = {
   player: PlayerId;
   drawCount: number;
   playedCount: number;
-  active: boolean;
+  isTurnOwner: boolean;
+  isLocalPlayer: boolean;
+  canFlip: boolean;
   onPress: () => void;
 };
 
-export function PlayerDeck({ player, drawCount, playedCount, active, onPress }: PlayerDeckProps) {
+export function PlayerDeck({ player, drawCount, playedCount, isTurnOwner, isLocalPlayer, canFlip, onPress }: PlayerDeckProps) {
+  const playerColor = player === 'A' ? styles.accentA : styles.accentB;
+  const activeDeck = player === 'A' ? styles.activeDeckA : styles.activeDeckB;
+
   return (
     <Pressable
       role="button"
       aria-label={`Player ${player} deck`}
-      accessibilityState={{ disabled: !active }}
-      disabled={!active}
+      accessibilityState={{ disabled: !canFlip }}
+      disabled={!canFlip}
       onPress={onPress}
       style={({ pressed }) => [
         styles.deck,
-        active && styles.activeDeck,
-        pressed && active && styles.pressed,
+        player === 'A' ? styles.deckA : styles.deckB,
+        isTurnOwner && activeDeck,
+        !isLocalPlayer && styles.opponentDeck,
+        pressed && canFlip && styles.pressed,
       ]}
     >
-      <View style={styles.stackMark}>
+      <View style={[styles.stackMark, playerColor]}>
         <Text style={styles.stackIcon}>▤</Text>
       </View>
       <View style={styles.copy}>
-        <Text style={styles.name}>PLAYER {player}</Text>
-        <Text style={styles.count}>{drawCount} cards remaining</Text>
-        <Text style={styles.played}>Played pile: {playedCount}</Text>
-        <Text style={styles.hint}>{active ? 'Tap deck to flip' : 'Waiting for turn'}</Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name}>PLAYER {player}</Text>
+          {isLocalPlayer ? <Text style={[styles.activeTag, playerColor]}>YOU</Text> : null}
+        </View>
+        <Text style={styles.count}>{drawCount} cards</Text>
+        <Text style={styles.played}>TABLE {playedCount}</Text>
       </View>
     </Pressable>
   );
@@ -38,60 +47,96 @@ export function PlayerDeck({ player, drawCount, playedCount, active, onPress }: 
 
 const styles = StyleSheet.create({
   deck: {
-    minHeight: 78,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 74,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#DED8CD',
-    backgroundColor: '#F0EADF',
+    backgroundColor: '#FFFFFF',
   },
-  activeDeck: {
-    borderColor: '#D4A719',
-    backgroundColor: '#FFF4C9',
+  deckA: {
+    marginRight: 6,
+    borderColor: '#E9D4D1',
+  },
+  deckB: {
+    marginLeft: 6,
+    borderColor: '#D0E1EA',
+  },
+  activeDeckA: {
+    borderColor: '#E87572',
+    backgroundColor: '#FFF8F6',
+    borderWidth: 2,
+  },
+  activeDeckB: {
+    borderColor: '#5A9FC1',
+    backgroundColor: '#F6FBFE',
+    borderWidth: 2,
+  },
+  opponentDeck: {
+    opacity: 0.9,
   },
   pressed: {
     opacity: 0.82,
-    transform: [{ scale: 0.99 }],
+    transform: [{ scale: 0.98 }],
   },
   stackMark: {
-    width: 44,
-    height: 50,
+    width: 34,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#9C7D24',
-    backgroundColor: '#F8D85B',
+    borderRadius: 11,
+  },
+  accentA: {
+    backgroundColor: '#F7D5D0',
+  },
+  accentB: {
+    backgroundColor: '#D7EBF5',
   },
   stackIcon: {
-    color: '#574510',
-    fontSize: 27,
+    color: '#43515E',
+    fontSize: 22,
   },
   copy: {
-    marginLeft: 12,
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 8,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   name: {
-    color: '#28333B',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1,
+    color: '#34424F',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  activeTag: {
+    overflow: 'hidden',
+    marginLeft: 6,
+    color: '#34424F',
+    fontSize: 7,
+    fontWeight: '900',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   count: {
     marginTop: 2,
-    color: '#28333B',
+    color: '#263340',
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '900',
   },
   played: {
-    color: '#69747D',
-    fontSize: 11,
-  },
-  hint: {
-    marginTop: 2,
-    color: '#8A701F',
-    fontSize: 10,
-    fontWeight: '600',
+    marginTop: 1,
+    color: '#8A939C',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
 });

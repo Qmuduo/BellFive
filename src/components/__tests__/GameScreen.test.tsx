@@ -1,154 +1,232 @@
-import { render, screen, userEvent } from '@testing-library/react-native';
+import { act, render, screen, userEvent, within } from '@testing-library/react-native';
+import { Share } from 'react-native';
 import GameScreen from '../GameScreen';
 import { useGameStore } from '../../store/gameStore';
-import type { CardDefinition, GameElement, GameState } from '../../game/types';
+import type { RoomSnapshot } from '../../network/protocol';
 
 jest.mock('expo-audio', () => ({
   useAudioPlayer: () => ({ isLoaded: false, seekTo: jest.fn(), play: jest.fn() }),
 }));
 
-const makeCard = (id: string, symbols: readonly GameElement[]): CardDefinition => ({
-  id,
-  symbols,
-});
-
-const makeRingState = (correct: boolean): GameState => ({
-  status: 'playing',
-  turn: 'B',
-  winner: null,
-  lastRingOutcome: null,
-  players: {
-    A: {
-      drawPile: correct
-        ? [makeCard('A-draw', ['banana'])]
-        : [makeCard('A-draw-1', ['banana']), makeCard('A-draw-2', ['grape']), makeCard('A-draw-3', ['pear'])],
-      playedPile: [
-        makeCard('A-visible', correct ? ['strawberry', 'strawberry', 'strawberry'] : ['banana']),
-        makeCard('A-hidden', ['peach']),
-      ],
-    },
-    B: {
-      drawPile: [makeCard('B-draw', ['grape'])],
-      playedPile: [
-        makeCard('B-visible', correct ? ['strawberry', 'bell'] : ['grape']),
-        makeCard('B-hidden', ['pear']),
-      ],
-    },
-  },
-});
-
-describe('GameScreen', () => {
+describe('GameScreen friend-room flow', () => {
   beforeEach(() => {
-    useGameStore.setState({ game: null });
+    useGameStore.setState({
+      connectionStatus: 'idle',
+      roomSnapshot: null,
+      roomCode: null,
+      localPlayerId: null,
+      leavingRoom: false,
+      error: null,
+      lastActionResult: null,
+      client: null,
+      createRoom: jest.fn(),
+      joinRoom: jest.fn(),
+      flip: jest.fn(),
+      ring: jest.fn(),
+      rematch: jest.fn(),
+      leaveRoom: jest.fn(),
+      clearError: jest.fn(),
+    });
   });
 
-  it('starts a 30/30 game and flips one card for the active player', async () => {
-    const user = userEvent.setup();
+  it('starts at the create/join entry', async () => {
+    await render(<GameScreen />);
+    expect(screen.getByRole('button', { name: 'Create Room' })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Join Room' })).toBeOnTheScreen();
+  });
+
+  it('keeps create and join disabled while a room leave is waiting for confirmation', async () => {
+    useGameStore.setState({ leavingRoom: true, connectionStatus: 'reconnecting' });
     await render(<GameScreen />);
 
-    await user.press(screen.getByRole('button', { name: 'Start Game' }));
-    expect(screen.getByText('A draw pile: 30')).toBeOnTheScreen();
-    expect(screen.getByText('B draw pile: 30')).toBeOnTheScreen();
-
-    await user.press(screen.getByRole('button', { name: 'FLIP' }));
-
-    expect(screen.getByText('A draw pile: 29')).toBeOnTheScreen();
-    expect(screen.getByText('A played pile: 1')).toBeOnTheScreen();
-    expect(screen.getByText('Turn: B')).toBeOnTheScreen();
+    expect(screen.getByText('LEAVING…')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'LEAVING…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Join Room' })).toBeDisabled();
+    expect(screen.getByLabelText('Room code')).toBeDisabled();
   });
 
-  it("allows only the active player's deck tap to flip a card", async () => {
+  it('sends normalized join codes through the room store', async () => {
     const user = userEvent.setup();
     await render(<GameScreen />);
-    await user.press(screen.getByRole('button', { name: 'Start Game' }));
-
-    await user.press(screen.getByRole('button', { name: 'Player B deck' }));
-    expect(screen.getByText('A draw pile: 30')).toBeOnTheScreen();
-    expect(screen.getByText('B draw pile: 30')).toBeOnTheScreen();
-    expect(screen.getByText('Turn: A')).toBeOnTheScreen();
-
-    await user.press(screen.getByRole('button', { name: 'Player A deck' }));
-    expect(screen.getByText('A draw pile: 29')).toBeOnTheScreen();
-    expect(screen.getByText('A played pile: 1')).toBeOnTheScreen();
-    expect(screen.getByText('Turn: B')).toBeOnTheScreen();
+    await user.type(screen.getByLabelText('Room code'), 'ab cd23');
+    await user.press(screen.getByRole('button', { name: 'Join Room' }));
+    expect(useGameStore.getState().joinRoom).toHaveBeenCalledWith('ABCD23');
   });
 
-  it('keeps both ring zones enabled and penalizes the player who rings incorrectly', async () => {
-    const user = userEvent.setup();
-    useGameStore.setState({ game: makeRingState(false) });
-    await render(<GameScreen />);
-
-    expect(screen.getByText('Can Ring: false')).toBeOnTheScreen();
-    expect(screen.getByRole('button', { name: 'Player A ring' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Player B ring' })).toBeEnabled();
-
-    await user.press(screen.getByRole('button', { name: 'Player A ring' }));
-
-    expect(screen.getByText('Wrong Ring')).toBeOnTheScreen();
-    expect(screen.getByText('A draw pile: 1')).toBeOnTheScreen();
-    expect(screen.getByText('B draw pile: 3')).toBeOnTheScreen();
-    expect(screen.getByText('Turn: B')).toBeOnTheScreen();
-  });
-
-  it('shows correct-ring feedback and collects the table for the caller', async () => {
-    const user = userEvent.setup();
-    useGameStore.setState({ game: makeRingState(true) });
-    await render(<GameScreen />);
-
-    expect(screen.getByText('Can Ring: true')).toBeOnTheScreen();
-    await user.press(screen.getByRole('button', { name: 'Player A ring' }));
-
-    expect(screen.getByText('DING! Correct Ring')).toBeOnTheScreen();
-    expect(screen.getByText('A draw pile: 5')).toBeOnTheScreen();
-    expect(screen.getByText('A played pile: 0')).toBeOnTheScreen();
-    expect(screen.getByText('B played pile: 0')).toBeOnTheScreen();
-    expect(screen.getByText('Turn: B')).toBeOnTheScreen();
-  });
-
-  it('shows the winner, blocks play actions, and restarts with a fresh 30/30 deal', async () => {
+  it('shows the private room code and invites a friend while waiting', async () => {
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
     const user = userEvent.setup();
     useGameStore.setState({
-      game: {
-        ...makeRingState(false),
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('waiting', 'A'),
+    });
+    await render(<GameScreen />);
+
+    expect(screen.getByText('ABCD23')).toBeOnTheScreen();
+    await user.press(screen.getByRole('button', { name: 'Share Invite' }));
+    expect(share).toHaveBeenCalledWith({ message: expect.stringContaining('ABCD23') });
+    share.mockRestore();
+  });
+
+  it('switches from waiting to the match when the server sends the second-player snapshot', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('waiting', 'A'),
+    });
+    await render(<GameScreen />);
+    expect(screen.getByRole('button', { name: 'Share Invite' })).toBeOnTheScreen();
+
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.snapshot',
+        snapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+      });
+    });
+
+    expect(screen.getByRole('button', { name: 'FLIP' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Share Invite' })).toBeNull();
+  });
+
+  it('binds flipping to the local player and keeps the ring available on that phone', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    expect(screen.getByRole('button', { name: 'FLIP' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Player A deck' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Player B deck' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeEnabled();
+    await user.press(screen.getByRole('button', { name: 'FLIP' }));
+    await user.press(screen.getByRole('button', { name: 'Player A deck' }));
+    await user.press(screen.getByRole('button', { name: 'Ring Bell' }));
+    expect(useGameStore.getState().flip).toHaveBeenCalledTimes(2);
+    expect(useGameStore.getState().ring).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let Player B flip on Player A phone, but allows B to ring on their phone', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'B',
+      roomSnapshot: makeSnapshot('playing', 'B', { turn: 'A', canRing: false }),
+    });
+    await render(<GameScreen />);
+
+    expect(screen.getByRole('button', { name: 'FLIP' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Player B deck' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeEnabled();
+    await user.press(screen.getByRole('button', { name: 'Ring Bell' }));
+    expect(useGameStore.getState().ring).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders only the current top cards and server-provided debug counts', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', {
         turn: 'A',
-        status: 'finished',
-        winner: 'B',
-      },
+        players: {
+          A: { connected: true, drawCount: 29, playedCount: 1, topCard: { id: 'C001', symbols: ['banana'] } },
+          B: { connected: true, drawCount: 30, playedCount: 0, topCard: null },
+        },
+      }),
+    });
+    await render(<GameScreen />);
+    const playMat = screen.getByTestId('play-mat');
+    expect(within(playMat).getByText('PLAYER A')).toBeOnTheScreen();
+    expect(within(playMat).getByText('PLAYER B')).toBeOnTheScreen();
+    expect(screen.getByText('A draw pile: 29')).toBeOnTheScreen();
+    expect(screen.getByText('B draw pile: 30')).toBeOnTheScreen();
+    expect(screen.getByText('Turn: A')).toBeOnTheScreen();
+  });
+
+  it('pauses both controls during reconnect or a server connection pause', async () => {
+    useGameStore.setState({
+      connectionStatus: 'reconnecting',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('connection-paused', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+    expect(screen.getByText('Connection paused')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'FLIP' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeDisabled();
+  });
+
+  it('shows the server restart error over the saved match and lets the player leave', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      connectionStatus: 'error',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      error: { code: 'ROOM_NOT_FOUND', message: 'Room code was not found or has expired.' },
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+    expect(screen.getByText('Room code was not found or has expired.')).toBeOnTheScreen();
+    await user.press(screen.getByRole('button', { name: 'Leave Room' }));
+    expect(useGameStore.getState().leaveRoom).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the result from the local player perspective and offers host rematch', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('finished', 'A', { winner: 'A' }),
     });
     await render(<GameScreen />);
 
     expect(screen.getByText('YOU WIN')).toBeOnTheScreen();
-    expect(screen.getByText('PLAYER B WINS')).toBeOnTheScreen();
     expect(screen.queryByRole('button', { name: 'FLIP' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Player A ring' })).toBeNull();
-
-    await user.press(screen.getByRole('button', { name: 'Restart Game' }));
-
-    expect(screen.queryByText('YOU WIN')).toBeNull();
-    expect(screen.getByText('A draw pile: 30')).toBeOnTheScreen();
-    expect(screen.getByText('B draw pile: 30')).toBeOnTheScreen();
-    expect(screen.getByText('Turn: A')).toBeOnTheScreen();
+    await user.press(screen.getByRole('button', { name: 'PLAY AGAIN' }));
+    expect(useGameStore.getState().rematch).toHaveBeenCalledTimes(1);
   });
 
-  it('finishes the game when the active player presses FLIP with an empty draw pile', async () => {
-    const user = userEvent.setup();
+  it('shows a loss to Player B and does not offer B a rematch action', async () => {
     useGameStore.setState({
-      game: {
-        status: 'playing',
-        turn: 'A',
-        winner: null,
-        lastRingOutcome: null,
-        players: {
-          A: { drawPile: [], playedPile: [makeCard('A-visible', ['banana'])] },
-          B: { drawPile: [makeCard('B-draw', ['pear'])], playedPile: [] },
-        },
-      },
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'B',
+      roomSnapshot: makeSnapshot('finished', 'B', { winner: 'A' }),
     });
     await render(<GameScreen />);
-
-    await user.press(screen.getByRole('button', { name: 'FLIP' }));
-
-    expect(screen.getByText('PLAYER B WINS')).toBeOnTheScreen();
-    expect(screen.getByText('Turn: A')).toBeOnTheScreen();
+    expect(screen.getByText('YOU LOSE')).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'PLAY AGAIN' })).toBeNull();
   });
 });
+
+function makeSnapshot(
+  phase: RoomSnapshot['phase'],
+  localPlayerId: 'A' | 'B',
+  overrides: Partial<RoomSnapshot> = {},
+): RoomSnapshot {
+  return {
+    roomCode: 'ABCD23',
+    phase,
+    localPlayerId,
+    players: {
+      A: { connected: true, drawCount: 30, playedCount: 0, topCard: null },
+      B: { connected: true, drawCount: 30, playedCount: 0, topCard: null },
+    },
+    turn: null,
+    winner: null,
+    lastRingOutcome: null,
+    visibleCounts: { banana: 0, grape: 0, pear: 0, strawberry: 0, peach: 0, wildBellCount: 0 },
+    canRing: false,
+    tableVersion: 4,
+    ...overrides,
+  };
+}

@@ -9,9 +9,10 @@ type RoomEntryProps = Readonly<{
   onJoin: (roomCode: string) => void;
   error: GameClientError | null;
   busy: boolean;
+  busyLabel?: string;
 }>;
 
-export function RoomEntry({ onCreate, onJoin, error, busy }: RoomEntryProps) {
+export function RoomEntry({ onCreate, onJoin, error, busy, busyLabel = 'CONNECTING…' }: RoomEntryProps) {
   const [code, setCode] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -39,7 +40,7 @@ export function RoomEntry({ onCreate, onJoin, error, busy }: RoomEntryProps) {
         onPress={onCreate}
         style={({ pressed }) => [styles.createButton, pressed && styles.pressed, busy && styles.disabled]}
       >
-        <Text style={styles.createText}>{busy ? 'CONNECTING…' : 'Create Room'}</Text>
+        <Text style={styles.createText}>{busy ? busyLabel : 'Create Room'}</Text>
       </Pressable>
 
       <View style={styles.divider}><View style={styles.rule} /><Text style={styles.or}>OR JOIN</Text><View style={styles.rule} /></View>

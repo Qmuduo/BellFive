@@ -1,5 +1,5 @@
 import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
-import type { GameClientStatus } from '../network/GameClient';
+import type { GameClientError, GameClientStatus } from '../network/GameClient';
 import type { RoomSnapshot } from '../network/protocol';
 import type { PlayerId } from '../game/types';
 
@@ -8,10 +8,11 @@ type WaitingRoomProps = Readonly<{
   localPlayerId: PlayerId;
   snapshot: RoomSnapshot;
   connectionStatus: GameClientStatus;
+  error: GameClientError | null;
   onLeave: () => void;
 }>;
 
-export function WaitingRoom({ roomCode, localPlayerId, snapshot, connectionStatus, onLeave }: WaitingRoomProps) {
+export function WaitingRoom({ roomCode, localPlayerId, snapshot, connectionStatus, error, onLeave }: WaitingRoomProps) {
   const otherPlayer: PlayerId = localPlayerId === 'A' ? 'B' : 'A';
   const shareInvite = () => Share.share({
     message: `Join my BellFive game. Enter room code ${roomCode} in BellFive to play with me.`,
@@ -34,7 +35,7 @@ export function WaitingRoom({ roomCode, localPlayerId, snapshot, connectionStatu
       </View>
 
       <Text style={styles.connection}>
-        {connectionStatus === 'reconnecting' ? 'Reconnecting to the game server…' : 'The match starts when both players are connected.'}
+        {error?.message ?? (connectionStatus === 'reconnecting' ? 'Reconnecting to the game server…' : 'The match starts when both players are connected.')}
       </Text>
 
       <Pressable role="button" onPress={shareInvite} style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}>

@@ -1,5 +1,6 @@
 import { render, screen, userEvent } from '@testing-library/react-native';
 import { Share } from 'react-native';
+import type { GameClientError } from '../../network/GameClient';
 import type { RoomSnapshot } from '../../network/protocol';
 import { WaitingRoom } from '../WaitingRoom';
 
@@ -13,6 +14,7 @@ describe('WaitingRoom', () => {
         localPlayerId="A"
         snapshot={makeSnapshot()}
         connectionStatus="connected"
+        error={null}
         onLeave={jest.fn()}
       />,
     );
@@ -26,6 +28,25 @@ describe('WaitingRoom', () => {
       message: expect.stringContaining('ABCD23'),
     });
     share.mockRestore();
+  });
+
+  it('shows a recoverable room error while keeping the leave action available', async () => {
+    const onLeave = jest.fn();
+    const error: GameClientError = { code: 'ROOM_NOT_FOUND', message: 'Room expired. Leave and create another.' };
+    const user = userEvent.setup();
+    await render(
+      <WaitingRoom
+        roomCode="ABCD23"
+        localPlayerId="A"
+        snapshot={makeSnapshot()}
+        connectionStatus="error"
+        error={error}
+        onLeave={onLeave}
+      />,
+    );
+    expect(screen.getByText(error.message)).toBeOnTheScreen();
+    await user.press(screen.getByRole('button', { name: 'Leave Room' }));
+    expect(onLeave).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -2,29 +2,37 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { useAudioPlayer } from 'expo-audio';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { DebugPanel } from './DebugPanel';
+import type { PlayerId } from '../game/types';
 import { BellButton } from './BellButton';
 import { CollectionFly } from './CollectionFly';
+import { DebugPanel } from './DebugPanel';
 import { GameCard } from './GameCard';
 import { PlayerDeck } from './PlayerDeck';
+import { RoomEntry } from './RoomEntry';
+import { WaitingRoom } from './WaitingRoom';
 import { useGameStore } from '../store/gameStore';
 import { triggerGameFeedback } from '../services/gameFeedback';
-import type { PlayerId } from '../game/types';
+
+type CollectionCue = { id: number; caller: PlayerId; count: number };
 
 export default function GameScreen() {
   const audioPlayer = useAudioPlayer(require('../../assets/audio/bell.wav'));
-  const game = useGameStore(state => state.game);
-  const startGame = useGameStore(state => state.startGame);
-  const restartGame = useGameStore(state => state.restartGame);
+  const connectionStatus = useGameStore(state => state.connectionStatus);
+  const roomSnapshot = useGameStore(state => state.roomSnapshot);
+  const roomCode = useGameStore(state => state.roomCode);
+  const localPlayerId = useGameStore(state => state.localPlayerId);
+  const leavingRoom = useGameStore(state => state.leavingRoom);
+  const error = useGameStore(state => state.error);
+  const lastActionResult = useGameStore(state => state.lastActionResult);
+  const createRoom = useGameStore(state => state.createRoom);
+  const joinRoom = useGameStore(state => state.joinRoom);
   const flip = useGameStore(state => state.flip);
-  const flipForPlayer = useGameStore(state => state.flipForPlayer);
-  const ringForPlayer = useGameStore(state => state.ringForPlayer);
-  const [collectionCue, setCollectionCue] = useState<{
-    id: number;
-    caller: PlayerId;
-    cards: NonNullable<typeof game>['players']['A']['playedPile'];
-  } | null>(null);
+  const ring = useGameStore(state => state.ring);
+  const rematch = useGameStore(state => state.rematch);
+  const leaveRoom = useGameStore(state => state.leaveRoom);
+  const [collectionCue, setCollectionCue] = useState<CollectionCue | null>(null);
   const collectionSequence = useRef(0);
+  const lastProcessedAction = useRef<string | null>(null);
 
   useEffect(() => {
     if (!collectionCue) return;
@@ -34,219 +42,213 @@ export default function GameScreen() {
     return () => clearTimeout(timeout);
   }, [collectionCue]);
 
-  const handleFlip = () => {
-    const currentGame = useGameStore.getState().game;
-    const canFlip =
-      currentGame?.status === 'playing' && currentGame.players[currentGame.turn].drawPile.length > 0;
-    flip();
-    if (canFlip) triggerGameFeedback('flip');
-  };
+  useEffect(() => {
+    if (!lastActionResult || lastProcessedAction.current === lastActionResult.actionId) return;
+    lastProcessedAction.current = lastActionResult.actionId;
+    if (!lastActionResult.accepted || !lastActionResult.outcome) return;
 
-  const handleDeckFlip = (player: PlayerId) => {
-    const currentGame = useGameStore.getState().game;
-    const canFlip =
-      currentGame?.status === 'playing' &&
-      currentGame.turn === player &&
-      currentGame.players[player].drawPile.length > 0;
-    flipForPlayer(player);
-    if (canFlip) triggerGameFeedback('flip');
-  };
-
-  const handleRing = (player: PlayerId) => {
-    const currentGame = useGameStore.getState().game;
-    const result = ringForPlayer(player);
-    if (!result) return;
-
-    if (result.outcome === 'correct') {
+    if (lastActionResult.outcome === 'correct') {
       triggerGameFeedback('correct', audioPlayer);
-      if (currentGame) {
-        setCollectionCue({
-          id: ++collectionSequence.current,
-          caller: player,
-          cards: [...currentGame.players.A.playedPile, ...currentGame.players.B.playedPile],
-        });
+      const count = lastActionResult.movedCardCount ?? 0;
+      if (count > 0 && localPlayerId) {
+        setCollectionCue({ id: ++collectionSequence.current, caller: localPlayerId, count });
       }
     } else {
       triggerGameFeedback('wrong');
     }
+  }, [audioPlayer, lastActionResult, localPlayerId]);
+
+  if (!roomSnapshot) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F6F5F1" />
+        <RoomEntry
+          onCreate={createRoom}
+          onJoin={joinRoom}
+          error={error}
+          busy={leavingRoom || connectionStatus === 'connecting' || connectionStatus === 'reconnecting'}
+          busyLabel={leavingRoom ? 'LEAVING…' : undefined}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  if (roomSnapshot.phase === 'waiting' && roomCode && localPlayerId) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F6F5F1" />
+        <WaitingRoom
+          roomCode={roomCode}
+          localPlayerId={localPlayerId}
+          snapshot={roomSnapshot}
+          connectionStatus={connectionStatus}
+          error={error}
+          onLeave={leaveRoom}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  const isPlaying = roomSnapshot.phase === 'playing';
+  const isFinished = roomSnapshot.phase === 'finished';
+  const canInteract = isPlaying && connectionStatus === 'connected';
+  const canFlip = canInteract && Boolean(localPlayerId && localPlayerId === roomSnapshot.turn);
+  const localWinner = roomSnapshot.winner === localPlayerId;
+  const handleFlip = () => {
+    if (!canFlip) return;
+    flip();
+    triggerGameFeedback('flip');
+  };
+  const handleDeckFlip = (player: PlayerId) => {
+    if (player === localPlayerId) handleFlip();
+  };
+  const handleRing = () => {
+    if (!canInteract) return;
+    ring();
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F6F5F1" />
+      <View style={styles.screen}>
         <View style={styles.header}>
           <View>
+            <Text style={styles.eyebrow}>PRIVATE ROOM · PLAYER {localPlayerId}</Text>
             <Text style={styles.title}>BellFive</Text>
-            <Text style={styles.subtitle}>Local two-player game</Text>
           </View>
-          <Pressable
-            role="button"
-            aria-label={game ? 'Restart Game' : 'Start Game'}
-            onPress={game ? restartGame : startGame}
-            style={({ pressed }) => [styles.restartButton, pressed && styles.pressed]}
-          >
-            <Text style={styles.restartText}>{game ? 'RESTART GAME' : 'START GAME'}</Text>
+          <Pressable role="button" accessibilityLabel="Leave Room" onPress={leaveRoom} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
+            <Text style={styles.headerButtonText}>LEAVE</Text>
           </Pressable>
         </View>
 
-        <PlayerDeck
-          player="B"
-          drawCount={game?.players.B.drawPile.length ?? 0}
-          playedCount={game?.players.B.playedPile.length ?? 0}
-          active={game?.status === 'playing' && game.turn === 'B'}
-          onPress={() => handleDeckFlip('B')}
-        />
-        <GameCard playerLabel="PLAYER B" card={game?.players.B.playedPile[0]} />
-
-        <View style={styles.turnArea}>
-          <Text style={styles.turnLabel}>
-            {game?.status === 'finished'
-              ? 'GAME OVER'
-              : game
-                ? `PLAYER ${game.turn}'S TURN`
-                : 'Ready to play?'}
-          </Text>
-          {game?.status === 'finished' ? (
-            <View style={styles.gameOver}>
-              <Text style={styles.winnerLabel}>PLAYER {game.winner} WINS</Text>
-              <Text style={styles.youWin}>YOU WIN</Text>
-            </View>
-          ) : (
-            <>
-              <BellButton
-                disabled={!game || game.status !== 'playing'}
-                outcome={game?.lastRingOutcome ?? null}
-                onRing={handleRing}
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.players}>
+            {(['A', 'B'] as const).map(player => (
+              <PlayerDeck
+                key={player}
+                player={player}
+                drawCount={roomSnapshot.players[player].drawCount ?? 0}
+                playedCount={roomSnapshot.players[player].playedCount ?? 0}
+                isTurnOwner={roomSnapshot.turn === player}
+                isLocalPlayer={localPlayerId === player}
+                canFlip={canFlip && localPlayerId === player}
+                onPress={() => handleDeckFlip(player)}
               />
-              <Pressable
-                role="button"
-                aria-label="FLIP"
-                accessibilityState={{ disabled: !game }}
-                disabled={!game}
-                onPress={handleFlip}
-                style={({ pressed }) => [styles.flipButton, pressed && game && styles.pressed]}
-              >
-                <Text style={styles.flipText}>FLIP</Text>
-              </Pressable>
-              <Text style={styles.turnHint}>
-                {game ? `Player ${game.turn} flips next` : 'Start a game to begin'}
+            ))}
+          </View>
+
+          <View style={styles.turnStrip}>
+            <View style={[styles.turnDot, roomSnapshot.turn === 'B' ? styles.turnDotB : styles.turnDotA, isFinished && styles.turnDotFinished]} />
+            <View style={styles.turnCopy}>
+              <Text style={styles.turnLabel}>
+                {isFinished ? 'GAME OVER' : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? 'CONNECTION PAUSED' : roomSnapshot.turn ? `PLAYER ${roomSnapshot.turn} TO FLIP` : 'READY'}
               </Text>
-            </>
-          )}
-        </View>
+              <Text style={styles.turnHint}>
+                {isFinished ? 'The round is complete' : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? 'Waiting for both phones to reconnect' : canFlip ? 'Your turn — flip one card' : `Player ${roomSnapshot.turn ?? '—'} flips next`}
+              </Text>
+            </View>
+            <Text style={styles.roomCode}>{roomCode}</Text>
+          </View>
 
-        <GameCard playerLabel="PLAYER A" card={game?.players.A.playedPile[0]} />
-        <PlayerDeck
-          player="A"
-          drawCount={game?.players.A.drawPile.length ?? 0}
-          playedCount={game?.players.A.playedPile.length ?? 0}
-          active={game?.status === 'playing' && game.turn === 'A'}
-          onPress={() => handleDeckFlip('A')}
-        />
+          {roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? (
+            <View style={styles.pausedBanner}><Text style={styles.pausedText}>Connection paused</Text></View>
+          ) : null}
+          {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{error.message}</Text></View> : null}
 
-        {collectionCue ? (
-          <CollectionFly
-            key={collectionCue.id}
-            cards={collectionCue.cards}
-            caller={collectionCue.caller}
-          />
-        ) : null}
-        <DebugPanel game={game} />
-      </ScrollView>
+          <View style={styles.tablePanel}>
+            <View style={styles.tableHeading}>
+              <Text style={styles.tableTitle}>THE TABLE</Text>
+              <Text style={styles.tableHint}>TOP CARDS ONLY</Text>
+            </View>
+            <View testID="play-mat" style={styles.playMat}>
+              <GameCard playerLabel="PLAYER A" card={roomSnapshot.players.A.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'A'} />
+              <GameCard playerLabel="PLAYER B" card={roomSnapshot.players.B.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'B'} />
+              {collectionCue ? <CollectionFly key={collectionCue.id} count={collectionCue.count} caller={collectionCue.caller} /> : null}
+            </View>
+          </View>
+
+          {isFinished ? (
+            <View style={styles.gameOver}>
+              <Text style={styles.winnerLabel}>{localWinner ? 'YOU WIN' : 'YOU LOSE'}</Text>
+              <Text style={styles.youWin}>PLAYER {roomSnapshot.winner} WINS</Text>
+            </View>
+          ) : null}
+          <DebugPanel snapshot={roomSnapshot} connectionStatus={connectionStatus} />
+        </ScrollView>
+
+        {isFinished ? (
+          <View style={styles.finishedDock}>
+            {localPlayerId === 'A' ? (
+              <Pressable role="button" onPress={rematch} style={({ pressed }) => [styles.playAgain, pressed && styles.pressed]}>
+                <Text style={styles.flipText}>PLAY AGAIN</Text>
+              </Pressable>
+            ) : <Text style={styles.finishedHint}>Waiting for Player A to start a rematch.</Text>}
+          </View>
+        ) : (
+          <View style={styles.actionDock}>
+            <Pressable
+              role="button"
+              aria-label="FLIP"
+              accessibilityState={{ disabled: !canFlip }}
+              disabled={!canFlip}
+              onPress={handleFlip}
+              style={({ pressed }) => [styles.flipButton, !canFlip && styles.disabledButton, pressed && canFlip && styles.pressed]}
+            >
+              <Text style={styles.flipText}>FLIP</Text>
+              <Text style={styles.flipHint}>{canFlip ? `PLAYER ${localPlayerId}` : `WAIT · ${roomSnapshot.turn ?? '—'}`}</Text>
+            </Pressable>
+            <BellButton
+              disabled={!canInteract}
+              outcome={roomSnapshot.lastRingOutcome}
+              feedbackKey={roomSnapshot.ringVersion ?? roomSnapshot.tableVersion}
+              onRing={handleRing}
+            />
+          </View>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F7F3EA',
-  },
-  content: {
-    position: 'relative',
-    flexGrow: 1,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  title: {
-    color: '#1F2933',
-    fontSize: 25,
-    fontWeight: '900',
-  },
-  subtitle: {
-    color: '#69747D',
-    fontSize: 12,
-  },
-  restartButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#2D614A',
-  },
-  restartText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.7,
-  },
-  turnArea: {
-    alignItems: 'center',
-    paddingVertical: 14,
-  },
-  turnLabel: {
-    color: '#28333B',
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  gameOver: {
-    alignItems: 'center',
-    paddingVertical: 28,
-  },
-  winnerLabel: {
-    color: '#2D614A',
-    fontSize: 19,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  youWin: {
-    marginTop: 5,
-    color: '#C18D13',
-    fontSize: 30,
-    fontWeight: '900',
-    letterSpacing: 2,
-  },
-  flipButton: {
-    width: 110,
-    height: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    borderRadius: 18,
-    backgroundColor: '#F0C63F',
-    borderColor: '#C19A1E',
-    borderWidth: 2,
-  },
-  flipText: {
-    color: '#493B10',
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-  },
-  turnHint: {
-    marginTop: 5,
-    color: '#69747D',
-    fontSize: 11,
-  },
-  pressed: {
-    opacity: 0.84,
-    transform: [{ scale: 0.98 }],
-  },
+  safeArea: { flex: 1, backgroundColor: '#F6F5F1' },
+  screen: { flex: 1, paddingHorizontal: 18 },
+  header: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  eyebrow: { color: '#87909B', fontSize: 9, fontWeight: '800', letterSpacing: 1.4 },
+  title: { color: '#202B37', fontSize: 24, fontWeight: '900', letterSpacing: -0.6 },
+  headerButton: { minWidth: 83, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 11, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E1E3E7' },
+  headerButtonText: { color: '#596674', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingTop: 2, paddingBottom: 14 },
+  players: { flexDirection: 'row', marginBottom: 12 },
+  turnStrip: { minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, paddingVertical: 8, marginBottom: 12, borderRadius: 16, borderWidth: 1, borderColor: '#E8E8E5', backgroundColor: '#FFFFFF' },
+  turnDot: { width: 11, height: 11, marginRight: 10, borderRadius: 6 },
+  turnDotA: { backgroundColor: '#E87572' },
+  turnDotB: { backgroundColor: '#5A9FC1' },
+  turnDotFinished: { backgroundColor: '#CFAC34' },
+  turnCopy: { flex: 1 },
+  turnLabel: { color: '#364451', fontSize: 11, fontWeight: '900', letterSpacing: 0.8 },
+  turnHint: { marginTop: 2, color: '#78848F', fontSize: 10, fontWeight: '500' },
+  roomCode: { color: '#7D8994', fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
+  pausedBanner: { alignItems: 'center', marginBottom: 10, paddingVertical: 8, borderRadius: 12, backgroundColor: '#FFF1D7' },
+  pausedText: { color: '#946B22', fontSize: 11, fontWeight: '800' },
+  errorBanner: { marginBottom: 10, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: '#FBE6E3' },
+  errorText: { color: '#9D453F', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  tablePanel: { padding: 12, borderRadius: 27, borderWidth: 2, borderColor: '#C7D3EC', backgroundColor: '#E8EEFA' },
+  tableHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9, paddingHorizontal: 3 },
+  tableTitle: { color: '#4E6487', fontSize: 10, fontWeight: '900', letterSpacing: 1.4 },
+  tableHint: { color: '#8290A7', fontSize: 8, fontWeight: '800', letterSpacing: 0.8 },
+  playMat: { position: 'relative', flexDirection: 'row', alignItems: 'stretch' },
+  gameOver: { alignItems: 'center', paddingVertical: 12 },
+  winnerLabel: { color: '#3D6078', fontSize: 19, fontWeight: '900', letterSpacing: 0.8 },
+  youWin: { marginTop: 1, color: '#D46D69', fontSize: 13, fontWeight: '900', letterSpacing: 1 },
+  actionDock: { flexDirection: 'row', alignItems: 'center', paddingTop: 10, paddingBottom: 4, borderTopWidth: 1, borderTopColor: '#E6E5E1', backgroundColor: '#F6F5F1' },
+  flipButton: { flex: 1, minHeight: 78, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderRadius: 23, borderWidth: 1, borderColor: '#E6AEB7', backgroundColor: '#F2C4CC' },
+  disabledButton: { opacity: 0.5 },
+  flipText: { color: '#633E45', fontSize: 20, fontWeight: '900', letterSpacing: 1.8 },
+  flipHint: { marginTop: 1, color: '#865C63', fontSize: 8, fontWeight: '800', letterSpacing: 1 },
+  finishedDock: { alignItems: 'center', justifyContent: 'center', minHeight: 78, borderTopWidth: 1, borderTopColor: '#E6E5E1' },
+  finishedHint: { color: '#65717C', fontSize: 12, fontWeight: '600' },
+  playAgain: { width: '100%', minHeight: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: '#F2C4CC' },
+  pressed: { opacity: 0.84, transform: [{ scale: 0.98 }] },
 });

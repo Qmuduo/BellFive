@@ -20,9 +20,10 @@ const ELEMENT_EMOJI: Record<GameElement, string> = {
 type GameCardProps = {
   playerLabel: string;
   card?: CardDefinition;
+  active?: boolean;
 };
 
-export function GameCard({ playerLabel, card }: GameCardProps) {
+export function GameCard({ playerLabel, card, active = false }: GameCardProps) {
   const rotation = useSharedValue(0);
   const slide = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -46,9 +47,11 @@ export function GameCard({ playerLabel, card }: GameCardProps) {
     opacity.value = withTiming(1, { duration: 190 });
   }, [card?.id, opacity, playerLabel, rotation, slide]);
 
+  const activeStyle = playerLabel.endsWith('A') ? styles.activeA : styles.activeB;
+
   return (
-    <View style={styles.card}>
-      <Text style={styles.label}>{playerLabel} CURRENT CARD</Text>
+    <View style={[styles.card, active && activeStyle]}>
+      <Text style={styles.label}>{playerLabel}</Text>
       {card ? (
         <Animated.View style={[styles.symbols, revealStyle]}>
           {card.symbols.map((symbol, index) => (
@@ -58,7 +61,10 @@ export function GameCard({ playerLabel, card }: GameCardProps) {
           ))}
         </Animated.View>
       ) : (
-        <Text style={styles.empty}>No card flipped</Text>
+        <View style={styles.emptyArea}>
+          <Text style={styles.empty}>—</Text>
+          <Text style={styles.emptyHint}>READY</Text>
+        </View>
       )}
     </View>
   );
@@ -66,34 +72,71 @@ export function GameCard({ playerLabel, card }: GameCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    minHeight: 104,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 218,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 12,
-    borderRadius: 16,
-    borderColor: '#D8D1C3',
-    borderWidth: 1,
-    backgroundColor: '#FFFDF8',
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    marginHorizontal: 4,
+    borderRadius: 21,
+    borderColor: '#DDD9E9',
+    borderWidth: 1.5,
+    borderStyle: 'solid',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#43516A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 9,
+    elevation: 2,
+  },
+  activeA: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#E87572',
+  },
+  activeB: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#5A9FC1',
   },
   label: {
-    color: '#69747D',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
+    color: '#78828F',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
   symbols: {
+    flex: 1,
+    alignContent: 'center',
+    alignItems: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 5,
   },
   symbol: {
-    marginHorizontal: 3,
+    marginHorizontal: 2,
+    marginVertical: 1,
     fontSize: 30,
+    lineHeight: 40,
+  },
+  emptyArea: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   empty: {
-    marginTop: 10,
-    color: '#9AA2A8',
-    fontSize: 15,
+    color: '#D2D9E5',
+    fontSize: 34,
+    fontWeight: '300',
+  },
+  emptyHint: {
+    marginTop: 2,
+    color: '#A0A9B5',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
 });

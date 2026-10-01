@@ -8,50 +8,36 @@ import Animated, {
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
-import type { CardDefinition, GameElement, PlayerId } from '../game/types';
+import type { PlayerId } from '../game/types';
 
-const ELEMENT_EMOJI: Record<GameElement, string> = {
-  banana: '🍌',
-  grape: '🍇',
-  pear: '🍐',
-  strawberry: '🍓',
-  peach: '🍑',
-  bell: '🔔',
-};
-
-type CollectionFlyProps = {
-  cards: readonly CardDefinition[];
+type CollectionFlyProps = Readonly<{
+  count: number;
   caller: PlayerId;
-};
+}>;
 
-export function CollectionFly({ cards, caller }: CollectionFlyProps) {
+export function CollectionFly({ count, caller }: CollectionFlyProps) {
+  const cardCount = Math.min(Math.max(0, count), 5);
   return (
     <View pointerEvents="none" style={styles.flightLayer}>
-      {cards.slice(0, 5).map((card, index) => (
-        <FlyingCard key={card.id} card={card} index={index} caller={caller} />
+      {Array.from({ length: cardCount }, (_, index) => (
+        <FlyingCard key={index} index={index} caller={caller} />
       ))}
+      {count > 5 ? <Text style={styles.countBadge}>+{count - 5}</Text> : null}
     </View>
   );
 }
 
-function FlyingCard({
-  card,
-  index,
-  caller,
-}: {
-  card: CardDefinition;
-  index: number;
-  caller: PlayerId;
-}) {
+function FlyingCard({ index, caller }: { index: number; caller: PlayerId }) {
   const progress = useSharedValue(0);
-  const destinationY = caller === 'A' ? 112 : -112;
+  const destinationX = caller === 'A' ? -86 : 86;
+  const destinationY = -112;
   const fanOffset = (index - 2) * 15;
   const animatedStyle = useAnimatedStyle(() => {
     const value = progress.value;
     return {
       opacity: interpolate(value, [0, 0.68, 1], [0.98, 0.88, 0]),
       transform: [
-        { translateX: fanOffset * (1 - value) },
+        { translateX: fanOffset * (1 - value) + destinationX * value },
         { translateY: destinationY * value },
         { rotate: `${fanOffset * value * 0.35}deg` },
         { scale: interpolate(value, [0, 1], [1, 0.58]) },
@@ -66,46 +52,12 @@ function FlyingCard({
     );
   }, [index, progress]);
 
-  return (
-    <Animated.View style={[styles.flyingCard, animatedStyle]}>
-      {card.symbols.slice(0, 2).map((symbol, symbolIndex) => (
-        <Text key={`${card.id}-${symbolIndex}`} style={styles.cardSymbol}>
-          {ELEMENT_EMOJI[symbol]}
-        </Text>
-      ))}
-    </Animated.View>
-  );
+  return <Animated.View style={[styles.flyingCard, animatedStyle]}><Text style={styles.cardBack}>✦</Text></Animated.View>;
 }
 
 const styles = StyleSheet.create({
-  flightLayer: {
-    position: 'absolute',
-    top: '47%',
-    left: 0,
-    right: 0,
-    height: 76,
-    zIndex: 10,
-    alignItems: 'center',
-  },
-  flyingCard: {
-    position: 'absolute',
-    width: 54,
-    height: 70,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: '#C7B98F',
-    backgroundColor: '#FFFDF8',
-    shadowColor: '#352A11',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  cardSymbol: {
-    marginHorizontal: 1,
-    fontSize: 16,
-  },
+  flightLayer: { position: 'absolute', top: '47%', left: 0, right: 0, height: 76, zIndex: 10, alignItems: 'center' },
+  flyingCard: { position: 'absolute', width: 54, height: 70, alignItems: 'center', justifyContent: 'center', borderRadius: 9, borderWidth: 1, borderColor: '#C7B98F', backgroundColor: '#FFFDF8', shadowColor: '#352A11', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 },
+  cardBack: { color: '#CFB65E', fontSize: 23, fontWeight: '900' },
+  countBadge: { position: 'absolute', top: 0, left: '57%', paddingHorizontal: 6, paddingVertical: 3, overflow: 'hidden', borderRadius: 9, color: '#FFFFFF', backgroundColor: '#566C8D', fontSize: 10, fontWeight: '900' },
 });

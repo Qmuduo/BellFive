@@ -35,4 +35,20 @@ describe('RoomEntry', () => {
     expect(screen.getByText('Room was not found.')).toBeOnTheScreen();
     expect(onJoin).not.toHaveBeenCalled();
   });
+
+  it('shows a caller-provided busy label while room controls are disabled', async () => {
+    await render(
+      <RoomEntry
+        onCreate={jest.fn()}
+        onJoin={jest.fn()}
+        error={null}
+        busy
+        busyLabel="LEAVING…"
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'LEAVING…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Join Room' })).toBeDisabled();
+    expect(screen.getByLabelText('Room code')).toBeDisabled();
+  });
 });
