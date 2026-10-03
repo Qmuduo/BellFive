@@ -116,6 +116,9 @@ export class RoomManager {
       case 'room.application.cancel':
         events = this.cancelApplication(connectionId, message.applicationId);
         break;
+      case 'room.ready':
+        events = this.handleReady(connectionId, message.actionId, message.ready);
+        break;
       case 'room.reconnect':
         events = this.reconnectRoom(
           connectionId,
@@ -126,9 +129,6 @@ export class RoomManager {
         break;
       case 'room.leave':
         events = this.leaveRoom(connectionId, message.requestId);
-        break;
-      case 'room.ready':
-        events = [this.errorEvent(connectionId, 'GAME_NOT_STARTED', 'The match is waiting for both players to ready.')];
         break;
       default:
         events = this.handleGameAction(connectionId, message);
@@ -153,6 +153,9 @@ export class RoomManager {
     seat.connectionId = null;
     const now = this.now();
     room.lastActivityAt = now;
+    if (room.phase === 'waiting' || room.phase === 'finished') {
+      room.ready = { A: false, B: false };
+    }
     this.updateRoomPhase(room, now);
     return [...applicationEvents, ...this.snapshotEvents(room), ...this.lobbySnapshotEvents()];
   }
@@ -194,6 +197,7 @@ export class RoomManager {
       if (remainingSeconds === 0) {
         room.game = finishGameByTimeout(room.game);
         room.phase = 'finished';
+        room.ready = { A: false, B: false };
         room.matchDeadlineAt = null;
         room.pausedRemainingMs = 0;
         room.lastPublishedSeconds = 0;
@@ -363,6 +367,9 @@ export class RoomManager {
       connectionId: application.connectionId,
       profile: application.profile,
     };
+    room.ready = { A: false, B: false };
+    room.actionResults.A.clear();
+    room.actionResults.B.clear();
     this.connectionToSeat.set(application.connectionId, { roomCode: room.roomCode, playerId: 'B' });
     this.applications.delete(applicationId);
     const now = this.now();
@@ -517,23 +524,31 @@ export class RoomManager {
       ];
     }
 
-    if (expiredEvents.length > 0 && message.type !== 'game.rematch') {
+    if (expiredEvents.length > 0) {
       return [
         ...expiredEvents,
         ...this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'GAME_FINISHED', 'The match has finished.'),
       ];
     }
 
+    if (message.type === 'game.rematch') {
+      return this.rejectedAction(
+        room,
+        connectionId,
+        connection.playerId,
+        message.actionId,
+        'READY_REQUIRED',
+        'Both players must ready up to start the next match.',
+      );
+    }
+
     if (room.phase === 'connection-paused') {
       return this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'CONNECTION_PAUSED', 'Wait for both players to reconnect.');
     }
     if (!room.game || room.phase === 'waiting') {
-      return this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'GAME_NOT_STARTED', 'The match starts when both players join.');
+      return this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'GAME_NOT_STARTED', 'The match starts when both players are ready.');
     }
-    if (
-      (room.phase === 'finished' || room.game.status === 'finished') &&
-      message.type !== 'game.rematch'
-    ) {
+    if (room.phase === 'finished' || room.game.status === 'finished') {
       return this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'GAME_FINISHED', 'The match has finished.');
     }
 
@@ -596,28 +611,75 @@ export class RoomManager {
       return [...expiredEvents, ...actionEvents];
     }
 
-    if (connection.playerId !== 'A') {
-      return this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'HOST_ONLY', 'Only Player A can start a rematch.');
+    return [];
+  }
+
+  private handleReady(
+    connectionId: string,
+    actionId: string,
+    ready: boolean,
+  ): RoomManagerEvent[] {
+    const connection = this.connectionToSeat.get(connectionId);
+    if (!connection) {
+      return [this.errorEvent(connectionId, 'NOT_IN_ROOM', 'Join a room before readying up.', undefined, actionId)];
     }
-    if (room.game.status !== 'finished') {
-      return this.rejectedAction(room, connectionId, connection.playerId, message.actionId, 'GAME_NOT_FINISHED', 'A rematch is available after game over.');
+    const room = this.rooms.get(connection.roomCode);
+    const seat = room?.seats[connection.playerId];
+    if (!room || !seat || seat.connectionId !== connectionId) {
+      return [this.errorEvent(connectionId, 'NOT_IN_ROOM', 'The room session is no longer active.', undefined, actionId)];
     }
 
+    const now = this.now();
+    const expiredEvents = this.finishMatchIfExpired(room, now);
+    const cached = room.actionResults[connection.playerId].get(actionId);
+    if (cached) {
+      return [
+        ...expiredEvents,
+        this.event(connectionId, cached),
+        this.event(connectionId, { type: 'room.snapshot', snapshot: this.snapshotFor(room, connection.playerId, now) }),
+      ];
+    }
+
+    if (room.phase !== 'waiting' && room.phase !== 'finished') {
+      return [
+        ...expiredEvents,
+        this.errorEvent(connectionId, 'READY_NOT_AVAILABLE', 'Readiness can only change before a match starts.', undefined, actionId),
+        this.event(connectionId, { type: 'room.snapshot', snapshot: this.snapshotFor(room, connection.playerId, now) }),
+      ];
+    }
+
+    room.ready[connection.playerId] = ready;
+    room.lastActivityAt = now;
+    if (
+      room.seats.A?.connectionId &&
+      room.seats.B?.connectionId &&
+      room.ready.A &&
+      room.ready.B
+    ) {
+      this.startMatch(room, now);
+    }
+
+    const actionEvents = this.acceptedAction(room, connectionId, connection.playerId, {
+      type: 'action.result',
+      actionId,
+      accepted: true,
+    });
+    return [...expiredEvents, ...actionEvents];
+  }
+
+  private startMatch(room: RoomRecord, now: number): void {
     room.game = this.gameFactory();
-    room.tableVersion += 1;
-    room.lastRingEvent = null;
-    room.lastFlipEvent = null;
     room.phase = 'playing';
+    room.ready = { A: true, B: true };
+    room.lastRingEvent = null;
+    room.ringHistory = [];
+    room.lastFlipEvent = null;
     room.matchDeadlineAt = now + this.matchDurationMs;
     room.pausedRemainingMs = null;
     room.lastPublishedSeconds = Math.ceil(this.matchDurationMs / 1000);
     room.lastActivityAt = now;
-    const actionEvents = this.acceptedAction(room, connectionId, connection.playerId, {
-      type: 'action.result',
-      actionId: message.actionId,
-      accepted: true,
-    });
-    return [...expiredEvents, ...actionEvents];
+    room.actionResults.A.clear();
+    room.actionResults.B.clear();
   }
 
   private acceptedAction(
@@ -659,15 +721,20 @@ export class RoomManager {
       room.phase = 'waiting';
       return;
     }
-    if (!bothConnected) {
-      this.pauseClock(room, now);
-      room.phase = 'connection-paused';
+    if (room.game?.status === 'finished') {
+      this.freezeClock(room, now);
+      if (room.phase !== 'finished') room.ready = { A: false, B: false };
+      room.phase = 'finished';
       return;
     }
-    if (!room.game) room.game = this.gameFactory();
-    if (room.game.status === 'finished') {
-      this.freezeClock(room, now);
-      room.phase = 'finished';
+    if (!bothConnected) {
+      this.pauseClock(room, now);
+      room.phase = room.game ? 'connection-paused' : 'waiting';
+      return;
+    }
+    if (!room.game || !room.ready.A || !room.ready.B) {
+      this.pauseClock(room, now);
+      room.phase = 'waiting';
       return;
     }
 
@@ -859,6 +926,7 @@ export class RoomManager {
 
     room.game = finishGameByTimeout(room.game);
     room.phase = 'finished';
+    room.ready = { A: false, B: false };
     room.matchDeadlineAt = null;
     room.pausedRemainingMs = 0;
     room.lastPublishedSeconds = 0;

@@ -141,6 +141,106 @@ describe('RoomManager room lifecycle', () => {
     expect(messageOf(staleApproval, 'socket-a', 'error').code).toBe('APPLICATION_NOT_FOUND');
   });
 
+  it('starts the first match and its timer only after both connected players are ready', () => {
+    let now = 1_000;
+    const gameFactory = jest.fn(() => customGame({
+      A: { drawPile: Array.from({ length: 30 }, (_, index) => card(`A${index}`, ['banana'])), playedPile: [] },
+      B: { drawPile: Array.from({ length: 30 }, (_, index) => card(`B${index}`, ['pear'])), playedPile: [] },
+    }));
+    const manager = makeRoomManager({ now: () => now, gameFactory });
+    const room = createWaitingRoom(manager);
+    const applied = manager.handleMessage('socket-b', {
+      type: 'room.join', requestId: 'ready-join-b', roomCode: room.roomCode,
+    });
+    const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+    const approved = manager.handleMessage('socket-a', {
+      type: 'room.application.decision', applicationId: application.applicationId, approved: true,
+    });
+
+    expect(gameFactory).not.toHaveBeenCalled();
+    expect(messageOf(approved, 'socket-b', 'room.session').snapshot).toMatchObject({
+      phase: 'waiting',
+      ready: { A: false, B: false },
+      remainingSeconds: null,
+      players: { A: { drawCount: null }, B: { drawCount: null } },
+    });
+    expect(messageOf(manager.handleMessage('socket-a', {
+      type: 'game.flip', actionId: 'flip-before-ready',
+    }), 'socket-a', 'error').code).toBe('GAME_NOT_STARTED');
+
+    const aReady = manager.handleMessage('socket-a', {
+      type: 'room.ready', actionId: 'ready-a', ready: true,
+    });
+    expect(messageOf(aReady, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
+      phase: 'waiting', ready: { A: true, B: false }, remainingSeconds: null,
+    });
+    now += 60_000;
+    expect(manager.tick(now)).toEqual([]);
+    expect(gameFactory).not.toHaveBeenCalled();
+
+    const bReady = manager.handleMessage('socket-b', {
+      type: 'room.ready', actionId: 'ready-b', ready: true,
+    });
+    expect(messageOf(bReady, 'socket-b', 'room.snapshot').snapshot).toMatchObject({
+      phase: 'playing',
+      ready: { A: true, B: true },
+      remainingSeconds: 300,
+      players: { A: { drawCount: 30 }, B: { drawCount: 30 } },
+    });
+    expect(gameFactory).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires both players to ready again before starting a rematch', () => {
+    let now = 1_000;
+    const gameFactory = jest.fn(() => customGame({
+      A: { drawPile: [card(`A${gameFactory.mock.calls.length}`, ['banana'])], playedPile: [] },
+      B: { drawPile: [card(`B${gameFactory.mock.calls.length}`, ['pear'])], playedPile: [] },
+    }));
+    const manager = makeRoomManager({ now: () => now, matchDurationMs: 5_000, gameFactory });
+    const room = joinBothPlayers(manager);
+    expect(gameFactory).toHaveBeenCalledTimes(1);
+
+    now += 5_000;
+    expect(messageOf(manager.tick(now), 'socket-a', 'room.snapshot').snapshot.phase).toBe('finished');
+    const hostReady = manager.handleMessage('socket-a', {
+      type: 'room.ready', actionId: 'rematch-ready-a', ready: true,
+    });
+    expect(messageOf(hostReady, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
+      phase: 'finished', ready: { A: true, B: false }, remainingSeconds: 0,
+    });
+    expect(gameFactory).toHaveBeenCalledTimes(1);
+
+    const guestReady = manager.handleMessage('socket-b', {
+      type: 'room.ready', actionId: 'rematch-ready-b', ready: true,
+    });
+    expect(messageOf(guestReady, 'socket-b', 'room.snapshot').snapshot).toMatchObject({
+      phase: 'playing', ready: { A: true, B: true }, remainingSeconds: 5,
+    });
+    expect(gameFactory).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears pre-game readiness when either waiting player disconnects', () => {
+    const manager = makeRoomManager();
+    const waiting = createWaitingRoom(manager);
+    const applied = manager.handleMessage('socket-b', {
+      type: 'room.join', requestId: 'disconnect-ready-join', roomCode: waiting.roomCode,
+    });
+    const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+    manager.handleMessage('socket-a', {
+      type: 'room.application.decision', applicationId: application.applicationId, approved: true,
+    });
+    const ready = manager.handleMessage('socket-a', {
+      type: 'room.ready', actionId: 'ready-before-disconnect', ready: true,
+    });
+    expect(messageOf(ready, 'socket-a', 'room.snapshot').snapshot.ready.A).toBe(true);
+
+    const disconnected = manager.disconnect('socket-b');
+    expect(messageOf(disconnected, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
+      phase: 'waiting',
+      ready: { A: false, B: false },
+    });
+  });
+
   it('creates a waiting room with Player A and a unique readable code', () => {
     let randomValue = 0;
     const rooms = new RoomManager({
@@ -226,15 +326,19 @@ describe('RoomManager room lifecycle', () => {
       applicationId: application.applicationId,
       approved: true,
     });
+    const started = managerReadyBoth(rooms);
 
     const bSession = messageOf(events, 'socket-b', 'room.session');
-    const aSnapshot = messageOf(events, 'socket-a', 'room.snapshot');
+    const aSnapshot = messageOf(started, 'socket-a', 'room.snapshot');
+    const bSnapshot = messageOf(started, 'socket-b', 'room.snapshot');
 
     expect(bSession.localPlayerId).toBe('B');
-    expect(bSession.snapshot.phase).toBe('playing');
-    expect(bSession.snapshot.turn).toBe('A');
-    expect(bSession.snapshot.players.A.drawCount).toBe(30);
-    expect(bSession.snapshot.players.B.drawCount).toBe(30);
+    expect(bSession.snapshot.phase).toBe('waiting');
+    expect(bSession.snapshot.turn).toBeNull();
+    expect(bSnapshot.snapshot.phase).toBe('playing');
+    expect(bSnapshot.snapshot.turn).toBe('A');
+    expect(bSnapshot.snapshot.players.A.drawCount).toBe(30);
+    expect(bSnapshot.snapshot.players.B.drawCount).toBe(30);
     expect(aSnapshot.snapshot.localPlayerId).toBe('A');
     expect(aSnapshot.snapshot.phase).toBe('playing');
   });
@@ -536,7 +640,7 @@ describe('RoomManager authoritative game transitions', () => {
     });
   });
 
-  it('allows only Player A to rematch after game over and keeps the room seats', () => {
+  it('rejects the one-player rematch shortcut after game over', () => {
     let now = 1_000;
     let gameCount = 0;
     const rooms = joinBothPlayers(
@@ -557,24 +661,19 @@ describe('RoomManager authoritative game transitions', () => {
     rooms.manager.handleMessage('socket-a', { type: 'game.flip', actionId: 'last-card' });
     rooms.manager.handleMessage('socket-b', { type: 'game.flip', actionId: 'empty-flip' });
 
-    const unauthorized = rooms.manager.handleMessage('socket-b', {
+    const guestShortcut = rooms.manager.handleMessage('socket-b', {
       type: 'game.rematch',
       actionId: 'b-rematch',
     });
-    expect(messageOf(unauthorized, 'socket-b', 'error').code).toBe('HOST_ONLY');
+    expect(messageOf(guestShortcut, 'socket-b', 'error').code).toBe('READY_REQUIRED');
 
-    const rematch = rooms.manager.handleMessage('socket-a', {
+    const hostShortcut = rooms.manager.handleMessage('socket-a', {
       type: 'game.rematch',
       actionId: 'a-rematch',
     });
-    expect(gameCount).toBe(2);
-    expect(messageOf(rematch, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
-      phase: 'playing',
-      localPlayerId: 'A',
-      turn: 'A',
-      remainingSeconds: 5,
-    });
-    expect(messageOf(rematch, 'socket-b', 'room.snapshot').snapshot.localPlayerId).toBe('B');
+    expect(messageOf(hostShortcut, 'socket-a', 'error').code).toBe('READY_REQUIRED');
+    expect(gameCount).toBe(1);
+    expect(messageOf(hostShortcut, 'socket-a', 'room.snapshot').snapshot.phase).toBe('finished');
   });
 });
 
@@ -664,7 +763,8 @@ describe('RoomManager reconnect and expiry', () => {
       approved: true,
     });
     const bSession = messageOf(joined, 'socket-b', 'room.session');
-    expect(bSession.snapshot.remainingSeconds).toBe(300);
+    const started = managerReadyBoth(manager);
+    expect(messageOf(started, 'socket-b', 'room.snapshot').snapshot.remainingSeconds).toBe(300);
 
     now += 60_000;
     const oneMinute = manager.tick(now);
@@ -716,6 +816,7 @@ describe('RoomManager reconnect and expiry', () => {
         applicationId: application.applicationId,
         approved: true,
       });
+      managerReadyBoth(manager);
 
       now += 5_000;
       const timeout = manager.tick(now);
@@ -756,6 +857,7 @@ describe('RoomManager reconnect and expiry', () => {
       applicationId: application.applicationId,
       approved: true,
     });
+    managerReadyBoth(manager);
     const action: ClientMessage = { type: 'game.flip', actionId: 'cached-before-timeout' };
     expect(messageOf(manager.handleMessage('socket-a', action), 'socket-a', 'action.result').accepted).toBe(true);
 
@@ -836,12 +938,19 @@ function joinBothPlayers(manager: RoomManager) {
     approved: true,
   });
   const session = messageOf(events, 'socket-b', 'room.session');
+  const started = managerReadyBoth(manager, waiting.roomCode);
   return {
     manager,
     roomCode: waiting.roomCode,
     seatTokenA: waiting.seatTokenA,
     seatTokenB: session.seatToken,
+    started,
   };
+}
+
+function managerReadyBoth(manager: RoomManager, key = 'match') {
+  manager.handleMessage('socket-a', { type: 'room.ready', actionId: `ready-a-${key}`, ready: true });
+  return manager.handleMessage('socket-b', { type: 'room.ready', actionId: `ready-b-${key}`, ready: true });
 }
 
 function messageOf<T extends ServerMessage['type']>(

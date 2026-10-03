@@ -63,12 +63,24 @@ describe('WebSocket room transport', () => {
     expect(bSession).toMatchObject({
       type: 'room.session',
       localPlayerId: 'B',
-      snapshot: { phase: 'playing', players: { A: { drawCount: 30 }, B: { drawCount: 30 } } },
+      snapshot: { phase: 'waiting', players: { A: { drawCount: null }, B: { drawCount: null } } },
     });
     expect(aSnapshot).toMatchObject({
       type: 'room.snapshot',
-      snapshot: { phase: 'playing', localPlayerId: 'A', turn: 'A' },
+      snapshot: { phase: 'waiting', localPlayerId: 'A', turn: null },
     });
+
+    const aPlayingPromise = nextMessage(
+      playerA,
+      message => message.type === 'room.snapshot' && message.snapshot.phase === 'playing',
+    );
+    const bPlayingPromise = nextMessage(
+      playerB,
+      message => message.type === 'room.snapshot' && message.snapshot.phase === 'playing',
+    );
+    playerA.send(JSON.stringify({ type: 'room.ready', actionId: 'a-ready', ready: true }));
+    playerB.send(JSON.stringify({ type: 'room.ready', actionId: 'b-ready', ready: true }));
+    await Promise.all([aPlayingPromise, bPlayingPromise]);
   });
 
   it('discovers an open room and keeps the requester outside until the host approves', async () => {
@@ -261,6 +273,17 @@ describe('WebSocket room transport', () => {
       approved: true,
     }));
     await bSessionPromise;
+    const aPlayingPromise = nextMessage(
+      playerA,
+      message => message.type === 'room.snapshot' && message.snapshot.phase === 'playing',
+    );
+    const bPlayingPromise = nextMessage(
+      playerB,
+      message => message.type === 'room.snapshot' && message.snapshot.phase === 'playing',
+    );
+    playerA.send(JSON.stringify({ type: 'room.ready', actionId: 'helper-a-ready', ready: true }));
+    playerB.send(JSON.stringify({ type: 'room.ready', actionId: 'helper-b-ready', ready: true }));
+    await Promise.all([aPlayingPromise, bPlayingPromise]);
     return { playerA, playerB, roomCode: aSession.roomCode };
   }
 
