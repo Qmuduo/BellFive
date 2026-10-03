@@ -3,6 +3,148 @@ import { GameClient } from '../GameClient';
 import type { GameClientHandlers, SocketHandlers, SocketLike } from '../GameClient';
 
 describe('GameClient room commands', () => {
+  it('subscribes to the public lobby and refreshes it on the same connection', () => {
+    const { client, sockets } = createClient();
+    client.subscribeLobby();
+    expect(sockets).toHaveLength(1);
+    sockets[0].open();
+    expect(sockets[0].sentMessages()).toEqual([{ type: 'room.lobby.subscribe' }]);
+
+    client.refreshLobby();
+    client.unsubscribeLobby();
+    expect(sockets[0].sentMessages()).toEqual([
+      { type: 'room.lobby.subscribe' },
+      { type: 'room.lobby.refresh' },
+      { type: 'room.lobby.unsubscribe' },
+    ]);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('keeps room applications in the lobby until an approved room session arrives', () => {
+    const received = { rooms: [] as unknown[], applications: [] as unknown[], statuses: [] as unknown[], sessions: 0 };
+    const { client, sockets } = createClient({
+      handlers: {
+        onLobbySnapshot: rooms => received.rooms.push(...rooms),
+        onPendingApplication: application => received.applications.push(application),
+        onApplicationStatus: status => received.statuses.push(status),
+        onSession: () => { received.sessions += 1; },
+      },
+    });
+    client.subscribeLobby();
+    sockets[0].open();
+    sockets[0].receive({ type: 'room.lobby.snapshot', rooms: [
+      { roomCode: 'ABCD23', hostProfile: { nickname: 'Mira', avatarId: 'peach' } },
+    ] });
+
+    client.applyToRoom('ABCD23', { nickname: 'Kai', avatarId: 'banana' });
+    expect(sockets).toHaveLength(1);
+    const joinMessage = sockets[0].sentMessages().slice(-1)[0];
+    expect(joinMessage).toMatchObject({
+      type: 'room.join', roomCode: 'ABCD23', profile: { nickname: 'Kai' },
+    });
+    sockets[0].receive({
+      type: 'room.application.status',
+      applicationId: 'app-1', status: 'pending', message: 'Waiting for approval.',
+    });
+    expect(client.getStatus()).toBe('connected');
+    sockets[0].receive({
+      type: 'room.application.status',
+      applicationId: 'app-1', status: 'rejected', message: 'Request declined.',
+    });
+    client.refreshLobby();
+    expect(client.getStatus()).toBe('connected');
+    expect(sockets).toHaveLength(1);
+
+    client.applyToRoom('ABCD23', { nickname: 'Kai', avatarId: 'banana' });
+    sockets[0].receive({
+      type: 'room.application.status',
+      applicationId: 'app-2', status: 'pending', message: 'Waiting for approval.',
+    });
+    sockets[0].receive(makeSession('B'));
+
+    expect(received.rooms).toHaveLength(1);
+    expect(received.applications).toEqual([]);
+    expect(received.statuses.map(status => (status as { status: string }).status)).toEqual([
+      'pending', 'rejected', 'pending',
+    ]);
+    expect(received.sessions).toBe(1);
+    expect(sockets[0].sentMessages().slice(-1)[0]).toEqual({ type: 'room.lobby.unsubscribe' });
+  });
+
+  it('reconnects the lobby without replaying a rejected join application', () => {
+    jest.useFakeTimers();
+    const { client, sockets } = createClient({ reconnectDelayMs: 20 });
+    client.subscribeLobby();
+    sockets[0].open();
+    client.applyToRoom('ABCD23');
+    sockets[0].receive({
+      type: 'room.application.status',
+      applicationId: 'app-rejected', status: 'pending', message: 'Waiting for approval.',
+    });
+    sockets[0].receive({
+      type: 'room.application.status',
+      applicationId: 'app-rejected', status: 'rejected', message: 'Request declined.',
+    });
+    sockets[0].closeFromServer();
+    jest.advanceTimersByTime(20);
+
+    expect(sockets).toHaveLength(2);
+    sockets[1].open();
+    expect(sockets[1].sentMessages()).toEqual([{ type: 'room.lobby.subscribe' }]);
+    expect(client.getStatus()).toBe('connected');
+    client.disconnect();
+    jest.useRealTimers();
+  });
+
+  it('sends approval decisions, cancels, and ready changes as explicit room commands', () => {
+    const { client, sockets } = createClient();
+    client.subscribeLobby();
+    sockets[0].open();
+
+    client.decideApplication('app-1', true);
+    client.cancelApplication('app-2');
+    const readyId = client.setReady(true);
+    expect(sockets[0].sentMessages()).toEqual([
+      { type: 'room.lobby.subscribe' },
+      { type: 'room.application.decision', applicationId: 'app-1', approved: true },
+      { type: 'room.application.cancel', applicationId: 'app-2' },
+      { type: 'room.ready', actionId: readyId, ready: true },
+    ]);
+  });
+
+  it('cancels a pending application before creating a room on the same socket', () => {
+    const { client, sockets } = createClient();
+    client.subscribeLobby();
+    sockets[0].open();
+    client.applyToRoom('ABCD23');
+    sockets[0].receive({
+      type: 'room.application.status',
+      applicationId: 'app-local', status: 'pending', message: 'Waiting for approval.',
+    });
+
+    client.createRoom({ nickname: 'Kai', avatarId: 'banana' });
+
+    expect(sockets[0].sentMessages().slice(-2)).toEqual([
+      { type: 'room.application.cancel', applicationId: 'app-local' },
+      expect.objectContaining({ type: 'room.create', profile: { nickname: 'Kai', avatarId: 'banana' } }),
+    ]);
+    sockets[0].receive(makeSession('A'));
+    expect(sockets[0].sentMessages().slice(-1)).toEqual([{ type: 'room.lobby.unsubscribe' }]);
+  });
+
+  it('keeps room creation busy on an open lobby socket until the server assigns the room', () => {
+    const { client, sockets } = createClient();
+    client.subscribeLobby();
+    sockets[0].open();
+    expect(client.getStatus()).toBe('connected');
+
+    client.createRoom();
+    expect(client.getStatus()).toBe('connecting');
+
+    sockets[0].receive(makeSession('A'));
+    expect(client.getStatus()).toBe('connected');
+  });
+
   it('sends create and join requests after the socket opens', () => {
     const { client, sockets } = createClient();
     const profileA = { nickname: 'Mira', avatarId: 'peach' };
@@ -18,6 +160,7 @@ describe('GameClient room commands', () => {
     client.joinRoom(' abcd23 ', profileB);
     sockets[1].open();
     expect(sockets[1].sentMessages()).toMatchObject([
+      { type: 'room.lobby.subscribe' },
       { type: 'room.join', roomCode: 'ABCD23', profile: profileB },
     ]);
   });

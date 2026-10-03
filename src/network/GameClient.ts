@@ -1,5 +1,5 @@
 import { decodeServerMessage } from './protocol';
-import type { RoomSnapshot, ServerMessage } from './protocol';
+import type { JoinApplication, OpenRoomSummary, RoomSnapshot, ServerMessage } from './protocol';
 import type { PlayerId } from '../game/types';
 import { DEFAULT_PLAYER_PROFILE } from '../profile';
 import type { PlayerProfileInput } from '../profile';
@@ -36,6 +36,9 @@ export type GameClientHandlers = Readonly<{
   onStatusChange?: (status: GameClientStatus) => void;
   onSession?: (message: Extract<ServerMessage, { type: 'room.session' }>) => void;
   onSnapshot?: (snapshot: RoomSnapshot) => void;
+  onLobbySnapshot?: (rooms: readonly OpenRoomSummary[]) => void;
+  onPendingApplication?: (application: JoinApplication) => void;
+  onApplicationStatus?: (message: Extract<ServerMessage, { type: 'room.application.status' }>) => void;
   onActionResult?: (message: Extract<ServerMessage, { type: 'action.result' }>) => void;
   onRoomLeft?: () => void;
   onRoomClosed?: (message: Extract<ServerMessage, { type: 'room.closed' }>) => void;
@@ -57,7 +60,8 @@ type RoomRequest =
 type PendingAction =
   | { type: 'game.flip'; actionId: string }
   | { type: 'game.ring'; actionId: string; tableVersion: number }
-  | { type: 'game.rematch'; actionId: string };
+  | { type: 'game.rematch'; actionId: string }
+  | { type: 'room.ready'; actionId: string; ready: boolean };
 
 const TERMINAL_RECONNECT_ERRORS = new Set(['ROOM_NOT_FOUND', 'INVALID_SEAT_TOKEN']);
 
@@ -74,6 +78,8 @@ export class GameClient {
   private status: GameClientStatus = 'idle';
   private socket: SocketLike | null = null;
   private socketOpen = false;
+  private lobbyRequested = false;
+  private localApplicationId: string | null = null;
   private intentionalDisconnect = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
@@ -109,20 +115,76 @@ export class GameClient {
   }
 
   createRoom(profile: PlayerProfileInput = DEFAULT_PLAYER_PROFILE): string {
-    this.resetForNewRoomRequest();
+    if (this.localApplicationId) this.cancelApplication(this.localApplicationId);
+    this.localApplicationId = null;
     const requestId = this.createIdentifier('request');
     this.roomRequest = { type: 'room.create', requestId, profile: { ...profile } };
-    this.connect(false);
+    this.roomCode = null;
+    this.seatToken = null;
+    this.localPlayerId = null;
+    this.localApplicationId = null;
+    this.pendingActions.clear();
+    this.setStatus('connecting');
+    this.sendOrConnect(this.roomRequest);
     return requestId;
   }
 
   joinRoom(code: string, profile: PlayerProfileInput = DEFAULT_PLAYER_PROFILE): string {
-    this.resetForNewRoomRequest();
+    return this.applyToRoom(code, profile);
+  }
+
+  subscribeLobby(): void {
+    const alreadyRequested = this.lobbyRequested;
+    this.intentionalDisconnect = false;
+    this.lobbyRequested = true;
+    if (this.socketOpen) {
+      if (!alreadyRequested) this.send({ type: 'room.lobby.subscribe' });
+      this.setStatus('connected');
+    } else if (!this.socket) {
+      this.connect(false);
+    }
+  }
+
+  refreshLobby(): void {
+    if (!this.lobbyRequested) {
+      this.subscribeLobby();
+      return;
+    }
+    if (this.socketOpen) this.send({ type: 'room.lobby.refresh' });
+    else if (!this.socket) this.connect(true);
+  }
+
+  unsubscribeLobby(): void {
+    this.stopLobbySubscription();
+  }
+
+  applyToRoom(code: string, profile: PlayerProfileInput = DEFAULT_PLAYER_PROFILE): string {
     const requestId = this.createIdentifier('request');
     const roomCode = code.trim().toUpperCase();
+    this.intentionalDisconnect = false;
+    this.lobbyRequested = true;
+    this.localApplicationId = null;
     this.roomRequest = { type: 'room.join', requestId, roomCode, profile: { ...profile } };
-    this.connect(false);
+    this.setStatus('connecting');
+    this.sendOrConnect(this.roomRequest);
     return requestId;
+  }
+
+  decideApplication(applicationId: string, approved: boolean): void {
+    this.send({ type: 'room.application.decision', applicationId, approved });
+  }
+
+  cancelApplication(applicationId = this.localApplicationId ?? ''): void {
+    if (!applicationId) return;
+    this.send({ type: 'room.application.cancel', applicationId });
+  }
+
+  setReady(ready: boolean): string {
+    return this.enqueueAction({
+      type: 'room.ready',
+      actionId: this.createIdentifier('action'),
+      ready,
+    });
   }
 
   flip(): string {
@@ -145,6 +207,8 @@ export class GameClient {
     this.clearReconnectTimer();
     this.pendingActions.clear();
     if (!this.roomCode || !this.seatToken) {
+      if (this.localApplicationId) this.cancelApplication(this.localApplicationId);
+      this.stopLobbySubscription();
       this.disconnect();
       return null;
     }
@@ -166,6 +230,8 @@ export class GameClient {
     this.leaveRequestId = null;
     this.leaveRequested = false;
     this.roomRequest = null;
+    this.lobbyRequested = false;
+    this.localApplicationId = null;
     this.roomCode = null;
     this.seatToken = null;
     this.localPlayerId = null;
@@ -177,25 +243,6 @@ export class GameClient {
     this.connectionGeneration += 1;
     socket?.close();
     this.setStatus('disconnected');
-  }
-
-  private resetForNewRoomRequest(): void {
-    this.intentionalDisconnect = false;
-    this.clearReconnectTimer();
-    this.clearLeaveTimer();
-    this.leaveRequestId = null;
-    this.leaveRequested = false;
-    this.roomCode = null;
-    this.seatToken = null;
-    this.localPlayerId = null;
-    this.pendingActions.clear();
-    this.roomRequest = null;
-
-    const oldSocket = this.socket;
-    this.socket = null;
-    this.socketOpen = false;
-    this.connectionGeneration += 1;
-    oldSocket?.close();
   }
 
   private connect(isReconnect: boolean): void {
@@ -227,7 +274,9 @@ export class GameClient {
           });
           return;
         }
+        if (this.lobbyRequested) this.send({ type: 'room.lobby.subscribe' });
         if (this.roomRequest) this.send(this.roomRequest);
+        else this.setStatus('connected');
       },
       onMessage: data => {
         if (!this.isCurrentSocket(socket, generation)) return;
@@ -259,6 +308,8 @@ export class GameClient {
         this.seatToken = message.seatToken;
         this.localPlayerId = message.localPlayerId;
         this.roomRequest = null;
+        this.localApplicationId = null;
+        this.stopLobbySubscription();
         this.reconnectAttempts = 0;
         this.clearReconnectTimer();
         if (this.leaveRequested) {
@@ -271,6 +322,22 @@ export class GameClient {
         return;
       case 'room.snapshot':
         this.handlers.onSnapshot?.(message.snapshot);
+        return;
+      case 'room.lobby.snapshot':
+        this.handlers.onLobbySnapshot?.(message.rooms);
+        return;
+      case 'room.application.pending':
+        this.handlers.onPendingApplication?.(message.application);
+        return;
+      case 'room.application.status':
+        if (message.status === 'pending') {
+          this.localApplicationId = message.applicationId;
+          this.roomRequest = null;
+          this.setStatus('connected');
+        } else if (this.localApplicationId === message.applicationId) {
+          this.localApplicationId = null;
+        }
+        this.handlers.onApplicationStatus?.(message);
         return;
       case 'room.left':
         if (message.requestId === this.leaveRequestId) {
@@ -333,12 +400,26 @@ export class GameClient {
     if (this.intentionalDisconnect) return;
     if (this.leaveRequested) this.clearLeaveTimer();
     if (!this.seatToken || !this.roomCode) {
+      if (this.localApplicationId) {
+        const applicationId = this.localApplicationId;
+        this.localApplicationId = null;
+        this.handlers.onApplicationStatus?.({
+          type: 'room.application.status',
+          applicationId,
+          status: 'cancelled',
+          message: 'Disconnected from the server; the join request was cancelled.',
+        });
+      }
       if (this.roomRequest) {
         this.roomRequest = null;
         this.handlers.onError?.({
           code: 'CONNECTION_CLOSED',
           message: 'The connection closed before the room response. Check the server and try again.',
         });
+      }
+      if (this.lobbyRequested) {
+        this.scheduleReconnect();
+        return;
       }
       this.setStatus('disconnected');
       return;
@@ -356,7 +437,7 @@ export class GameClient {
     this.reconnectAttempts += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      if (!this.intentionalDisconnect && this.seatToken && this.roomCode) this.connect(true);
+      if (!this.intentionalDisconnect && (this.lobbyRequested || (this.seatToken && this.roomCode))) this.connect(true);
     }, delay);
   }
 
@@ -365,7 +446,7 @@ export class GameClient {
       code: 'NETWORK_ERROR',
       message: error instanceof Error ? error.message : 'Could not connect to the game server.',
     });
-    if (this.seatToken && this.roomCode && !this.intentionalDisconnect) {
+    if ((this.lobbyRequested || (this.seatToken && this.roomCode)) && !this.intentionalDisconnect) {
       this.scheduleReconnect();
     } else {
       this.setStatus('error');
@@ -385,6 +466,19 @@ export class GameClient {
   private clearLeaveTimer(): void {
     if (this.leaveTimer) clearTimeout(this.leaveTimer);
     this.leaveTimer = null;
+  }
+
+  private sendOrConnect(message: RoomRequest): void {
+    if (this.socketOpen) {
+      this.send(message);
+      return;
+    }
+    if (!this.socket) this.connect(false);
+  }
+
+  private stopLobbySubscription(): void {
+    if (this.lobbyRequested && this.socketOpen) this.send({ type: 'room.lobby.unsubscribe' });
+    this.lobbyRequested = false;
   }
 
   private beginLeaveRequest(): void {
@@ -418,6 +512,8 @@ export class GameClient {
     this.leaveRequestId = null;
     this.leaveRequested = false;
     this.roomRequest = null;
+    this.lobbyRequested = false;
+    this.localApplicationId = null;
     this.roomCode = null;
     this.seatToken = null;
     this.localPlayerId = null;

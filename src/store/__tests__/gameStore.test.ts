@@ -5,6 +5,59 @@ import { createGameStore } from '../gameStore';
 import type { GameClientPort } from '../gameStore';
 
 describe('friend room game store', () => {
+  it('routes lobby listings and applicant status into visible store state', () => {
+    const fixture = makeStore();
+    fixture.store.getState().openLobby();
+    expect(fixture.client.subscribeLobbyCalls).toBe(1);
+
+    const rooms = [{ roomCode: 'ABCD23', hostProfile: { nickname: 'Mira', avatarId: 'peach' as const } }];
+    fixture.handlers.onLobbySnapshot?.(rooms);
+    expect(fixture.store.getState().openRooms).toEqual(rooms);
+
+    fixture.store.getState().applyToRoom('ABCD23', { nickname: 'Kai', avatarId: 'banana' });
+    expect(fixture.client.applyCalls).toEqual([{ roomCode: 'ABCD23', profile: { nickname: 'Kai', avatarId: 'banana' } }]);
+    expect(fixture.store.getState().applyingRoomCode).toBe('ABCD23');
+    fixture.handlers.onApplicationStatus?.({
+      type: 'room.application.status',
+      applicationId: 'app-local',
+      status: 'pending',
+      message: 'Waiting for approval.',
+    });
+    expect(fixture.store.getState()).toMatchObject({
+      localApplicationId: 'app-local',
+      localApplicationStatus: { status: 'pending' },
+      applyingRoomCode: null,
+    });
+  });
+
+  it('tracks host applications, decisions, cancellation, and readiness commands', () => {
+    const fixture = makeStore();
+    fixture.store.getState().openLobby();
+    const application = {
+      applicationId: 'app-host',
+      roomCode: 'ABCD23',
+      profile: { nickname: 'Kai', avatarId: 'banana' as const },
+    };
+    fixture.handlers.onPendingApplication?.(application);
+    expect(fixture.store.getState().pendingApplications).toEqual([application]);
+
+    fixture.store.getState().decideApplication('app-host', true);
+    expect(fixture.client.decisionCalls).toEqual([{ applicationId: 'app-host', approved: true }]);
+    expect(fixture.store.getState().pendingApplications).toEqual([]);
+
+    fixture.store.getState().applyToRoom('ABCD23');
+    fixture.handlers.onApplicationStatus?.({
+      type: 'room.application.status',
+      applicationId: 'app-local',
+      status: 'pending',
+      message: 'Waiting for approval.',
+    });
+    fixture.store.getState().cancelApplication();
+    expect(fixture.client.cancelApplicationCalls).toEqual(['app-local']);
+    fixture.store.getState().setReady(true);
+    expect(fixture.client.readyCalls).toEqual([true]);
+  });
+
   it('creates a client room and trusts the assigned session identity', () => {
     const fixture = makeStore();
     fixture.store.getState().createRoom();
@@ -28,7 +81,8 @@ describe('friend room game store', () => {
     fixture.store.getState().joinRoom('ABCD23', joinerProfile);
 
     expect(fixture.client.createRoomProfiles).toEqual([creatorProfile]);
-    expect(fixture.client.joinRoomProfiles).toEqual([{ code: 'ABCD23', profile: joinerProfile }]);
+    expect(fixture.client.applyCalls).toEqual([{ roomCode: 'ABCD23', profile: joinerProfile }]);
+    expect(fixture.store.getState().applyingRoomCode).toBe('ABCD23');
   });
 
   it('sends flip and ring requests without changing the authoritative snapshot', () => {
@@ -86,7 +140,7 @@ describe('friend room game store', () => {
     fixture.store.getState().createRoom();
     fixture.store.getState().joinRoom('XYZ234');
     expect(fixture.client.createRoomCalls).toBe(0);
-    expect(fixture.client.joinRoomCalls).toEqual(['BAD123']);
+    expect(fixture.client.applyCalls).toEqual([{ roomCode: 'BAD123', profile: undefined }]);
     fixture.handlers.onRoomLeft?.();
     expect(fixture.store.getState().leavingRoom).toBe(false);
   });
@@ -158,6 +212,13 @@ class FakeGameClient implements GameClientPort {
   flipCalls = 0;
   ringCalls: number[] = [];
   rematchCalls = 0;
+  subscribeLobbyCalls = 0;
+  refreshLobbyCalls = 0;
+  unsubscribeLobbyCalls = 0;
+  applyCalls: { roomCode: string; profile: PlayerProfileInput | undefined }[] = [];
+  decisionCalls: { applicationId: string; approved: boolean }[] = [];
+  cancelApplicationCalls: string[] = [];
+  readyCalls: boolean[] = [];
   disconnectCalls = 0;
   leaveRoomCalls = 0;
 
@@ -186,6 +247,36 @@ class FakeGameClient implements GameClientPort {
   rematch(): string {
     this.rematchCalls += 1;
     return 'action-rematch';
+  }
+
+  subscribeLobby(): void {
+    this.subscribeLobbyCalls += 1;
+  }
+
+  refreshLobby(): void {
+    this.refreshLobbyCalls += 1;
+  }
+
+  unsubscribeLobby(): void {
+    this.unsubscribeLobbyCalls += 1;
+  }
+
+  applyToRoom(roomCode: string, profile?: PlayerProfileInput): string {
+    this.applyCalls.push({ roomCode, profile });
+    return 'request-apply';
+  }
+
+  decideApplication(applicationId: string, approved: boolean): void {
+    this.decisionCalls.push({ applicationId, approved });
+  }
+
+  cancelApplication(applicationId: string): void {
+    this.cancelApplicationCalls.push(applicationId);
+  }
+
+  setReady(ready: boolean): string {
+    this.readyCalls.push(ready);
+    return 'action-ready';
   }
 
   disconnect(): void {
