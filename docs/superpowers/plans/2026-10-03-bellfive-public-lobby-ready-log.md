@@ -1,6 +1,6 @@
 # BellFive Public Lobby, Readiness, Activity Log, and Deck Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add a live public room lobby with creator approval, a two-player ready gate for every match, a synchronized contextual ring log, and a fixed deck with a single Wild Bell and a five-of-a-kind fruit card.
 
@@ -33,7 +33,7 @@
 - Keep `CARD_DEFINITIONS` as the existing readonly `CardDefinition[]` consumed by `createGame`.
 - Keep `canRing` and the existing `countsForPair` test helper unchanged.
 
-- [ ] **Step 1: Add the failing Bell-total and five-of-a-kind assertions**
+- [x] **Step 1: Add the failing Bell-total and five-of-a-kind assertions**
 
 Add these assertions to `describe('CARD_DEFINITIONS', ...)`:
 
@@ -52,13 +52,13 @@ it('contains a card with five copies of one fruit', () => {
 });
 ```
 
-- [ ] **Step 2: Run the deck test and confirm it fails for the current deck**
+- [x] **Step 2: Run the deck test and confirm it fails for the current deck**
 
 Run: `npm test -- --runInBand src/game/__tests__/cards.test.ts`
 
 Expected: the Bell-total assertion reports more than one Bell and the five-of-a-kind assertion reports `false`.
 
-- [ ] **Step 3: Change only fixed card literals**
+- [x] **Step 3: Change only fixed card literals**
 
 Keep all IDs and array order. Replace nine Bell symbols with fruit symbols and make one five-symbol card five copies of a fruit. For example, reserve the one Bell in `C060` and make `C056` five bananas:
 
@@ -69,13 +69,13 @@ Keep all IDs and array order. Replace nine Bell symbols with fruit symbols and m
 
 Adjust other `C051`–`C060` symbol arrays as fixed fruit combinations until the existing exhaustive test still finds at least 177 valid pairs. Do not generate card contents at runtime and do not change `src/game/rules.ts`.
 
-- [ ] **Step 4: Run the deck test and verify all static invariants**
+- [x] **Step 4: Run the deck test and verify all static invariants**
 
 Run: `npm test -- --runInBand src/game/__tests__/cards.test.ts`
 
 Expected: all card tests pass, including 60 ordered IDs, 1–5 legal symbols per card, exactly one total Bell, five-of-a-kind, and at least 177 ringable pairs.
 
-- [ ] **Step 5: Commit the deck change**
+- [x] **Step 5: Commit the deck change**
 
 ```powershell
 git add src/game/cards.ts src/game/__tests__/cards.test.ts
@@ -96,7 +96,7 @@ git commit -m "feat: add single-bell five-of-a-kind deck"
 - Keep `room.join` as the application request; add lobby subscribe/refresh/unsubscribe, application decision/cancel, and `room.ready` client messages.
 - Add server messages for room-list snapshots, pending applications, and application status. A successful approval continues to use `room.session`.
 
-- [ ] **Step 1: Add decoder tests for the new wire contracts**
+- [x] **Step 1: Add decoder tests for the new wire contracts**
 
 Add representative assertions to `src/network/__tests__/protocol.test.ts`:
 
@@ -115,13 +115,13 @@ expect(decodeClientMessage(
 
 Also test a room snapshot with both ready flags and a ring history of 12 entries, and reject malformed room summaries, application profiles, ready flags, or histories longer than 12.
 
-- [ ] **Step 2: Run protocol tests and confirm the missing message types fail**
+- [x] **Step 2: Run protocol tests and confirm the missing message types fail**
 
 Run: `npm test -- --runInBand src/network/__tests__/protocol.test.ts`
 
 Expected: the new lobby message decode returns `null`; the current protocol rejects the proposed lobby/application message variants.
 
-- [ ] **Step 3: Add the typed client/server messages and snapshot fields**
+- [x] **Step 3: Add the typed client/server messages and snapshot fields**
 
 Use these message shapes in the existing discriminated unions:
 
@@ -136,17 +136,17 @@ Use these message shapes in the existing discriminated unions:
 
 Add server variants `room.lobby.snapshot { rooms }`, `room.application.pending { application }`, and `room.application.status { applicationId, status, message }`. Status is one of `pending`, `rejected`, `cancelled`, or `room_full`. Keep application approval success represented by the existing validated `room.session` message.
 
-- [ ] **Step 4: Extend strict decoders and snapshot construction**
+- [x] **Step 4: Extend strict decoders and snapshot construction**
 
 Validate every new client/server variant. Require a valid room code and sanitized profile in every public summary/application; require exactly A/B booleans for `ready`; require an array of at most 12 valid `RingFeedbackEvent` objects for `ringHistory`. Copy the new fields from `RoomSnapshotSource` in `createRoomSnapshot`.
 
-- [ ] **Step 5: Update snapshot fixtures and run protocol tests**
+- [x] **Step 5: Update snapshot fixtures and run protocol tests**
 
 Add literal fixture values such as `ready: { A: false, B: false }` and `ringHistory: []` to each `RoomSnapshot` fixture. Run: `npm test -- --runInBand src/network/__tests__/protocol.test.ts`
 
 Expected: all valid new messages decode and every invalid fixture is rejected.
 
-- [ ] **Step 6: Commit the protocol contract**
+- [x] **Step 6: Commit the protocol contract**
 
 ```powershell
 git add src/network/protocol.ts src/network/__tests__/protocol.test.ts src/network/__tests__/GameClient.test.ts src/store/__tests__/gameStore.test.ts src/components/__tests__/WaitingRoom.test.tsx src/components/__tests__/GameScreen.test.tsx
@@ -168,7 +168,7 @@ git commit -m "feat: define BellFive lobby and ready protocol"
 - `room.application.cancel` removes that request. Applicant disconnect, room leave, and room expiry remove affected pending applications. A host reconnect receives still-pending applications again.
 - Public summaries include only connected creators' waiting rooms with an empty seat.
 
-- [ ] **Step 1: Add failing tests for room-list filtering and approval**
+- [x] **Step 1: Add failing tests for room-list filtering and approval**
 
 Add a test to `roomManager.test.ts` that creates a waiting room, subscribes a second connection, and checks the returned list. Then send `room.join` and assert that it notifies A but does not send B a `room.session` before approval:
 
@@ -190,31 +190,31 @@ expect(application.some(event => event.connectionId === 'socket-b' && event.mess
 
 Add separate tests for rejection, cancellation, applicant disconnect cleanup, room expiry cleanup, lobby list updates, host reconnect replay of pending applications, and two approvals racing for the last seat.
 
-- [ ] **Step 2: Run the room-manager test and observe the direct-join behavior fail the new assertions**
+- [x] **Step 2: Run the room-manager test and observe the direct-join behavior fail the new assertions**
 
 Run: `npm test -- --runInBand server/src/__tests__/roomManager.test.ts`
 
 Expected: the current `room.join` immediately returns a session and there is no lobby snapshot or application event.
 
-- [ ] **Step 3: Store lobby subscriptions and pending applications**
+- [x] **Step 3: Store lobby subscriptions and pending applications**
 
 Add a connection set for subscribed lobby clients and an application map carrying `applicationId`, `requestId`, `roomCode`, `connectionId`, and sanitized `profile`. Use the existing event return mechanism; do not write directly to sockets from `RoomManager`. Initialize each room's `ready` flags to `{ A: false, B: false }` and `ringHistory` to `[]`; include both fields in every seat's snapshot.
 
-- [ ] **Step 4: Build room summaries and broadcast lobby changes**
+- [x] **Step 4: Build room summaries and broadcast lobby changes**
 
 Add one helper that constructs the available list from current rooms and emits `room.lobby.snapshot` to subscribed connections. Call it after room creation, application approval, room deletion/expiry, and seat availability changes. Refresh requests return the same helper's snapshot.
 
-- [ ] **Step 5: Implement request, decision, cancel, and race handling**
+- [x] **Step 5: Implement request, decision, cancel, and race handling**
 
 On `room.join`, validate the room is waiting and has a seat, create an application, notify the host with `room.application.pending`, and notify the requester with `room.application.status: pending`. On approval, recheck the seat synchronously; either assign B and send a `room.session`, or report `room_full`. On rejection/cancel, clear the request and update both affected clients. Multiple applicants may wait; only the first approval can take the seat.
 
-- [ ] **Step 6: Run manager and WebSocket integration tests**
+- [x] **Step 6: Run manager and WebSocket integration tests**
 
 Run: `npm test -- --runInBand server/src/__tests__/roomManager.test.ts server/src/__tests__/websocketServer.test.ts`
 
 Expected: lobby subscriptions receive live lists, the host sees requests, approval creates a normal B session, rejected applicants remain outside the room, and a second approval cannot take an occupied seat.
 
-- [ ] **Step 7: Commit the room admission flow**
+- [x] **Step 7: Commit the room admission flow**
 
 ```powershell
 git add server/src/roomManager.ts server/src/__tests__/roomManager.test.ts server/src/__tests__/websocketServer.test.ts
@@ -235,35 +235,35 @@ git commit -m "feat: add public room applications and approval"
 - Starting a match creates a fresh shuffled `GameState`, sets `phase: 'playing'`, starts the five-minute clock, and clears ring history.
 - `game.rematch` is removed as a host-only shortcut; both players ready through the same action for every match.
 
-- [ ] **Step 1: Add failing tests for first-match and rematch readiness**
+- [x] **Step 1: Add failing tests for first-match and rematch readiness**
 
 After joining a room, assert phase is `waiting`, both ready flags are false, `game.flip` is rejected with `GAME_NOT_STARTED`, and the timer is `null`. Set A ready and assert it remains waiting. Set B ready and assert `playing` with 300 seconds (using the existing fake clock). After finishing the game, assert one ready action does not restart it and the second starts a new match.
 
-- [ ] **Step 2: Run room-manager tests and confirm the current auto-start behavior fails**
+- [x] **Step 2: Run room-manager tests and confirm the current auto-start behavior fails**
 
 Run: `npm test -- --runInBand server/src/__tests__/roomManager.test.ts`
 
 Expected: current tests show that joining starts the game before either player readies.
 
-- [ ] **Step 3: Add server ready state and a single `startMatch` transition**
+- [x] **Step 3: Add server ready state and a single `startMatch` transition**
 
 Initialize `ready` to `{ A: false, B: false }` for a new room. When a valid ready action makes both flags true and both connections are present, call the game factory, clear ring history and old ring/flip feedback, set `phase` to `playing`, and start the clock at `now + matchDurationMs`.
 
-- [ ] **Step 4: Keep waiting and finished phases stable until both are ready**
+- [x] **Step 4: Keep waiting and finished phases stable until both are ready**
 
 Remove game creation from the ordinary “both seats assigned and connected” phase update. During pre-start waiting, reject flips/rings. On disconnect during `waiting` or `finished`, reset the disconnected seat's ready flag; preserve existing pause/resume clock behavior for a `playing` game.
 
-- [ ] **Step 5: Adapt game-action test setup to ready both seats explicitly**
+- [x] **Step 5: Adapt game-action test setup to ready both seats explicitly**
 
 Update the shared room setup helper in `roomManager.test.ts` and WebSocket tests so game-action tests call `room.ready` for A and B before acting. Keep dedicated tests that intentionally assert the not-ready phase.
 
-- [ ] **Step 6: Run room-manager and WebSocket tests**
+- [x] **Step 6: Run room-manager and WebSocket tests**
 
 Run: `npm test -- --runInBand server/src/__tests__/roomManager.test.ts server/src/__tests__/websocketServer.test.ts`
 
 Expected: no flip/ring before readiness; the match and clock begin on the second ready action; rematches also require both players; active-game reconnect tests still pause and resume correctly.
 
-- [ ] **Step 7: Commit the ready gate**
+- [x] **Step 7: Commit the ready gate**
 
 ```powershell
 git add server/src/roomManager.ts server/src/__tests__/roomManager.test.ts server/src/__tests__/websocketServer.test.ts
@@ -284,35 +284,35 @@ git commit -m "feat: require both players ready before each match"
 - Store `openRooms`, received host applications, the local application status/id, and ready snapshots alongside existing game state.
 - An approved application enters through the normal `room.session` handler; rejection/cancel leaves the lobby connection usable.
 
-- [ ] **Step 1: Add failing transport tests for lobby subscription and approval session**
+- [x] **Step 1: Add failing transport tests for lobby subscription and approval session**
 
 Test that `subscribeLobby()` sends `room.lobby.subscribe` after socket open, a `room.lobby.snapshot` reaches the handler, applying sends `room.join`, and a later approved `room.session` sets the local player to B. Test that a `room.application.status: rejected` clears the pending state without closing the lobby socket.
 
-- [ ] **Step 2: Run GameClient tests and confirm new handlers/actions are absent**
+- [x] **Step 2: Run GameClient tests and confirm new handlers/actions are absent**
 
 Run: `npm test -- --runInBand src/network/__tests__/GameClient.test.ts`
 
 Expected: the targeted tests fail because lobby methods, handler cases, and state transitions are missing.
 
-- [ ] **Step 3: Add the GameClient methods and reconnect lifecycle**
+- [x] **Step 3: Add the GameClient methods and reconnect lifecycle**
 
 Keep one client socket while browsing or waiting for an approval. Subscribe after the socket opens; send room-code applications through `room.join`; preserve the current pending application until the server answers; clear it on rejection/cancel/session. If a no-seat lobby connection closes, reconnect and resubscribe without replaying a rejected application.
 
-- [ ] **Step 4: Extend the Zustand port and state**
+- [x] **Step 4: Extend the Zustand port and state**
 
 Add typed fields/actions to `GameClientPort` and `GameStore`. Route the new GameClient handlers into store updates. Clear room-local application and approval data on leave/session transitions; retain the local lobby list until the next server list arrives.
 
-- [ ] **Step 5: Add store tests for lobby and application state transitions**
+- [x] **Step 5: Add store tests for lobby and application state transitions**
 
 Test a server lobby snapshot, a pending application from another player, local pending/rejected status, and approved session. Assert rejection keeps the existing client connection and the lobby screen state.
 
-- [ ] **Step 6: Run transport and store tests**
+- [x] **Step 6: Run transport and store tests**
 
 Run: `npm test -- --runInBand src/network/__tests__/GameClient.test.ts src/store/__tests__/gameStore.test.ts`
 
 Expected: all lobby/application events reach the store with no regression to create, reconnect, leave, or game-action behavior.
 
-- [ ] **Step 7: Commit client and store integration**
+- [x] **Step 7: Commit client and store integration**
 
 ```powershell
 git add src/network/GameClient.ts src/network/__tests__/GameClient.test.ts src/store/gameStore.ts src/store/__tests__/gameStore.test.ts
@@ -334,39 +334,39 @@ git commit -m "feat: expose room lobby state to the app"
 - `WaitingRoom` receives the host's pending applications, approval callback, `ready` state, and ready toggle callback.
 - `GameScreen` opens the lobby subscription when no room session exists and routes host/requester controls to the store.
 
-- [ ] **Step 1: Add failing lobby UI tests**
+- [x] **Step 1: Add failing lobby UI tests**
 
 Test that each available room displays creator nickname/avatar and an Apply button; tapping it calls `onApply(roomCode)`. Test that a pending request shows its status and Cancel button. Keep create and code-entry controls present.
 
-- [ ] **Step 2: Add failing waiting-room tests**
+- [x] **Step 2: Add failing waiting-room tests**
 
 Test that the creator sees the applicant profile and Approve/Reject controls; each calls the correct application ID/decision. Test that both seats show their readiness and the local Ready/Not Ready control. No match-start action is shown before the server phase changes.
 
-- [ ] **Step 3: Run the targeted UI tests and confirm controls are missing**
+- [x] **Step 3: Run the targeted UI tests and confirm controls are missing**
 
 Run: `npm test -- --runInBand src/components/__tests__/RoomEntry.test.tsx src/components/__tests__/WaitingRoom.test.tsx`
 
 Expected: new assertions fail because the screens do not yet render room rows, application actions, or ready controls.
 
-- [ ] **Step 4: Implement the room list and applicant status in `RoomEntry`**
+- [x] **Step 4: Implement the room list and applicant status in `RoomEntry`**
 
 Render server-provided summaries with host profile and room code. Route list buttons and code submission to `applyToRoom`; while a request is pending, show its status and allow cancel. Keep profile hydration behavior and the existing Create Room path.
 
-- [ ] **Step 5: Implement approval and ready controls in `WaitingRoom`**
+- [x] **Step 5: Implement approval and ready controls in `WaitingRoom`**
 
 Render pending application rows with profile/avatar and Approve/Reject buttons. Add a local Ready/Not Ready button and each player's readiness label. Explain that the match starts automatically after both are ready; show connection and server errors as before.
 
-- [ ] **Step 6: Wire lobby subscription and screen callbacks**
+- [x] **Step 6: Wire lobby subscription and screen callbacks**
 
 When `GameScreen` has no room snapshot, call `openLobby` once for the current client. Pass store room/application state into `RoomEntry`; pass pending host requests/readiness into `WaitingRoom`. Ensure leaving or switching from a pending application does not leak the old request.
 
-- [ ] **Step 7: Run room-entry, waiting-room, and game-screen tests**
+- [x] **Step 7: Run room-entry, waiting-room, and game-screen tests**
 
 Run: `npm test -- --runInBand src/components/__tests__/RoomEntry.test.tsx src/components/__tests__/WaitingRoom.test.tsx src/components/__tests__/GameScreen.test.tsx`
 
 Expected: room application, host decision, and ready actions are available in the correct screen; existing audio, navigation-state, reconnect, and result-screen tests remain green.
 
-- [ ] **Step 8: Commit lobby and readiness UI**
+- [x] **Step 8: Commit lobby and readiness UI**
 
 ```powershell
 git add src/components/GameScreen.tsx src/components/RoomEntry.tsx src/components/WaitingRoom.tsx src/components/__tests__/RoomEntry.test.tsx src/components/__tests__/WaitingRoom.test.tsx src/components/__tests__/GameScreen.test.tsx
@@ -388,17 +388,17 @@ git commit -m "feat: add room approval and ready screens"
 - Add `formatRingActivity(event: RingFeedbackEvent, localPlayerId: PlayerId): string` in `ActivityLog.tsx` and display the bounded history in a scrollable log.
 - Keep `lastRingEvent` for the existing transfer animation and bell feedback.
 
-- [ ] **Step 1: Add failing server tests for bounded ring history and rematch reset**
+- [x] **Step 1: Add failing server tests for bounded ring history and rematch reset**
 
 Assert that each accepted ring appends the event to both players' snapshots, the history never exceeds 12 items, a reconnect snapshot includes recent history, and the first match after rematch begins with an empty history.
 
-- [ ] **Step 2: Run the room-manager tests and confirm snapshots lack history**
+- [x] **Step 2: Run the room-manager tests and confirm snapshots lack history**
 
 Run: `npm test -- --runInBand server/src/__tests__/roomManager.test.ts`
 
 Expected: the new tests fail because snapshots only contain `lastRingEvent`.
 
-- [ ] **Step 3: Keep a bounded history in `RoomManager`**
+- [x] **Step 3: Keep a bounded history in `RoomManager`**
 
 Create one non-null server-authored event, assign it to `lastRingEvent`, append that same local value, and retain the newest 12 entries:
 
@@ -415,7 +415,7 @@ room.ringHistory = [...room.ringHistory, ringEvent].slice(-12);
 
 Pass it through `RoomSnapshotSource` for both seats. Clear it only when the next ready transition starts a new match.
 
-- [ ] **Step 4: Add caller/opponent text tests**
+- [x] **Step 4: Add caller/opponent text tests**
 
 Cover correct ring and wrong ring for caller A, caller B, and zero-card penalty. Example expected strings:
 
@@ -425,21 +425,21 @@ expect(formatRingActivity(correctEventForA, 'B')).toBe('1号玩家拍铃正确�
 expect(formatRingActivity(wrongEventForA, 'B')).toBe('1号玩家拍铃错误，你获得 1 张牌');
 ```
 
-- [ ] **Step 5: Implement the scrollable latest-12 log**
+- [x] **Step 5: Implement the scrollable latest-12 log**
 
 Render a compact activity panel using `ScrollView`, display entries oldest-to-newest, and retain all entries supplied in the snapshot until the server clears them on rematch. Do not turn flips into log entries.
 
-- [ ] **Step 6: Place the log in the game screen and preserve feedback behavior**
+- [x] **Step 6: Place the log in the game screen and preserve feedback behavior**
 
 Pass `roomSnapshot.ringHistory` and `localPlayerId` into `ActivityLog`. Keep `CardTransferFly`, the shared bell sound, flip sound version handling, and victory/defeat sound effects unchanged.
 
-- [ ] **Step 7: Run activity, server, and game-screen tests**
+- [x] **Step 7: Run activity, server, and game-screen tests**
 
 Run: `npm test -- --runInBand src/components/__tests__/ActivityLog.test.tsx server/src/__tests__/roomManager.test.ts src/components/__tests__/GameScreen.test.tsx`
 
 Expected: both players receive contextual lines, recent history is readable and bounded, rematch clears it, and sounds/animations still respond once per event.
 
-- [ ] **Step 8: Commit the ring activity log**
+- [x] **Step 8: Commit the ring activity log**
 
 ```powershell
 git add server/src/roomManager.ts server/src/__tests__/roomManager.test.ts src/components/ActivityLog.tsx src/components/__tests__/ActivityLog.test.tsx src/components/GameScreen.tsx src/components/__tests__/GameScreen.test.tsx
@@ -452,19 +452,19 @@ git commit -m "feat: add synchronized ring activity log"
 - Modify: `docs/中文操作手册.md`
 - Modify: `server/README.md`
 
-- [ ] **Step 1: Update the Chinese manual's lobby flow**
+- [x] **Step 1: Update the Chinese manual's lobby flow**
 
 Document that a client sees connected waiting rooms, may apply from a row or by code, and waits for creator approval. Explain how the creator approves/rejects and how a rejected/full-room applicant retries.
 
-- [ ] **Step 2: Update the readiness, log, deck, and sound sections**
+- [x] **Step 2: Update the readiness, log, deck, and sound sections**
 
 Document that both players prepare for initial and rematch games; a waiting disconnect requires readiness again; both screens retain the latest 12 contextual ring/card-transfer log lines; the deck has one Bell total and a five-identical-fruit card; flip audio is already included.
 
-- [ ] **Step 3: Update server notes and two-phone test checklist**
+- [x] **Step 3: Update server notes and two-phone test checklist**
 
 Explain that the public list is scoped to one running test-server instance, and add a two-phone checklist: discover a room; verify approval and rejection; verify neither phone can flip before both are ready; play a ready rematch; compare caller/opponent transfer messages; confirm a visible pair never has two Bells; and confirm a five-identical-fruit card is present in the fixed deck.
 
-- [ ] **Step 4: Run all required verification commands**
+- [x] **Step 4: Run all required verification commands**
 
 ```powershell
 npm run typecheck
@@ -475,7 +475,7 @@ git diff --check
 
 Expected: both typechecks and every Jest suite pass; `git diff --check` emits no whitespace errors.
 
-- [ ] **Step 5: Commit documentation after successful verification**
+- [x] **Step 5: Commit documentation after successful verification**
 
 ```powershell
 git add docs/中文操作手册.md server/README.md

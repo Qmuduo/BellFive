@@ -4,6 +4,8 @@ This Node.js service owns room seats, shuffled decks, turns, ring decisions, and
 
 Leaving a room closes it for both players. The leaving phone returns to room entry after the server acknowledges the request; a connected opponent receives a room-closed notice and returns to entry as well. If that opponent is offline, its next reconnect discovers that the room has closed.
 
+Rooms with one connected player appear in the public lobby for that running service process. A second player can apply from the room list or enter the room code; both paths require approval from the host. The match and every rematch start only after both connected seats send `room.ready`. Snapshots carry the same latest twelve ring/penalty events to both players, and the history clears when a new match starts. Restarting the service clears its rooms and lobby list.
+
 ## Run locally
 
 From the repository root:
