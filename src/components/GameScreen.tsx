@@ -8,6 +8,7 @@ import { CardTransferFly } from './CardTransferFly';
 import { DebugPanel } from './DebugPanel';
 import { GameCard } from './GameCard';
 import { PlayerDeck } from './PlayerDeck';
+import { RingActivityLog } from './RingActivityLog';
 import { RoomEntry } from './RoomEntry';
 import { WaitingRoom } from './WaitingRoom';
 import { useGameStore } from '../store/gameStore';
@@ -35,14 +36,23 @@ export default function GameScreen() {
   const error = useGameStore(state => state.error);
   const lastActionResult = useGameStore(state => state.lastActionResult);
   const roomSessionVersion = useGameStore(state => state.roomSessionVersion);
+  const openRooms = useGameStore(state => state.openRooms);
+  const pendingApplications = useGameStore(state => state.pendingApplications);
+  const applyingRoomCode = useGameStore(state => state.applyingRoomCode);
+  const localApplicationStatus = useGameStore(state => state.localApplicationStatus);
   const playerProfile = usePlayerProfileStore(state => state.profile);
   const profileHydrated = usePlayerProfileStore(state => state.hydrated);
   const setPlayerProfile = usePlayerProfileStore(state => state.setProfile);
   const createRoom = useGameStore(state => state.createRoom);
   const joinRoom = useGameStore(state => state.joinRoom);
+  const openLobby = useGameStore(state => state.openLobby);
+  const refreshLobby = useGameStore(state => state.refreshLobby);
+  const closeLobby = useGameStore(state => state.closeLobby);
+  const decideApplication = useGameStore(state => state.decideApplication);
+  const cancelApplication = useGameStore(state => state.cancelApplication);
+  const setReady = useGameStore(state => state.setReady);
   const flip = useGameStore(state => state.flip);
   const ring = useGameStore(state => state.ring);
-  const rematch = useGameStore(state => state.rematch);
   const leaveRoom = useGameStore(state => state.leaveRoom);
   const [ringCue, setRingCue] = useState<RingFeedbackEvent | null>(null);
   const lastProcessedAction = useRef<string | null>(null);
@@ -50,6 +60,12 @@ export default function GameScreen() {
   const lastProcessedFlipVersion = useRef<number | null>(null);
   const lastObservedRoomSessionVersion = useRef<number | null>(null);
   const lastObservedPhase = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (roomSnapshot || leavingRoom) return;
+    openLobby();
+    return () => closeLobby();
+  }, [roomSnapshot === null, leavingRoom, openLobby, closeLobby]);
 
   useEffect(() => {
     if (!ringCue) return;
@@ -136,6 +152,11 @@ export default function GameScreen() {
           profileHydrated={profileHydrated}
           onProfileChange={setPlayerProfile}
           busyLabel={leavingRoom ? 'LEAVING…' : undefined}
+          openRooms={openRooms}
+          applyingRoomCode={applyingRoomCode}
+          applicationStatus={localApplicationStatus}
+          onRefreshLobby={refreshLobby}
+          onCancelApplication={cancelApplication}
         />
       </SafeAreaView>
     );
@@ -152,6 +173,9 @@ export default function GameScreen() {
           connectionStatus={connectionStatus}
           error={error}
           onLeave={leaveRoom}
+          pendingApplications={pendingApplications}
+          onDecideApplication={decideApplication}
+          onSetReady={setReady}
         />
       </SafeAreaView>
     );
@@ -255,16 +279,25 @@ export default function GameScreen() {
               </Text>
             </View>
           ) : null}
+          {localPlayerId ? <RingActivityLog events={roomSnapshot.ringHistory} localPlayerId={localPlayerId} /> : null}
           <DebugPanel snapshot={roomSnapshot} connectionStatus={connectionStatus} />
         </ScrollView>
 
         {isFinished ? (
           <View style={styles.finishedDock}>
-            {localPlayerId === 'A' ? (
-              <Pressable role="button" onPress={rematch} style={({ pressed }) => [styles.playAgain, pressed && styles.pressed]}>
-                <Text style={styles.flipText}>PLAY AGAIN</Text>
+            {localPlayerId ? (
+              <Pressable
+                role="button"
+                accessibilityState={{ disabled: connectionStatus !== 'connected' }}
+                disabled={connectionStatus !== 'connected'}
+                onPress={() => setReady(!roomSnapshot.ready[localPlayerId])}
+                style={({ pressed }) => [styles.playAgain, roomSnapshot.ready[localPlayerId] && styles.readyAgain, connectionStatus !== 'connected' && styles.disabledButton, pressed && styles.pressed]}
+              >
+                <Text style={[styles.flipText, roomSnapshot.ready[localPlayerId] && styles.readyAgainText]}>
+                  {roomSnapshot.ready[localPlayerId] ? 'CANCEL READY' : 'PLAY AGAIN'}
+                </Text>
               </Pressable>
-            ) : <Text style={styles.finishedHint}>Waiting for Player A to start a rematch.</Text>}
+            ) : null}
           </View>
         ) : (
           <View style={styles.actionDock}>
@@ -341,7 +374,8 @@ const styles = StyleSheet.create({
   flipText: { color: '#633E45', fontSize: 20, fontWeight: '900', letterSpacing: 1.8 },
   flipHint: { marginTop: 1, color: '#865C63', fontSize: 8, fontWeight: '800', letterSpacing: 1 },
   finishedDock: { alignItems: 'center', justifyContent: 'center', minHeight: 78, borderTopWidth: 1, borderTopColor: '#E6E5E1' },
-  finishedHint: { color: '#65717C', fontSize: 12, fontWeight: '600' },
   playAgain: { width: '100%', minHeight: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: '#F2C4CC' },
+  readyAgain: { backgroundColor: '#E3F1E7' },
+  readyAgainText: { color: '#35744F' },
   pressed: { opacity: 0.84, transform: [{ scale: 0.98 }] },
 });

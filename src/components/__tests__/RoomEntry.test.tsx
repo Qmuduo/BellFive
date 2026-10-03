@@ -66,6 +66,54 @@ describe('RoomEntry', () => {
     expect(screen.getByRole('button', { name: 'banana avatar' })).toBeDisabled();
   });
 
+  it('shows public rooms and lets a player request entry from the list', async () => {
+    const user = userEvent.setup();
+    const onJoin = jest.fn();
+    const onRefresh = jest.fn();
+    await render(
+      <RoomEntry
+        onCreate={jest.fn()}
+        onJoin={onJoin}
+        error={null}
+        busy={false}
+        profile={{ nickname: 'Kai', avatarId: 'banana' }}
+        profileHydrated
+        onProfileChange={jest.fn()}
+        openRooms={[{ roomCode: 'ABCD23', hostProfile: { nickname: 'Mira', avatarId: 'peach' } }]}
+        onRefreshLobby={onRefresh}
+      />,
+    );
+
+    expect(screen.getByText('Mira · ABCD23')).toBeOnTheScreen();
+    await user.press(screen.getByRole('button', { name: 'Refresh rooms' }));
+    await user.press(screen.getByRole('button', { name: 'Request to join ABCD23' }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onJoin).toHaveBeenCalledWith('ABCD23', { nickname: 'Kai', avatarId: 'banana' });
+  });
+
+  it('shows the application status and lets the requester cancel it', async () => {
+    const user = userEvent.setup();
+    const onCancelApplication = jest.fn();
+    await render(
+      <RoomEntry
+        onCreate={jest.fn()}
+        onJoin={jest.fn()}
+        error={null}
+        busy={false}
+        profile={{ nickname: 'Kai', avatarId: 'banana' }}
+        profileHydrated
+        onProfileChange={jest.fn()}
+        applicationStatus={{ type: 'room.application.status', applicationId: 'app-local', status: 'pending', message: 'Waiting for approval.' }}
+        onCancelApplication={onCancelApplication}
+      />,
+    );
+
+    expect(screen.getByText('Waiting for approval.')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Create Room' })).toBeDisabled();
+    await user.press(screen.getByRole('button', { name: 'Cancel Join Request' }));
+    expect(onCancelApplication).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a caller-provided busy label while room controls are disabled', async () => {
     await render(
       <RoomEntry

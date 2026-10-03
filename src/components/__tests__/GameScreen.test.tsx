@@ -58,9 +58,21 @@ describe('GameScreen friend-room flow', () => {
       error: null,
       lastActionResult: null,
       roomSessionVersion: 0,
+      openRooms: [],
+      pendingApplications: [],
+      applyingRoomCode: null,
+      localApplicationId: null,
+      localApplicationStatus: null,
       client: null,
       createRoom: jest.fn(),
       joinRoom: jest.fn(),
+      openLobby: jest.fn(),
+      refreshLobby: jest.fn(),
+      closeLobby: jest.fn(),
+      applyToRoom: jest.fn(),
+      decideApplication: jest.fn(),
+      cancelApplication: jest.fn(),
+      setReady: jest.fn(),
       flip: jest.fn(),
       ring: jest.fn(),
       rematch: jest.fn(),
@@ -73,6 +85,17 @@ describe('GameScreen friend-room flow', () => {
     await render(<GameScreen />);
     expect(screen.getByRole('button', { name: 'Create Room' })).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: 'Join Room' })).toBeOnTheScreen();
+    expect(useGameStore.getState().openLobby).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders public rooms and routes an application through the game store', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      openRooms: [{ roomCode: 'ABCD23', hostProfile: { nickname: 'Mira', avatarId: 'peach' } }],
+    });
+    await render(<GameScreen />);
+    await user.press(screen.getByRole('button', { name: 'Request to join ABCD23' }));
+    expect(useGameStore.getState().joinRoom).toHaveBeenCalledWith('ABCD23', { nickname: 'Mira', avatarId: 'peach' });
   });
 
   it('keeps create and join disabled while a room leave is waiting for confirmation', async () => {
@@ -83,6 +106,17 @@ describe('GameScreen friend-room flow', () => {
     expect(screen.getByRole('button', { name: 'LEAVING…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Join Room' })).toBeDisabled();
     expect(screen.getByLabelText('Room code')).toBeDisabled();
+  });
+
+  it('opens the public lobby after a room leave is acknowledged', async () => {
+    useGameStore.setState({ leavingRoom: true, connectionStatus: 'reconnecting' });
+    await render(<GameScreen />);
+    expect(useGameStore.getState().openLobby).not.toHaveBeenCalled();
+
+    await act(async () => {
+      useGameStore.setState({ leavingRoom: false, connectionStatus: 'disconnected' });
+    });
+    expect(useGameStore.getState().openLobby).toHaveBeenCalledTimes(1);
   });
 
   it('sends normalized join codes through the room store', async () => {
@@ -108,6 +142,24 @@ describe('GameScreen friend-room flow', () => {
     await user.press(screen.getByRole('button', { name: 'Share Invite' }));
     expect(share).toHaveBeenCalledWith({ message: expect.stringContaining('ABCD23') });
     share.mockRestore();
+  });
+
+  it('renders a persistent ring activity log with local-player wording', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', {
+        ringHistory: [
+          { version: 1, caller: 'A', outcome: 'correct', movedCardCount: 6 },
+          { version: 2, caller: 'B', outcome: 'wrong', movedCardCount: 1 },
+        ],
+      }),
+    });
+    await render(<GameScreen />);
+
+    expect(screen.getByText('拍铃正确，获得 6 张牌')).toBeOnTheScreen();
+    expect(screen.getByText('2号玩家拍铃错误，你获得 1 张牌')).toBeOnTheScreen();
   });
 
   it('switches from waiting to the match when the server sends the second-player snapshot', async () => {
@@ -232,10 +284,11 @@ describe('GameScreen friend-room flow', () => {
     expect(screen.getByText('YOU WIN')).toBeOnTheScreen();
     expect(screen.queryByRole('button', { name: 'FLIP' })).toBeNull();
     await user.press(screen.getByRole('button', { name: 'PLAY AGAIN' }));
-    expect(useGameStore.getState().rematch).toHaveBeenCalledTimes(1);
+    expect(useGameStore.getState().setReady).toHaveBeenCalledWith(true);
   });
 
-  it('shows a loss to Player B and does not offer B a rematch action', async () => {
+  it('lets Player B ready for a rematch too', async () => {
+    const user = userEvent.setup();
     useGameStore.setState({
       connectionStatus: 'connected',
       roomCode: 'ABCD23',
@@ -244,7 +297,8 @@ describe('GameScreen friend-room flow', () => {
     });
     await render(<GameScreen />);
     expect(screen.getByText('YOU LOSE')).toBeOnTheScreen();
-    expect(screen.queryByRole('button', { name: 'PLAY AGAIN' })).toBeNull();
+    await user.press(screen.getByRole('button', { name: 'PLAY AGAIN' }));
+    expect(useGameStore.getState().setReady).toHaveBeenCalledWith(true);
   });
 
   it('shows the countdown and cooldown reminder while keeping Ring available', async () => {

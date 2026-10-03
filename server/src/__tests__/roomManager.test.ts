@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage } from '../../../src/network/protocol';
+import type { ClientMessage, RoomSnapshot, ServerMessage } from '../../../src/network/protocol';
 import type { CardDefinition, GameElement, GameState } from '../../../src/game/types';
 import { RoomManager } from '../roomManager';
 import type { RoomManagerEvent } from '../roomManager';
@@ -200,8 +200,15 @@ describe('RoomManager room lifecycle', () => {
     const room = joinBothPlayers(manager);
     expect(gameFactory).toHaveBeenCalledTimes(1);
 
+    const ring = manager.handleMessage('socket-a', {
+      type: 'game.ring', actionId: 'before-rematch-ring', tableVersion: 0,
+    });
+    expect(messageOf(ring, 'socket-a', 'room.snapshot').snapshot.ringHistory).toHaveLength(1);
+
     now += 5_000;
-    expect(messageOf(manager.tick(now), 'socket-a', 'room.snapshot').snapshot.phase).toBe('finished');
+    expect(messageOf(manager.tick(now), 'socket-a', 'room.snapshot').snapshot).toMatchObject({
+      phase: 'finished', ringHistory: [{ version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 }],
+    });
     const hostReady = manager.handleMessage('socket-a', {
       type: 'room.ready', actionId: 'rematch-ready-a', ready: true,
     });
@@ -214,7 +221,7 @@ describe('RoomManager room lifecycle', () => {
       type: 'room.ready', actionId: 'rematch-ready-b', ready: true,
     });
     expect(messageOf(guestReady, 'socket-b', 'room.snapshot').snapshot).toMatchObject({
-      phase: 'playing', ready: { A: true, B: true }, remainingSeconds: 5,
+      phase: 'playing', ready: { A: true, B: true }, remainingSeconds: 5, ringHistory: [],
     });
     expect(gameFactory).toHaveBeenCalledTimes(2);
   });
@@ -478,8 +485,41 @@ describe('RoomManager authoritative game transitions', () => {
       outcome: 'wrong',
       movedCardCount: 1,
     });
+    expect(snapshot.ringHistory).toEqual([snapshot.lastRingEvent]);
     expect(snapshot.ringBlockedUntilFlip).toEqual({ A: true, B: false });
     expect(remoteSnapshot.lastRingEvent).toEqual(snapshot.lastRingEvent);
+    expect(remoteSnapshot.ringHistory).toEqual(snapshot.ringHistory);
+  });
+
+  it('keeps only the latest twelve ring events in both players’ snapshots', () => {
+    const rooms = joinBothPlayers(
+      makeRoomManager({
+        gameFactory: () =>
+          customGame({
+            A: { drawPile: Array.from({ length: 30 }, (_, index) => card(`A${index}`, ['banana'])), playedPile: [] },
+            B: { drawPile: Array.from({ length: 30 }, (_, index) => card(`B${index}`, ['pear'])), playedPile: [] },
+          }),
+      }),
+    );
+
+    let latestSnapshot: RoomSnapshot | null = null;
+    for (let index = 0; index < 13; index += 1) {
+      const player = index % 2 === 0 ? 'A' : 'B';
+      const socket = player === 'A' ? 'socket-a' : 'socket-b';
+      const ringEvents = rooms.manager.handleMessage(socket, {
+        type: 'game.ring', actionId: `ring-${index}`, tableVersion: latestSnapshot?.tableVersion ?? 0,
+      });
+      expect(messageOf(ringEvents, socket, 'action.result')).toMatchObject({ accepted: true, outcome: 'wrong' });
+      latestSnapshot = messageOf(ringEvents, socket, 'room.snapshot').snapshot;
+      const flipEvents = rooms.manager.handleMessage(socket, {
+        type: 'game.flip', actionId: `flip-${index}`,
+      });
+      latestSnapshot = messageOf(flipEvents, socket, 'room.snapshot').snapshot;
+    }
+
+    expect(latestSnapshot?.ringHistory).toHaveLength(12);
+    expect(latestSnapshot?.ringHistory[0]).toMatchObject({ version: 2, caller: 'B' });
+    expect(latestSnapshot?.ringHistory[11]).toMatchObject({ version: 13, caller: 'A' });
   });
 
   it('blocks only the false ringer until their next flip and still accepts the opponent ring', () => {
@@ -678,6 +718,27 @@ describe('RoomManager authoritative game transitions', () => {
 });
 
 describe('RoomManager reconnect and expiry', () => {
+  it('keeps recent ring history in the reconnected player snapshot', () => {
+    const rooms = joinBothPlayers(makeRoomManager({
+      gameFactory: () => customGame({
+        A: { drawPile: [card('A1', ['banana']), card('A2', ['pear'])], playedPile: [] },
+        B: { drawPile: [card('B1', ['grape'])], playedPile: [] },
+      }),
+    }));
+    const ring = rooms.manager.handleMessage('socket-a', {
+      type: 'game.ring', actionId: 'history-before-disconnect', tableVersion: 0,
+    });
+    const history = messageOf(ring, 'socket-a', 'room.snapshot').snapshot.ringHistory;
+    rooms.manager.disconnect('socket-a');
+
+    const reconnected = rooms.manager.handleMessage('socket-a2', {
+      type: 'room.reconnect', requestId: 'reconnect-with-history',
+      roomCode: rooms.roomCode, seatToken: rooms.seatTokenA,
+    });
+
+    expect(messageOf(reconnected, 'socket-a2', 'room.session').snapshot.ringHistory).toEqual(history);
+  });
+
   it('closes the room when a player leaves and notifies the other seat', () => {
     const rooms = joinBothPlayers(makeRoomManager());
 

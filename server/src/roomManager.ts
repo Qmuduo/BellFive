@@ -598,6 +598,7 @@ export class RoomManager {
         outcome: result.outcome,
         movedCardCount: result.movedCardCount,
       };
+      room.ringHistory = [...room.ringHistory, room.lastRingEvent].slice(-12);
       if (result.outcome === 'correct') room.tableVersion += 1;
       this.updateRoomPhase(room);
       room.lastActivityAt = now;

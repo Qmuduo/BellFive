@@ -50,6 +50,34 @@ describe('WaitingRoom', () => {
     await user.press(screen.getByRole('button', { name: 'Leave Room' }));
     expect(onLeave).toHaveBeenCalledTimes(1);
   });
+
+  it('lets both seats ready up and lets the host review join requests', async () => {
+    const user = userEvent.setup();
+    const onSetReady = jest.fn();
+    const onDecideApplication = jest.fn();
+    const snapshot = makeSnapshot();
+    await render(
+      <WaitingRoom
+        roomCode="ABCD23"
+        localPlayerId="A"
+        snapshot={{ ...snapshot, players: { ...snapshot.players, B: { ...snapshot.players.B, connected: true } } }}
+        connectionStatus="connected"
+        error={null}
+        onLeave={jest.fn()}
+        onSetReady={onSetReady}
+        pendingApplications={[{
+          applicationId: 'app-1', roomCode: 'ABCD23', profile: { nickname: 'Jun', avatarId: 'grape' },
+        }]}
+        onDecideApplication={onDecideApplication}
+      />,
+    );
+
+    expect(screen.getByText('Jun wants to join')).toBeOnTheScreen();
+    await user.press(screen.getByRole('button', { name: 'Approve Jun' }));
+    expect(onDecideApplication).toHaveBeenCalledWith('app-1', true);
+    await user.press(screen.getByRole('button', { name: 'READY' }));
+    expect(onSetReady).toHaveBeenCalledWith(true);
+  });
 });
 
 function makeSnapshot(): RoomSnapshot {

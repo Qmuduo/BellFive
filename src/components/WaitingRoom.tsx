@@ -1,6 +1,6 @@
-import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import type { GameClientError, GameClientStatus } from '../network/GameClient';
-import type { RoomSnapshot } from '../network/protocol';
+import type { JoinApplication, RoomSnapshot } from '../network/protocol';
 import type { PlayerId } from '../game/types';
 import { AVATAR_EMOJI, getPlayerDisplayName } from '../profile';
 import type { PlayerProfile } from '../profile';
@@ -12,19 +12,35 @@ type WaitingRoomProps = Readonly<{
   connectionStatus: GameClientStatus;
   error: GameClientError | null;
   onLeave: () => void;
+  pendingApplications?: readonly JoinApplication[];
+  onDecideApplication?: (applicationId: string, approved: boolean) => void;
+  onSetReady?: (ready: boolean) => void;
 }>;
 
-export function WaitingRoom({ roomCode, localPlayerId, snapshot, connectionStatus, error, onLeave }: WaitingRoomProps) {
+export function WaitingRoom({
+  roomCode,
+  localPlayerId,
+  snapshot,
+  connectionStatus,
+  error,
+  onLeave,
+  pendingApplications = [],
+  onDecideApplication = () => undefined,
+  onSetReady = () => undefined,
+}: WaitingRoomProps) {
   const otherPlayer: PlayerId = localPlayerId === 'A' ? 'B' : 'A';
+  const localReady = snapshot.ready[localPlayerId];
+  const playersConnected = snapshot.players.A.connected && snapshot.players.B.connected;
+  const readyEnabled = connectionStatus === 'connected' && playersConnected;
   const shareInvite = () => Share.share({
     message: `Join my BellFive game. Enter room code ${roomCode} in BellFive to play with me.`,
   });
 
   return (
-    <View style={styles.screen}>
-      <Text style={styles.eyebrow}>PRIVATE FRIEND ROOM</Text>
+    <ScrollView contentContainerStyle={styles.screen} showsVerticalScrollIndicator={false}>
+      <Text style={styles.eyebrow}>PUBLIC FRIEND ROOM</Text>
       <Text style={styles.title}>You're in.</Text>
-      <Text style={styles.description}>Share this code with your friend to start the match.</Text>
+      <Text style={styles.description}>Share this code or wait for a join request. Both players must be ready.</Text>
 
       <View style={styles.codeCard}>
         <Text style={styles.codeLabel}>ROOM CODE</Text>
@@ -32,13 +48,45 @@ export function WaitingRoom({ roomCode, localPlayerId, snapshot, connectionStatu
       </View>
 
       <View style={styles.playerCard}>
-        <PlayerStatus playerId={localPlayerId} profile={snapshot.players[localPlayerId].profile} connected={snapshot.players[localPlayerId].connected} local />
-        <PlayerStatus playerId={otherPlayer} profile={snapshot.players[otherPlayer].profile} connected={snapshot.players[otherPlayer].connected} />
+        <PlayerStatus playerId={localPlayerId} profile={snapshot.players[localPlayerId].profile} connected={snapshot.players[localPlayerId].connected} ready={snapshot.ready[localPlayerId]} local />
+        <PlayerStatus playerId={otherPlayer} profile={snapshot.players[otherPlayer].profile} connected={snapshot.players[otherPlayer].connected} ready={snapshot.ready[otherPlayer]} />
       </View>
 
+      {pendingApplications.length > 0 ? (
+        <View style={styles.requestsPanel}>
+          <Text style={styles.requestsTitle}>JOIN REQUESTS</Text>
+          {pendingApplications.map(application => (
+            <View key={application.applicationId} style={styles.requestRow}>
+              <View style={styles.requestIdentity}>
+                <Text style={styles.requestAvatar}>{AVATAR_EMOJI[application.profile.avatarId]}</Text>
+                <Text style={styles.requestName}>{application.profile.nickname} wants to join</Text>
+              </View>
+              <View style={styles.requestActions}>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Approve ${application.profile.nickname}`} onPress={() => onDecideApplication(application.applicationId, true)} style={styles.approveButton}>
+                  <Text style={styles.approveText}>APPROVE</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Reject ${application.profile.nickname}`} onPress={() => onDecideApplication(application.applicationId, false)} style={styles.rejectButton}>
+                  <Text style={styles.rejectText}>REJECT</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       <Text style={styles.connection}>
-        {error?.message ?? (connectionStatus === 'reconnecting' ? 'Reconnecting to the game server…' : 'The match starts when both players are connected.')}
+        {error?.message ?? (connectionStatus === 'reconnecting' ? 'Reconnecting to the game server…' : localReady ? 'You are ready. Waiting for the other player.' : 'When both players are connected and ready, the match starts automatically.')}
       </Text>
+
+      <Pressable
+        role="button"
+        accessibilityState={{ disabled: !readyEnabled }}
+        disabled={!readyEnabled}
+        onPress={() => onSetReady(!localReady)}
+        style={({ pressed }) => [styles.readyButton, localReady && styles.readyButtonOn, !readyEnabled && styles.disabled, pressed && readyEnabled && styles.pressed]}
+      >
+        <Text style={[styles.readyText, localReady && styles.readyTextOn]}>{localReady ? 'CANCEL READY' : 'READY'}</Text>
+      </Pressable>
 
       <Pressable role="button" onPress={shareInvite} style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}>
         <Text style={styles.shareText}>Share Invite</Text>
@@ -46,23 +94,23 @@ export function WaitingRoom({ roomCode, localPlayerId, snapshot, connectionStatu
       <Pressable role="button" onPress={onLeave} style={styles.leaveButton}>
         <Text style={styles.leaveText}>Leave Room</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
-function PlayerStatus({ playerId, profile, connected, local = false }: { playerId: PlayerId; profile: PlayerProfile; connected: boolean; local?: boolean }) {
+function PlayerStatus({ playerId, profile, connected, ready, local = false }: { playerId: PlayerId; profile: PlayerProfile; connected: boolean; ready: boolean; local?: boolean }) {
   return (
     <View style={styles.playerRow}>
       <View style={[styles.statusDot, connected ? styles.online : styles.offline]} />
       <View style={styles.avatar}><Text style={styles.avatarEmoji}>{AVATAR_EMOJI[profile.avatarId]}</Text></View>
       <Text style={styles.playerName}>{getPlayerDisplayName(profile, playerId)}{local ? ' · You' : ''}</Text>
-      <Text style={[styles.status, connected ? styles.onlineText : null]}>{connected ? 'Connected' : 'Waiting'}</Text>
+      <Text style={[styles.status, connected ? styles.onlineText : null]}>{!connected ? 'Waiting' : ready ? 'Ready' : 'Connected'}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, justifyContent: 'center', paddingHorizontal: 22, backgroundColor: '#F6F5F1' },
+  screen: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 22, paddingVertical: 20, backgroundColor: '#F6F5F1' },
   eyebrow: { color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 1.8, textAlign: 'center' },
   title: { marginTop: 7, color: '#202B37', fontSize: 31, fontWeight: '900', textAlign: 'center' },
   description: { marginTop: 7, marginBottom: 25, color: '#75808B', fontSize: 13, textAlign: 'center' },
@@ -80,6 +128,22 @@ const styles = StyleSheet.create({
   status: { color: '#929AA2', fontSize: 10, fontWeight: '800' },
   onlineText: { color: '#38845E' },
   connection: { marginTop: 17, color: '#7B858E', fontSize: 11, textAlign: 'center' },
+  requestsPanel: { marginTop: 13, padding: 12, borderRadius: 16, backgroundColor: '#FFFFFF' },
+  requestsTitle: { marginBottom: 7, color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
+  requestRow: { paddingVertical: 7, borderTopWidth: 1, borderTopColor: '#F0F1F2' },
+  requestIdentity: { flexDirection: 'row', alignItems: 'center' },
+  requestAvatar: { marginRight: 7, fontSize: 19 },
+  requestName: { color: '#364451', fontSize: 11, fontWeight: '800' },
+  requestActions: { flexDirection: 'row', gap: 8, marginTop: 7 },
+  approveButton: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10, backgroundColor: '#E4F3E9' },
+  approveText: { color: '#35744F', fontSize: 9, fontWeight: '900' },
+  rejectButton: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10, backgroundColor: '#FBE6E3' },
+  rejectText: { color: '#A6534D', fontSize: 9, fontWeight: '900' },
+  readyButton: { minHeight: 54, alignItems: 'center', justifyContent: 'center', marginTop: 15, borderRadius: 16, backgroundColor: '#F2C4CC' },
+  readyButtonOn: { backgroundColor: '#E3F1E7' },
+  readyText: { color: '#633E45', fontSize: 14, fontWeight: '900', letterSpacing: 1 },
+  readyTextOn: { color: '#35744F' },
+  disabled: { opacity: 0.5 },
   shareButton: { minHeight: 56, alignItems: 'center', justifyContent: 'center', marginTop: 25, borderRadius: 18, backgroundColor: '#F2C4CC' },
   shareText: { color: '#633E45', fontSize: 15, fontWeight: '900' },
   leaveButton: { alignItems: 'center', justifyContent: 'center', padding: 15 },
