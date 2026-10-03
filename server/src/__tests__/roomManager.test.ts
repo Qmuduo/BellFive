@@ -4,6 +4,143 @@ import { RoomManager } from '../roomManager';
 import type { RoomManagerEvent } from '../roomManager';
 
 describe('RoomManager room lifecycle', () => {
+  it('lists an open room, keeps applicants unseated until host approval, then removes the full room', () => {
+    const manager = makeRoomManager();
+    const room = createWaitingRoom(manager);
+    const subscribed = manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' });
+
+    expect(messageOf(subscribed, 'socket-b', 'room.lobby.snapshot').rooms).toEqual([
+      { roomCode: room.roomCode, hostProfile: { nickname: 'Player A', avatarId: 'strawberry' } },
+    ]);
+
+    const applied = manager.handleMessage('socket-b', {
+      type: 'room.join',
+      requestId: 'apply-b',
+      roomCode: room.roomCode,
+      profile: { nickname: 'Kai', avatarId: 'banana' },
+    });
+    const pending = messageOf(applied, 'socket-a', 'room.application.pending');
+    expect(pending.application.profile).toEqual({ nickname: 'Kai', avatarId: 'banana' });
+    expect(messageOf(applied, 'socket-b', 'room.application.status')).toMatchObject({
+      applicationId: pending.application.applicationId,
+      status: 'pending',
+    });
+    expect(applied.some(event => event.connectionId === 'socket-b' && event.message.type === 'room.session'))
+      .toBe(false);
+
+    const approved = manager.handleMessage('socket-a', {
+      type: 'room.application.decision',
+      applicationId: pending.application.applicationId,
+      approved: true,
+    });
+    expect(messageOf(approved, 'socket-b', 'room.session')).toMatchObject({
+      requestId: 'apply-b',
+      roomCode: room.roomCode,
+      localPlayerId: 'B',
+    });
+    expect(messageOf(approved, 'socket-b', 'room.lobby.snapshot').rooms).toEqual([]);
+  });
+
+  it('rejects and cancels applications for both the requester and host views', () => {
+    const manager = makeRoomManager();
+    const room = createWaitingRoom(manager);
+    const first = manager.handleMessage('socket-b', {
+      type: 'room.join', requestId: 'apply-reject', roomCode: room.roomCode,
+    });
+    const firstApplication = messageOf(first, 'socket-a', 'room.application.pending').application;
+    const rejected = manager.handleMessage('socket-a', {
+      type: 'room.application.decision',
+      applicationId: firstApplication.applicationId,
+      approved: false,
+    });
+    expect(messageOf(rejected, 'socket-b', 'room.application.status').status).toBe('rejected');
+
+    const second = manager.handleMessage('socket-b', {
+      type: 'room.join', requestId: 'apply-cancel', roomCode: room.roomCode,
+    });
+    const secondApplication = messageOf(second, 'socket-a', 'room.application.pending').application;
+    const cancelled = manager.handleMessage('socket-b', {
+      type: 'room.application.cancel', applicationId: secondApplication.applicationId,
+    });
+    expect(messageOf(cancelled, 'socket-a', 'room.application.status')).toMatchObject({
+      applicationId: secondApplication.applicationId,
+      status: 'cancelled',
+    });
+    expect(messageOf(cancelled, 'socket-b', 'room.application.status').status).toBe('cancelled');
+  });
+
+  it('resends pending requests when the host reconnects and removes requests when an applicant disconnects', () => {
+    const manager = makeRoomManager();
+    const room = createWaitingRoom(manager);
+    manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' });
+    const applied = manager.handleMessage('socket-b', {
+      type: 'room.join', requestId: 'apply-b', roomCode: room.roomCode,
+    });
+    const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+
+    const hostDisconnected = manager.disconnect('socket-a');
+    expect(messageOf(hostDisconnected, 'socket-b', 'room.lobby.snapshot').rooms).toEqual([]);
+    const hostReconnected = manager.handleMessage('socket-a2', {
+      type: 'room.reconnect',
+      requestId: 'reconnect-host',
+      roomCode: room.roomCode,
+      seatToken: room.seatTokenA,
+    });
+    expect(messageOf(hostReconnected, 'socket-a2', 'room.application.pending').application)
+      .toEqual(application);
+
+    const applicantDisconnected = manager.disconnect('socket-b');
+    expect(messageOf(applicantDisconnected, 'socket-a2', 'room.application.status')).toMatchObject({
+      applicationId: application.applicationId,
+      status: 'cancelled',
+    });
+  });
+
+  it('expires pending applications and updates subscribed room lists', () => {
+    let now = 1_000;
+    const manager = makeRoomManager({ now: () => now });
+    const room = createWaitingRoom(manager);
+    manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' });
+    const applied = manager.handleMessage('socket-b', {
+      type: 'room.join', requestId: 'apply-expiring', roomCode: room.roomCode,
+    });
+    const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+
+    now += 15 * 60 * 1000 + 1;
+    const expired = manager.tick(now);
+
+    expect(messageOf(expired, 'socket-b', 'room.application.status')).toMatchObject({
+      applicationId: application.applicationId,
+      status: 'cancelled',
+    });
+    expect(messageOf(expired, 'socket-b', 'room.lobby.snapshot').rooms).toEqual([]);
+  });
+
+  it('serializes concurrent approvals so only one applicant receives the open seat', () => {
+    const manager = makeRoomManager();
+    const room = createWaitingRoom(manager);
+    const applicationA = messageOf(manager.handleMessage('socket-b', {
+      type: 'room.join', requestId: 'apply-b', roomCode: room.roomCode,
+    }), 'socket-a', 'room.application.pending').application;
+    const applicationC = messageOf(manager.handleMessage('socket-c', {
+      type: 'room.join', requestId: 'apply-c', roomCode: room.roomCode,
+    }), 'socket-a', 'room.application.pending').application;
+
+    const firstApproval = manager.handleMessage('socket-a', {
+      type: 'room.application.decision', applicationId: applicationA.applicationId, approved: true,
+    });
+    expect(messageOf(firstApproval, 'socket-b', 'room.session').localPlayerId).toBe('B');
+    expect(messageOf(firstApproval, 'socket-c', 'room.application.status')).toMatchObject({
+      applicationId: applicationC.applicationId,
+      status: 'room_full',
+    });
+
+    const staleApproval = manager.handleMessage('socket-a', {
+      type: 'room.application.decision', applicationId: applicationC.applicationId, approved: true,
+    });
+    expect(messageOf(staleApproval, 'socket-a', 'error').code).toBe('APPLICATION_NOT_FOUND');
+  });
+
   it('creates a waiting room with Player A and a unique readable code', () => {
     let randomValue = 0;
     const rooms = new RoomManager({
@@ -48,11 +185,17 @@ describe('RoomManager room lifecycle', () => {
     const aSession = messageOf(created, 'socket-a', 'room.session');
     expect(aSession.snapshot.players.A.profile).toEqual({ nickname: '🍐ABCDEFGHIJK', avatarId: 'strawberry' });
 
-    const joined = rooms.handleMessage('socket-b', {
+    const applied = rooms.handleMessage('socket-b', {
       type: 'room.join',
       requestId: 'profile-join',
       roomCode: aSession.roomCode,
       profile: { nickname: '   ', avatarId: 'bell' },
+    });
+    const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+    const joined = rooms.handleMessage('socket-a', {
+      type: 'room.application.decision',
+      applicationId: application.applicationId,
+      approved: true,
     });
     const bSession = messageOf(joined, 'socket-b', 'room.session');
     const aSnapshot = messageOf(joined, 'socket-a', 'room.snapshot').snapshot;
@@ -72,10 +215,16 @@ describe('RoomManager room lifecycle', () => {
   it('starts a shuffled 30/30 match when Player B joins and updates both clients', () => {
     const rooms = makeRoomManager();
     const room = createWaitingRoom(rooms);
-    const events = rooms.handleMessage('socket-b', {
+    const applied = rooms.handleMessage('socket-b', {
       type: 'room.join',
       requestId: 'join-b',
       roomCode: room.roomCode,
+    });
+    const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+    const events = rooms.handleMessage('socket-a', {
+      type: 'room.application.decision',
+      applicationId: application.applicationId,
+      approved: true,
     });
 
     const bSession = messageOf(events, 'socket-b', 'room.session');
@@ -92,13 +241,7 @@ describe('RoomManager room lifecycle', () => {
 
   it('rejects a third player without displacing either seat', () => {
     const rooms = makeRoomManager();
-    const room = createWaitingRoom(rooms);
-    rooms.handleMessage('socket-b', {
-      type: 'room.join',
-      requestId: 'join-b',
-      roomCode: room.roomCode,
-    });
-
+    const room = joinBothPlayers(rooms);
     const events = rooms.handleMessage('socket-c', {
       type: 'room.join',
       requestId: 'join-c',
@@ -509,10 +652,16 @@ describe('RoomManager reconnect and expiry', () => {
     );
     expect(waiting.snapshot.remainingSeconds).toBeNull();
 
-    const joined = manager.handleMessage('socket-b', {
+    const applied = manager.handleMessage('socket-b', {
       type: 'room.join',
       requestId: 'join-clock-b',
       roomCode: waiting.roomCode,
+    });
+    const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+    const joined = manager.handleMessage('socket-a', {
+      type: 'room.application.decision',
+      applicationId: application.applicationId,
+      approved: true,
     });
     const bSession = messageOf(joined, 'socket-b', 'room.session');
     expect(bSession.snapshot.remainingSeconds).toBe(300);
@@ -556,10 +705,16 @@ describe('RoomManager reconnect and expiry', () => {
         }),
       });
       const room = createWaitingRoom(manager);
-      manager.handleMessage('socket-b', {
+      const applied = manager.handleMessage('socket-b', {
         type: 'room.join',
         requestId: 'join-timeout-b',
         roomCode: room.roomCode,
+      });
+      const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+      manager.handleMessage('socket-a', {
+        type: 'room.application.decision',
+        applicationId: application.applicationId,
+        approved: true,
       });
 
       now += 5_000;
@@ -590,10 +745,16 @@ describe('RoomManager reconnect and expiry', () => {
       }),
     });
     const room = createWaitingRoom(manager);
-    manager.handleMessage('socket-b', {
+    const applied = manager.handleMessage('socket-b', {
       type: 'room.join',
       requestId: 'join-cached-timeout-b',
       roomCode: room.roomCode,
+    });
+    const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+    manager.handleMessage('socket-a', {
+      type: 'room.application.decision',
+      applicationId: application.applicationId,
+      approved: true,
     });
     const action: ClientMessage = { type: 'game.flip', actionId: 'cached-before-timeout' };
     expect(messageOf(manager.handleMessage('socket-a', action), 'socket-a', 'action.result').accepted).toBe(true);
@@ -663,10 +824,16 @@ function createWaitingRoom(manager: RoomManager) {
 
 function joinBothPlayers(manager: RoomManager) {
   const waiting = createWaitingRoom(manager);
-  const events = manager.handleMessage('socket-b', {
+  const applied = manager.handleMessage('socket-b', {
     type: 'room.join',
     requestId: 'join-b',
     roomCode: waiting.roomCode,
+  });
+  const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
+  const events = manager.handleMessage('socket-a', {
+    type: 'room.application.decision',
+    applicationId: application.applicationId,
+    approved: true,
   });
   const session = messageOf(events, 'socket-b', 'room.session');
   return {

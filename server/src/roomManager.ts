@@ -3,6 +3,8 @@ import { canPlayerRing, createGame, finishGameByTimeout, flipCard, ringBell } fr
 import { createRoomSnapshot } from '../../src/network/protocol';
 import type {
   ClientMessage,
+  JoinApplication,
+  OpenRoomSummary,
   RoomPhase,
   RoomSnapshot,
   RoomSnapshotSource,
@@ -37,12 +39,19 @@ type RoomRecord = {
   tableVersion: number;
   ringVersion: number;
   lastRingEvent: RingFeedbackEvent | null;
+  ringHistory: RingFeedbackEvent[];
   flipVersion: number;
   lastFlipEvent: { version: number; player: PlayerId } | null;
+  ready: Record<PlayerId, boolean>;
   matchDeadlineAt: number | null;
   pausedRemainingMs: number | null;
   lastPublishedSeconds: number | null;
   actionResults: Record<PlayerId, Map<string, Extract<ServerMessage, { type: 'action.result' }>>>;
+};
+
+type PendingApplication = JoinApplication & {
+  requestId: string;
+  connectionId: string;
 };
 
 export type RoomManagerEvent = Readonly<{
@@ -63,6 +72,8 @@ type ActionMessage = Extract<ClientMessage, { type: 'game.flip' | 'game.ring' | 
 export class RoomManager {
   private readonly rooms = new Map<string, RoomRecord>();
   private readonly connectionToSeat = new Map<string, { roomCode: string; playerId: PlayerId }>();
+  private readonly lobbySubscribers = new Set<string>();
+  private readonly applications = new Map<string, PendingApplication>();
   private readonly now: () => number;
   private readonly random: () => number;
   private readonly tokenFactory: () => string;
@@ -78,45 +89,81 @@ export class RoomManager {
   }
 
   handleMessage(connectionId: string, message: ClientMessage): RoomManagerEvent[] {
-    this.pruneExpiredRooms(this.now());
+    const maintenance = this.expireRooms(this.now());
+    let events: RoomManagerEvent[];
 
     switch (message.type) {
       case 'room.create':
-        return this.createRoom(connectionId, message.requestId, message.profile);
+        events = this.createRoom(connectionId, message.requestId, message.profile);
+        break;
       case 'room.join':
-        return this.joinRoom(connectionId, message.requestId, message.roomCode, message.profile);
+        events = this.joinRoom(connectionId, message.requestId, message.roomCode, message.profile);
+        break;
+      case 'room.lobby.subscribe':
+        this.lobbySubscribers.add(connectionId);
+        events = [this.lobbySnapshotEvent(connectionId)];
+        break;
+      case 'room.lobby.refresh':
+        events = [this.lobbySnapshotEvent(connectionId)];
+        break;
+      case 'room.lobby.unsubscribe':
+        this.lobbySubscribers.delete(connectionId);
+        events = [];
+        break;
+      case 'room.application.decision':
+        events = this.decideApplication(connectionId, message.applicationId, message.approved);
+        break;
+      case 'room.application.cancel':
+        events = this.cancelApplication(connectionId, message.applicationId);
+        break;
       case 'room.reconnect':
-        return this.reconnectRoom(
+        events = this.reconnectRoom(
           connectionId,
           message.requestId,
           message.roomCode,
           message.seatToken,
         );
+        break;
       case 'room.leave':
-        return this.leaveRoom(connectionId, message.requestId);
+        events = this.leaveRoom(connectionId, message.requestId);
+        break;
+      case 'room.ready':
+        events = [this.errorEvent(connectionId, 'GAME_NOT_STARTED', 'The match is waiting for both players to ready.')];
+        break;
       default:
-        return this.handleGameAction(connectionId, message);
+        events = this.handleGameAction(connectionId, message);
     }
+
+    const maintenanceEvents = [...maintenance.events, ...events];
+    if (maintenance.roomCodes.length > 0) maintenanceEvents.push(...this.lobbySnapshotEvents());
+    return maintenanceEvents;
   }
 
   disconnect(connectionId: string): RoomManagerEvent[] {
+    this.lobbySubscribers.delete(connectionId);
+    const applicationEvents = this.cancelApplicationsForRequester(connectionId);
     const connection = this.connectionToSeat.get(connectionId);
-    if (!connection) return [];
+    if (!connection) return applicationEvents;
 
     this.connectionToSeat.delete(connectionId);
     const room = this.rooms.get(connection.roomCode);
     const seat = room?.seats[connection.playerId];
-    if (!room || !seat || seat.connectionId !== connectionId) return [];
+    if (!room || !seat || seat.connectionId !== connectionId) return applicationEvents;
 
     seat.connectionId = null;
     const now = this.now();
     room.lastActivityAt = now;
     this.updateRoomPhase(room, now);
-    return this.snapshotEvents(room);
+    return [...applicationEvents, ...this.snapshotEvents(room), ...this.lobbySnapshotEvents()];
   }
 
   pruneExpiredRooms(now = this.now()): string[] {
-    const expiredCodes: string[] = [];
+    return this.expireRooms(now).roomCodes;
+  }
+
+  private expireRooms(now: number): { roomCodes: string[]; events: RoomManagerEvent[] } {
+    const roomCodes: string[] = [];
+    const events: RoomManagerEvent[] = [];
 
     for (const room of this.rooms.values()) {
       const waitingExpired =
@@ -124,19 +171,21 @@ export class RoomManager {
       const idleExpired = now - room.lastActivityAt >= ROOM_IDLE_TTL_MS;
       if (!waitingExpired && !idleExpired) continue;
 
+      events.push(...this.clearApplicationsForRoom(room.roomCode, 'This room has expired.'));
       for (const seat of Object.values(room.seats)) {
         if (seat?.connectionId) this.connectionToSeat.delete(seat.connectionId);
       }
       this.rooms.delete(room.roomCode);
-      expiredCodes.push(room.roomCode);
+      roomCodes.push(room.roomCode);
     }
 
-    return expiredCodes;
+    return { roomCodes, events };
   }
 
   tick(now = this.now()): RoomManagerEvent[] {
-    this.pruneExpiredRooms(now);
-    const events: RoomManagerEvent[] = [];
+    const maintenance = this.expireRooms(now);
+    const events: RoomManagerEvent[] = [...maintenance.events];
+    if (maintenance.roomCodes.length > 0) events.push(...this.lobbySnapshotEvents());
 
     for (const room of this.rooms.values()) {
       if (room.phase !== 'playing' || room.matchDeadlineAt === null || !room.game) continue;
@@ -194,8 +243,10 @@ export class RoomManager {
       tableVersion: 0,
       ringVersion: 0,
       lastRingEvent: null,
+      ringHistory: [],
       flipVersion: 0,
       lastFlipEvent: null,
+      ready: { A: false, B: false },
       matchDeadlineAt: null,
       pausedRemainingMs: null,
       lastPublishedSeconds: null,
@@ -214,6 +265,7 @@ export class RoomManager {
         seatToken: token,
         snapshot,
       }),
+      ...this.lobbySnapshotEvents(),
     ];
   }
 
@@ -231,34 +283,124 @@ export class RoomManager {
     if (!room) {
       return [this.errorEvent(connectionId, 'ROOM_NOT_FOUND', 'Room code was not found or has expired.', requestId)];
     }
-    if (room.seats.B || room.phase === 'finished') {
+    if (room.seats.B || room.phase !== 'waiting') {
       return [this.errorEvent(connectionId, 'ROOM_FULL', 'This room already has two players.', requestId)];
+    }
+    if (!room.seats.A?.connectionId) {
+      return [this.errorEvent(connectionId, 'ROOM_NOT_WAITING', 'The room creator is not currently available.', requestId)];
+    }
+
+    const existing = [...this.applications.values()].find(
+      application => application.roomCode === roomCode && application.connectionId === connectionId,
+    );
+    if (existing) {
+      return [this.applicationStatusEvent(connectionId, existing.applicationId, 'pending', 'Waiting for the room creator to approve.')];
+    }
+
+    const application: PendingApplication = {
+      applicationId: randomUUID(),
+      requestId,
+      roomCode,
+      connectionId,
+      profile: sanitizePlayerProfile(profile ?? DEFAULT_PLAYER_PROFILE, 'B'),
+    };
+    this.applications.set(application.applicationId, application);
+    room.lastActivityAt = this.now();
+    return [
+      this.event(room.seats.A.connectionId, {
+        type: 'room.application.pending',
+        application: this.publicApplication(application),
+      }),
+      this.applicationStatusEvent(connectionId, application.applicationId, 'pending', 'Waiting for the room creator to approve.'),
+    ];
+  }
+
+  private decideApplication(
+    connectionId: string,
+    applicationId: string,
+    approved: boolean,
+  ): RoomManagerEvent[] {
+    const application = this.applications.get(applicationId);
+    if (!application) {
+      return [this.errorEvent(connectionId, 'APPLICATION_NOT_FOUND', 'This join request is no longer pending.')];
+    }
+    const hostConnection = this.connectionToSeat.get(connectionId);
+    if (
+      !hostConnection ||
+      hostConnection.roomCode !== application.roomCode ||
+      hostConnection.playerId !== 'A'
+    ) {
+      return [this.errorEvent(connectionId, 'HOST_ONLY', 'Only the room creator can decide join requests.')];
+    }
+
+    const room = this.rooms.get(application.roomCode);
+    if (!room || room.seats.A?.connectionId !== connectionId) {
+      this.applications.delete(applicationId);
+      return [
+        this.applicationStatusEvent(application.connectionId, applicationId, 'cancelled', 'This room is no longer available.'),
+      ];
+    }
+
+    if (!approved) {
+      this.applications.delete(applicationId);
+      return [
+        this.applicationStatusEvent(application.connectionId, applicationId, 'rejected', 'The room creator declined your request.'),
+      ];
+    }
+
+    if (room.seats.B || room.phase !== 'waiting') {
+      this.applications.delete(applicationId);
+      return [
+        this.applicationStatusEvent(application.connectionId, applicationId, 'room_full', 'The room is no longer available.'),
+        this.applicationStatusEvent(connectionId, applicationId, 'room_full', 'This request could not be approved because the room is full.'),
+      ];
     }
 
     const token = this.tokenFactory();
     room.seats.B = {
       playerId: 'B',
       token,
-      connectionId,
-      profile: sanitizePlayerProfile(profile ?? DEFAULT_PLAYER_PROFILE, 'B'),
+      connectionId: application.connectionId,
+      profile: application.profile,
     };
-    this.connectionToSeat.set(connectionId, { roomCode, playerId: 'B' });
+    this.connectionToSeat.set(application.connectionId, { roomCode: room.roomCode, playerId: 'B' });
+    this.applications.delete(applicationId);
     const now = this.now();
     room.lastActivityAt = now;
     this.updateRoomPhase(room, now);
 
     const events: RoomManagerEvent[] = [
-      this.event(connectionId, {
+      this.event(application.connectionId, {
         type: 'room.session',
-        requestId,
-        roomCode,
+        requestId: application.requestId,
+        roomCode: room.roomCode,
         localPlayerId: 'B',
         seatToken: token,
-        snapshot: this.snapshotFor(room, 'B'),
+        snapshot: this.snapshotFor(room, 'B', now),
       }),
+      ...this.snapshotEvents(room, application.connectionId, now),
     ];
-    events.push(...this.snapshotEvents(room, connectionId));
+    events.push(...this.cancelApplicationsForRequester(application.connectionId));
+    events.push(...this.clearApplicationsForRoom(room.roomCode, 'The room has been filled.', 'room_full'));
+    events.push(...this.lobbySnapshotEvents());
     return events;
+  }
+
+  private cancelApplication(connectionId: string, applicationId: string): RoomManagerEvent[] {
+    const application = this.applications.get(applicationId);
+    if (!application || application.connectionId !== connectionId) {
+      return [this.errorEvent(connectionId, 'APPLICATION_NOT_FOUND', 'This join request is no longer pending.')];
+    }
+
+    this.applications.delete(applicationId);
+    const room = this.rooms.get(application.roomCode);
+    const hostConnectionId = room?.seats.A?.connectionId;
+    return [
+      ...(hostConnectionId
+        ? [this.applicationStatusEvent(hostConnectionId, applicationId, 'cancelled', 'The applicant cancelled the request.')]
+        : []),
+      this.applicationStatusEvent(connectionId, applicationId, 'cancelled', 'Your join request was cancelled.'),
+    ];
   }
 
   private reconnectRoom(
@@ -305,6 +447,17 @@ export class RoomManager {
       }),
     ];
     events.push(...this.snapshotEvents(room, connectionId));
+    if (playerId === 'A') {
+      for (const application of this.applications.values()) {
+        if (application.roomCode === room.roomCode) {
+          events.push(this.event(connectionId, {
+            type: 'room.application.pending',
+            application: this.publicApplication(application),
+          }));
+        }
+      }
+    }
+    events.push(...this.lobbySnapshotEvents());
     return events;
   }
 
@@ -313,7 +466,10 @@ export class RoomManager {
     const room = connection ? this.rooms.get(connection.roomCode) : undefined;
     const seat = connection ? room?.seats[connection.playerId] : undefined;
     if (!connection || !room || !seat || seat.connectionId !== connectionId) {
-      return [this.event(connectionId, { type: 'room.left', requestId })];
+      return [
+        this.event(connectionId, { type: 'room.left', requestId }),
+        ...this.cancelApplicationsForRequester(connectionId),
+      ];
     }
 
     const events: RoomManagerEvent[] = [
@@ -332,7 +488,9 @@ export class RoomManager {
       }
     }
 
+    events.push(...this.clearApplicationsForRoom(room.roomCode, 'The room creator closed this room.'));
     this.rooms.delete(room.roomCode);
+    events.push(...this.lobbySnapshotEvents());
     return events;
   }
 
@@ -558,8 +716,99 @@ export class RoomManager {
       remainingSeconds: this.snapshotSecondsRemaining(room, now),
       lastRingEvent: room.lastRingEvent,
       lastFlipEvent: room.lastFlipEvent,
+      ready: room.ready,
+      ringHistory: room.ringHistory,
     };
     return createRoomSnapshot(source, localPlayerId);
+  }
+
+  private lobbySnapshotEvent(connectionId: string): RoomManagerEvent {
+    return this.event(connectionId, { type: 'room.lobby.snapshot', rooms: this.openRoomSummaries() });
+  }
+
+  private lobbySnapshotEvents(): RoomManagerEvent[] {
+    const rooms = this.openRoomSummaries();
+    return [...this.lobbySubscribers].map(connectionId => this.event(connectionId, {
+      type: 'room.lobby.snapshot',
+      rooms,
+    }));
+  }
+
+  private openRoomSummaries(): OpenRoomSummary[] {
+    return [...this.rooms.values()]
+      .filter(room => room.phase === 'waiting' && !room.seats.B && Boolean(room.seats.A?.connectionId))
+      .map(room => ({
+        roomCode: room.roomCode,
+        hostProfile: room.seats.A?.profile ?? sanitizePlayerProfile(DEFAULT_PLAYER_PROFILE, 'A'),
+      }));
+  }
+
+  private publicApplication(application: PendingApplication): JoinApplication {
+    return {
+      applicationId: application.applicationId,
+      roomCode: application.roomCode,
+      profile: application.profile,
+    };
+  }
+
+  private applicationStatusEvent(
+    connectionId: string,
+    applicationId: string,
+    status: 'pending' | 'rejected' | 'cancelled' | 'room_full',
+    message: string,
+  ): RoomManagerEvent {
+    return this.event(connectionId, {
+      type: 'room.application.status',
+      applicationId,
+      status,
+      message,
+    });
+  }
+
+  private cancelApplicationsForRequester(connectionId: string): RoomManagerEvent[] {
+    const events: RoomManagerEvent[] = [];
+    for (const application of this.applications.values()) {
+      if (application.connectionId !== connectionId) continue;
+      this.applications.delete(application.applicationId);
+      const hostConnectionId = this.rooms.get(application.roomCode)?.seats.A?.connectionId;
+      if (hostConnectionId) {
+        events.push(this.applicationStatusEvent(
+          hostConnectionId,
+          application.applicationId,
+          'cancelled',
+          'The applicant disconnected.',
+        ));
+      }
+    }
+    return events;
+  }
+
+  private clearApplicationsForRoom(
+    roomCode: string,
+    message: string,
+    status: 'cancelled' | 'room_full' = 'cancelled',
+  ): RoomManagerEvent[] {
+    const events: RoomManagerEvent[] = [];
+    const hostConnectionId = this.rooms.get(roomCode)?.seats.A?.connectionId;
+    for (const application of this.applications.values()) {
+      if (application.roomCode !== roomCode) continue;
+      this.applications.delete(application.applicationId);
+      events.push(this.applicationStatusEvent(
+        application.connectionId,
+        application.applicationId,
+        status,
+        message,
+      ));
+      if (hostConnectionId) {
+        events.push(this.applicationStatusEvent(
+          hostConnectionId,
+          application.applicationId,
+          status,
+          message,
+        ));
+      }
+    }
+    return events;
   }
 
   private startClock(room: RoomRecord, now: number): void {

@@ -28,7 +28,7 @@ describe('WebSocket room transport', () => {
     await server.close();
   });
 
-  it('serves health and forwards room sessions and snapshots to both phones', async () => {
+  it('serves health and forwards approved room sessions and snapshots to both phones', async () => {
     const health = await getHealth(server.httpUrl);
     expect(health.statusCode).toBe(200);
     expect(JSON.parse(health.body)).toEqual({ status: 'ok' });
@@ -40,8 +40,7 @@ describe('WebSocket room transport', () => {
     if (aSession.type !== 'room.session') throw new Error('Expected Player A room session.');
 
     const playerB = await connect(server.webSocketUrl);
-    const bSessionPromise = nextMessage(playerB, message => message.type === 'room.session');
-    const aSnapshotPromise = nextMessage(playerA, message => message.type === 'room.snapshot');
+    const pendingPromise = nextMessage(playerA, message => message.type === 'room.application.pending');
     playerB.send(
       JSON.stringify({
         type: 'room.join',
@@ -49,6 +48,16 @@ describe('WebSocket room transport', () => {
         roomCode: aSession.roomCode,
       }),
     );
+    const pending = await pendingPromise;
+    if (pending.type !== 'room.application.pending') throw new Error('Expected a join application.');
+
+    const bSessionPromise = nextMessage(playerB, message => message.type === 'room.session');
+    const aSnapshotPromise = nextMessage(playerA, message => message.type === 'room.snapshot');
+    playerA.send(JSON.stringify({
+      type: 'room.application.decision',
+      applicationId: pending.application.applicationId,
+      approved: true,
+    }));
 
     const [bSession, aSnapshot] = await Promise.all([bSessionPromise, aSnapshotPromise]);
     expect(bSession).toMatchObject({
@@ -60,6 +69,51 @@ describe('WebSocket room transport', () => {
       type: 'room.snapshot',
       snapshot: { phase: 'playing', localPlayerId: 'A', turn: 'A' },
     });
+  });
+
+  it('discovers an open room and keeps the requester outside until the host approves', async () => {
+    const playerA = await connect(server.webSocketUrl);
+    const aSessionPromise = nextMessage(playerA, message => message.type === 'room.session');
+    playerA.send(JSON.stringify({ type: 'room.create', requestId: 'create-a' }));
+    const aSession = await aSessionPromise;
+    if (aSession.type !== 'room.session') throw new Error('Expected a room session.');
+
+    const playerB = await connect(server.webSocketUrl);
+    const roomListPromise = nextMessage(playerB, message => message.type === 'room.lobby.snapshot');
+    playerB.send(JSON.stringify({ type: 'room.lobby.subscribe' }));
+    await expect(roomListPromise).resolves.toMatchObject({
+      type: 'room.lobby.snapshot',
+      rooms: [{ roomCode: aSession.roomCode, hostProfile: { nickname: 'Player A' } }],
+    });
+
+    const pendingPromise = nextMessage(playerA, message => message.type === 'room.application.pending');
+    const statusPromise = nextMessage(
+      playerB,
+      message => message.type === 'room.application.status' && message.status === 'pending',
+    );
+    const noSessionMessages: ServerMessage[] = [];
+    const recordMessage = (data: WebSocket.RawData) => {
+      const parsed = JSON.parse(data.toString()) as ServerMessage;
+      noSessionMessages.push(parsed);
+    };
+    playerB.on('message', recordMessage);
+    playerB.send(JSON.stringify({
+      type: 'room.join', requestId: 'apply-b', roomCode: aSession.roomCode,
+      profile: { nickname: 'Kai', avatarId: 'banana' },
+    }));
+    const [pending, status] = await Promise.all([pendingPromise, statusPromise]);
+    playerB.off('message', recordMessage);
+    if (pending.type !== 'room.application.pending') throw new Error('Expected a pending application.');
+    expect(status).toMatchObject({ type: 'room.application.status', status: 'pending' });
+    expect(noSessionMessages.some(message => message.type === 'room.session')).toBe(false);
+
+    const sessionPromise = nextMessage(playerB, message => message.type === 'room.session');
+    playerA.send(JSON.stringify({
+      type: 'room.application.decision',
+      applicationId: pending.application.applicationId,
+      approved: true,
+    }));
+    await expect(sessionPromise).resolves.toMatchObject({ localPlayerId: 'B', requestId: 'apply-b' });
   });
 
   it('broadcasts countdown updates from the server timer', async () => {
@@ -194,10 +248,18 @@ describe('WebSocket room transport', () => {
     if (aSession.type !== 'room.session') throw new Error('Expected Player A room session.');
 
     const playerB = await connect(server.webSocketUrl);
-    const bSessionPromise = nextMessage(playerB, message => message.type === 'room.session');
+    const pendingPromise = nextMessage(playerA, message => message.type === 'room.application.pending');
     playerB.send(
       JSON.stringify({ type: 'room.join', requestId: 'join-b', roomCode: aSession.roomCode }),
     );
+    const pending = await pendingPromise;
+    if (pending.type !== 'room.application.pending') throw new Error('Expected a join application.');
+    const bSessionPromise = nextMessage(playerB, message => message.type === 'room.session');
+    playerA.send(JSON.stringify({
+      type: 'room.application.decision',
+      applicationId: pending.application.applicationId,
+      approved: true,
+    }));
     await bSessionPromise;
     return { playerA, playerB, roomCode: aSession.roomCode };
   }
