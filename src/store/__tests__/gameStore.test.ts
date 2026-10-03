@@ -217,6 +217,8 @@ function makeSession(localPlayerId: 'A' | 'B'): Extract<ServerMessage, { type: '
     ringBlockedUntilFlip: { A: false, B: false },
     lastRingEvent: null,
     lastFlipEvent: null,
+    ready: { A: false, B: false },
+    ringHistory: [],
   };
   return {
     type: 'room.session',

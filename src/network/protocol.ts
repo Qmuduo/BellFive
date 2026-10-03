@@ -15,6 +15,12 @@ export type RoomPhase = 'waiting' | 'playing' | 'connection-paused' | 'finished'
 export type ClientMessage =
   | { type: 'room.create'; requestId: string; profile?: PlayerProfileInput }
   | { type: 'room.join'; requestId: string; roomCode: string; profile?: PlayerProfileInput }
+  | { type: 'room.lobby.subscribe' }
+  | { type: 'room.lobby.refresh' }
+  | { type: 'room.lobby.unsubscribe' }
+  | { type: 'room.application.decision'; applicationId: string; approved: boolean }
+  | { type: 'room.application.cancel'; applicationId: string }
+  | { type: 'room.ready'; actionId: string; ready: boolean }
   | { type: 'room.leave'; requestId: string }
   | {
       type: 'room.reconnect';
@@ -25,6 +31,17 @@ export type ClientMessage =
   | { type: 'game.flip'; actionId: string }
   | { type: 'game.ring'; actionId: string; tableVersion: number }
   | { type: 'game.rematch'; actionId: string };
+
+export type OpenRoomSummary = Readonly<{
+  roomCode: string;
+  hostProfile: PlayerProfile;
+}>;
+
+export type JoinApplication = Readonly<{
+  applicationId: string;
+  roomCode: string;
+  profile: PlayerProfile;
+}>;
 
 export type PlayerSnapshot = Readonly<{
   connected: boolean;
@@ -62,6 +79,8 @@ export type RoomSnapshot = Readonly<{
   ringBlockedUntilFlip: Readonly<Record<PlayerId, boolean>>;
   lastRingEvent: RingFeedbackEvent | null;
   lastFlipEvent: FlipFeedbackEvent | null;
+  ready: Readonly<Record<PlayerId, boolean>>;
+  ringHistory: readonly RingFeedbackEvent[];
 }>;
 
 export type RoomSnapshotSource = Readonly<{
@@ -75,9 +94,19 @@ export type RoomSnapshotSource = Readonly<{
   remainingSeconds: number | null;
   lastRingEvent: RingFeedbackEvent | null;
   lastFlipEvent: FlipFeedbackEvent | null;
+  ready: Readonly<Record<PlayerId, boolean>>;
+  ringHistory: readonly RingFeedbackEvent[];
 }>;
 
 export type ServerMessage =
+  | { type: 'room.lobby.snapshot'; rooms: readonly OpenRoomSummary[] }
+  | { type: 'room.application.pending'; application: JoinApplication }
+  | {
+      type: 'room.application.status';
+      applicationId: string;
+      status: 'pending' | 'rejected' | 'cancelled' | 'room_full';
+      message: string;
+    }
   | {
       type: 'room.session';
       requestId: string;
@@ -134,6 +163,22 @@ export function decodeClientMessage(raw: string): ClientMessage | null {
         roomCode: value.roomCode,
         ...(value.profile === undefined ? {} : { profile: value.profile }),
       };
+    case 'room.lobby.subscribe':
+    case 'room.lobby.refresh':
+    case 'room.lobby.unsubscribe':
+      return { type: value.type };
+    case 'room.application.decision':
+      return isNonEmptyString(value.applicationId) && typeof value.approved === 'boolean'
+        ? { type: 'room.application.decision', applicationId: value.applicationId, approved: value.approved }
+        : null;
+    case 'room.application.cancel':
+      return isNonEmptyString(value.applicationId)
+        ? { type: 'room.application.cancel', applicationId: value.applicationId }
+        : null;
+    case 'room.ready':
+      return isNonEmptyString(value.actionId) && typeof value.ready === 'boolean'
+        ? { type: 'room.ready', actionId: value.actionId, ready: value.ready }
+        : null;
     case 'room.reconnect':
       return isNonEmptyString(value.requestId) &&
         isRoomCode(value.roomCode) &&
@@ -169,6 +214,25 @@ export function decodeServerMessage(raw: string): ServerMessage | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
 
   switch (value.type) {
+    case 'room.lobby.snapshot':
+      return Array.isArray(value.rooms) && value.rooms.every(isOpenRoomSummary)
+        ? { type: 'room.lobby.snapshot', rooms: value.rooms }
+        : null;
+    case 'room.application.pending':
+      return isJoinApplication(value.application)
+        ? { type: 'room.application.pending', application: value.application }
+        : null;
+    case 'room.application.status':
+      return isNonEmptyString(value.applicationId) &&
+        isApplicationStatus(value.status) &&
+        isNonEmptyString(value.message)
+        ? {
+            type: 'room.application.status',
+            applicationId: value.applicationId,
+            status: value.status,
+            message: value.message,
+          }
+        : null;
     case 'room.session':
       if (
         !isNonEmptyString(value.requestId) ||
@@ -277,6 +341,8 @@ export function createRoomSnapshot(
     ringBlockedUntilFlip: source.game?.ringBlockedUntilFlip ?? { A: false, B: false },
     lastRingEvent: source.lastRingEvent,
     lastFlipEvent: source.lastFlipEvent,
+    ready: { ...source.ready },
+    ringHistory: source.ringHistory.map(event => ({ ...event })),
   };
 }
 
@@ -311,8 +377,10 @@ function isRoomSnapshot(value: unknown): value is RoomSnapshot {
     (value.ringVersion !== undefined && !isNonNegativeInteger(value.ringVersion)) ||
     !isNullableNonNegativeInteger(value.remainingSeconds) ||
     !isPlayerBooleanRecord(value.ringBlockedUntilFlip) ||
+    !isPlayerBooleanRecord(value.ready) ||
     !(value.lastRingEvent === null || isRingFeedbackEvent(value.lastRingEvent)) ||
-    !(value.lastFlipEvent === null || isFlipFeedbackEvent(value.lastFlipEvent))
+    !(value.lastFlipEvent === null || isFlipFeedbackEvent(value.lastFlipEvent)) ||
+    !isRingHistory(value.ringHistory)
   ) {
     return false;
   }
@@ -339,6 +407,19 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
   ) return false;
   const nickname = Array.from(value.nickname);
   return nickname.length > 0 && nickname.length <= 12 && value.nickname.trim() === value.nickname;
+}
+
+function isOpenRoomSummary(value: unknown): value is OpenRoomSummary {
+  return isRecord(value) && isRoomCode(value.roomCode) && isPlayerProfile(value.hostProfile);
+}
+
+function isJoinApplication(value: unknown): value is JoinApplication {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.applicationId) &&
+    isRoomCode(value.roomCode) &&
+    isPlayerProfile(value.profile)
+  );
 }
 
 function isOptionalPlayerProfileInput(value: unknown): value is PlayerProfileInput | undefined {
@@ -368,9 +449,14 @@ function isVisibleCounts(value: unknown): value is VisibleCounts {
 function isPlayerBooleanRecord(value: unknown): value is Record<PlayerId, boolean> {
   return (
     isRecord(value) &&
+    Object.keys(value).length === 2 &&
     typeof value.A === 'boolean' &&
     typeof value.B === 'boolean'
   );
+}
+
+function isRingHistory(value: unknown): value is readonly RingFeedbackEvent[] {
+  return Array.isArray(value) && value.length <= 12 && value.every(isRingFeedbackEvent);
 }
 
 function isRingFeedbackEvent(value: unknown): value is RingFeedbackEvent {
@@ -403,6 +489,12 @@ function isPlayerId(value: unknown): value is PlayerId {
 
 function isRingOutcome(value: unknown): value is RingOutcome {
   return value === 'correct' || value === 'wrong';
+}
+
+function isApplicationStatus(
+  value: unknown,
+): value is 'pending' | 'rejected' | 'cancelled' | 'room_full' {
+  return value === 'pending' || value === 'rejected' || value === 'cancelled' || value === 'room_full';
 }
 
 function isNonEmptyString(value: unknown): value is string {

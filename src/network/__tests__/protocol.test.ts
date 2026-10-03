@@ -19,6 +19,12 @@ describe('room protocol decoding', () => {
       seatToken: 'seat-secret',
     },
     { type: 'room.leave', requestId: 'request-4' },
+    { type: 'room.lobby.subscribe' },
+    { type: 'room.lobby.refresh' },
+    { type: 'room.lobby.unsubscribe' },
+    { type: 'room.application.decision', applicationId: 'app-1', approved: true },
+    { type: 'room.application.cancel', applicationId: 'app-1' },
+    { type: 'room.ready', actionId: 'ready-1', ready: true },
     { type: 'game.flip', actionId: 'action-1' },
     { type: 'game.ring', actionId: 'action-2', tableVersion: 4 },
     { type: 'game.rematch', actionId: 'action-3' },
@@ -49,6 +55,32 @@ describe('room protocol decoding', () => {
     };
 
     expect(decodeServerMessage(JSON.stringify(message))).toEqual(message);
+    const readySnapshot = {
+      ...snapshot,
+      ready: { A: false, B: true },
+      ringHistory: [{ version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 }],
+    };
+    expect(decodeServerMessage(JSON.stringify({ type: 'room.snapshot', snapshot: readySnapshot }))).toEqual({
+      type: 'room.snapshot',
+      snapshot: readySnapshot,
+    });
+    const snapshotWithoutLobbyFields = { ...snapshot } as unknown as Record<string, unknown>;
+    delete snapshotWithoutLobbyFields.ready;
+    delete snapshotWithoutLobbyFields.ringHistory;
+    expect(decodeServerMessage(JSON.stringify({
+      type: 'room.snapshot',
+      snapshot: snapshotWithoutLobbyFields,
+    }))).toBeNull();
+    expect(decodeServerMessage(JSON.stringify({
+      type: 'room.snapshot',
+      snapshot: { ...readySnapshot, ready: { A: true, B: 'ready' } },
+    }))).toBeNull();
+    expect(decodeServerMessage(JSON.stringify({
+      type: 'room.snapshot',
+      snapshot: { ...readySnapshot, ringHistory: Array.from({ length: 13 }, (_, index) => ({
+        version: index + 1, caller: 'A', outcome: 'wrong', movedCardCount: 0,
+      })) },
+    }))).toBeNull();
     const flipSnapshot = { ...snapshot, lastFlipEvent: { version: 2, player: 'B' } };
     expect(decodeServerMessage(JSON.stringify({ type: 'room.snapshot', snapshot: flipSnapshot }))).toEqual({
       type: 'room.snapshot',
@@ -94,6 +126,48 @@ describe('room protocol decoding', () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it('decodes lobby rooms and application lifecycle messages strictly', () => {
+    const room = {
+      roomCode: 'ABCD23',
+      hostProfile: { nickname: 'Mira', avatarId: 'banana' },
+    };
+    const application = {
+      applicationId: 'app-1',
+      roomCode: 'ABCD23',
+      profile: { nickname: 'Kai', avatarId: 'pear' },
+    };
+
+    for (const message of [
+      { type: 'room.lobby.snapshot', rooms: [room] },
+      { type: 'room.application.pending', application },
+      { type: 'room.application.status', applicationId: 'app-1', status: 'pending', message: 'Waiting for approval.' },
+      { type: 'room.application.status', applicationId: 'app-1', status: 'rejected', message: 'Request declined.' },
+      { type: 'room.application.status', applicationId: 'app-1', status: 'cancelled', message: 'Request cancelled.' },
+      { type: 'room.application.status', applicationId: 'app-1', status: 'room_full', message: 'Room is full.' },
+    ]) {
+      expect(decodeServerMessage(JSON.stringify(message))).toEqual(message);
+    }
+
+    expect(decodeServerMessage(JSON.stringify({
+      type: 'room.lobby.snapshot',
+      rooms: [{ ...room, hostProfile: { nickname: 'Mira', avatarId: 'upload' } }],
+    }))).toBeNull();
+    expect(decodeServerMessage(JSON.stringify({
+      type: 'room.application.pending',
+      application: { ...application, roomCode: 'bad' },
+    }))).toBeNull();
+    expect(decodeServerMessage(JSON.stringify({
+      type: 'room.application.pending',
+      application: { ...application, profile: { nickname: '', avatarId: 'pear' } },
+    }))).toBeNull();
+    expect(decodeServerMessage(JSON.stringify({
+      type: 'room.application.status',
+      applicationId: 'app-1',
+      status: 'approved',
+      message: 'Approved.',
+    }))).toBeNull();
   });
 
   it('accepts room closure notifications and rejects malformed ones', () => {
@@ -154,6 +228,8 @@ describe('room snapshots', () => {
         remainingSeconds: null,
         lastRingEvent: null,
         lastFlipEvent: null,
+        ready: { A: false, B: false },
+        ringHistory: [],
       },
       'A',
     );
@@ -206,5 +282,7 @@ function createRoomSource(): RoomSnapshotSource {
     remainingSeconds: 300,
     lastRingEvent: { version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 },
     lastFlipEvent: null,
+    ready: { A: true, B: false },
+    ringHistory: [{ version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 }],
   };
 }

@@ -71,5 +71,7 @@ function makeSnapshot(): RoomSnapshot {
     ringBlockedUntilFlip: { A: false, B: false },
     lastRingEvent: null,
     lastFlipEvent: null,
+    ready: { A: false, B: false },
+    ringHistory: [],
   };
 }
