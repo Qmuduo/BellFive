@@ -40,6 +40,11 @@ describe('CARD_DEFINITIONS', () => {
     ).toBe(true);
   });
 
+  it('contains exactly one Wild Bell symbol across the fixed deck', () => {
+    expect(CARD_DEFINITIONS.flatMap(card => card.symbols).filter(symbol => symbol === 'bell'))
+      .toHaveLength(1);
+  });
+
   it('includes every fruit and the Wild Bell in the fixed set', () => {
     const deckElements = new Set(CARD_DEFINITIONS.flatMap(card => card.symbols));
 
@@ -61,6 +66,15 @@ describe('CARD_DEFINITIONS', () => {
         const fruits = card.symbols.filter(symbol => symbol !== 'bell');
         return fruits.length === 5 && new Set(fruits).size === fruitTypes.length;
       }),
+    ).toBe(true);
+  });
+
+  it('includes a five-symbol card with five copies of one fruit', () => {
+    expect(
+      CARD_DEFINITIONS.some(card =>
+        card.symbols.length === 5 &&
+        card.symbols.every(symbol => symbol === card.symbols[0]),
+      ),
     ).toBe(true);
   });
 
