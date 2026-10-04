@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AVATAR_EMOJI, AVATAR_OPTIONS } from '../profile';
 import type { AvatarId } from '../profile';
+import { useTranslation } from '../i18n/useTranslation';
 
 type AvatarPickerProps = Readonly<{
   selected: AvatarId;
@@ -9,6 +10,7 @@ type AvatarPickerProps = Readonly<{
 }>;
 
 export function AvatarPicker({ selected, onSelect, disabled = false }: AvatarPickerProps) {
+  const { t } = useTranslation();
   return (
     <View style={styles.options}>
       {AVATAR_OPTIONS.map(avatarId => {
@@ -17,7 +19,7 @@ export function AvatarPicker({ selected, onSelect, disabled = false }: AvatarPic
           <Pressable
             key={avatarId}
             role="button"
-            accessibilityLabel={`${avatarId} avatar`}
+            accessibilityLabel={t('avatar.accessibility', { fruit: t(`fruit.${avatarId}`) })}
             accessibilityState={{ selected: isSelected, disabled }}
             disabled={disabled}
             onPress={() => onSelect(avatarId)}

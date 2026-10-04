@@ -2,6 +2,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { PlayerId } from '../game/types';
 import { AVATAR_EMOJI, getPlayerDisplayName } from '../profile';
 import type { PlayerProfile } from '../profile';
+import { useTranslation } from '../i18n/useTranslation';
+import { playerSeatLabel } from '../i18n/translations';
 
 type PlayerDeckProps = {
   player: PlayerId;
@@ -15,13 +17,15 @@ type PlayerDeckProps = {
 };
 
 export function PlayerDeck({ player, profile, drawCount, playedCount, isTurnOwner, isLocalPlayer, canFlip, onPress }: PlayerDeckProps) {
+  const { language, t } = useTranslation();
+  const playerLabel = getPlayerDisplayName(profile, player, language);
   const playerColor = player === 'A' ? styles.accentA : styles.accentB;
   const activeDeck = player === 'A' ? styles.activeDeckA : styles.activeDeckB;
 
   return (
     <Pressable
       role="button"
-      aria-label={`Player ${player} deck`}
+      accessibilityLabel={t('game.playerDeck', { playerLabel: playerSeatLabel(player, language) })}
       accessibilityState={{ disabled: !canFlip }}
       disabled={!canFlip}
       onPress={onPress}
@@ -38,11 +42,11 @@ export function PlayerDeck({ player, profile, drawCount, playedCount, isTurnOwne
       </View>
       <View style={styles.copy}>
         <View style={styles.nameRow}>
-          <Text style={styles.name}>{getPlayerDisplayName(profile, player)}</Text>
-          {isLocalPlayer ? <Text style={[styles.activeTag, playerColor]}>YOU</Text> : null}
+          <Text style={styles.name}>{playerLabel}</Text>
+          {isLocalPlayer ? <Text style={[styles.activeTag, playerColor]}>{t('deck.you')}</Text> : null}
         </View>
-        <Text style={styles.count}>{drawCount} cards</Text>
-        <Text style={styles.played}>TABLE {playedCount}</Text>
+        <Text style={styles.count}>{t('deck.cards', { count: drawCount, cardWord: t(drawCount === 1 ? 'deck.cardWord.one' : 'deck.cardWord.many') })}</Text>
+        <Text style={styles.played}>{t('deck.table', { count: playedCount })}</Text>
       </View>
     </Pressable>
   );

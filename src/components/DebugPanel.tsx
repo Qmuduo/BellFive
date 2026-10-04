@@ -1,6 +1,18 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { GameClientStatus } from '../network/GameClient';
 import type { RoomSnapshot } from '../network/protocol';
+import { playerSeatLabel } from '../i18n/translations';
+import type { TranslationKey } from '../i18n/translations';
+import { useTranslation } from '../i18n/useTranslation';
+
+const CONNECTION_LABEL_KEYS: Readonly<Record<GameClientStatus, TranslationKey>> = {
+  idle: 'status.connection.idle',
+  connecting: 'status.connection.connecting',
+  connected: 'status.connection.connected',
+  reconnecting: 'status.connection.reconnecting',
+  disconnected: 'status.connection.disconnected',
+  error: 'status.connection.error',
+};
 
 type DebugPanelProps = Readonly<{
   snapshot: RoomSnapshot;
@@ -8,44 +20,49 @@ type DebugPanelProps = Readonly<{
 }>;
 
 export function DebugPanel({ snapshot, connectionStatus }: DebugPanelProps) {
+  const { language, t } = useTranslation();
   const counts = snapshot.visibleCounts;
+  const playerA = playerSeatLabel('A', language);
+  const playerB = playerSeatLabel('B', language);
+  const player = (id: 'A' | 'B' | null) => id ? playerSeatLabel(id, language) : t('debug.noTurn');
+  const boolean = (value: boolean) => t(value ? 'debug.true' : 'debug.false');
   return (
     <View style={styles.panel}>
       <View style={styles.headingRow}>
-        <Text style={styles.heading}>DEBUG</Text>
-        <Text style={styles.summary}>Room: {snapshot.roomCode}</Text>
-        <Text style={styles.summary}>You: {snapshot.localPlayerId}</Text>
+        <Text style={styles.heading}>{t('debug.heading')}</Text>
+        <Text style={styles.summary}>{t('debug.room', { roomCode: snapshot.roomCode })}</Text>
+        <Text style={styles.summary}>{t('debug.you', { player: player(snapshot.localPlayerId) })}</Text>
       </View>
       <View style={styles.headingRow}>
-        <Text style={styles.summary}>Connection: {connectionStatus}</Text>
-        <Text style={styles.summary}>Turn: {snapshot.turn ?? '—'}</Text>
-        <Text style={styles.summary}>Can Ring: {String(snapshot.canRing)}</Text>
+        <Text style={styles.summary}>{t('debug.connection', { status: t(CONNECTION_LABEL_KEYS[connectionStatus]) })}</Text>
+        <Text style={styles.summary}>{t('debug.turn', { player: player(snapshot.turn) })}</Text>
+        <Text style={styles.summary}>{t('debug.canRing', { value: boolean(snapshot.canRing) })}</Text>
       </View>
       <View style={styles.headingRow}>
-        <Text style={styles.summary}>Timer: {snapshot.remainingSeconds === null ? '—' : `${snapshot.remainingSeconds}s`}</Text>
-        <Text style={styles.summary}>Ring blocked A: {String(snapshot.ringBlockedUntilFlip.A)}</Text>
-        <Text style={styles.summary}>B: {String(snapshot.ringBlockedUntilFlip.B)}</Text>
+        <Text style={styles.summary}>{t('debug.timer', { value: snapshot.remainingSeconds === null ? t('debug.noTurn') : t('debug.seconds', { count: snapshot.remainingSeconds }) })}</Text>
+        <Text style={styles.summary}>{t('debug.ringBlocked', { player: playerA, value: boolean(snapshot.ringBlockedUntilFlip.A) })}</Text>
+        <Text style={styles.summary}>{t('debug.ringBlocked', { player: playerB, value: boolean(snapshot.ringBlockedUntilFlip.B) })}</Text>
       </View>
 
       <View style={styles.pileGrid}>
         <View style={styles.pileColumn}>
-          <Text style={styles.line}>A draw pile: {snapshot.players.A.drawCount ?? 0}</Text>
-          <Text style={styles.line}>A played pile: {snapshot.players.A.playedCount ?? 0}</Text>
+          <Text style={styles.line}>{t('debug.drawPile', { player: playerA, count: snapshot.players.A.drawCount ?? 0 })}</Text>
+          <Text style={styles.line}>{t('debug.playedPile', { player: playerA, count: snapshot.players.A.playedCount ?? 0 })}</Text>
         </View>
         <View style={styles.pileColumn}>
-          <Text style={styles.line}>B draw pile: {snapshot.players.B.drawCount ?? 0}</Text>
-          <Text style={styles.line}>B played pile: {snapshot.players.B.playedCount ?? 0}</Text>
+          <Text style={styles.line}>{t('debug.drawPile', { player: playerB, count: snapshot.players.B.drawCount ?? 0 })}</Text>
+          <Text style={styles.line}>{t('debug.playedPile', { player: playerB, count: snapshot.players.B.playedCount ?? 0 })}</Text>
         </View>
       </View>
 
-      <Text style={styles.section}>Visible fruit counts:</Text>
+      <Text style={styles.section}>{t('debug.visibleCounts')}</Text>
       <View style={styles.fruitGrid}>
-        <Text style={styles.fruitLine}>banana: {counts?.banana ?? 0}</Text>
-        <Text style={styles.fruitLine}>grape: {counts?.grape ?? 0}</Text>
-        <Text style={styles.fruitLine}>pear: {counts?.pear ?? 0}</Text>
-        <Text style={styles.fruitLine}>strawberry: {counts?.strawberry ?? 0}</Text>
-        <Text style={styles.fruitLine}>peach: {counts?.peach ?? 0}</Text>
-        <Text style={styles.fruitLine}>wild: {counts?.wildBellCount ?? 0}</Text>
+        <Text style={styles.fruitLine}>{t('fruit.banana')}: {counts?.banana ?? 0}</Text>
+        <Text style={styles.fruitLine}>{t('fruit.grape')}: {counts?.grape ?? 0}</Text>
+        <Text style={styles.fruitLine}>{t('fruit.pear')}: {counts?.pear ?? 0}</Text>
+        <Text style={styles.fruitLine}>{t('fruit.strawberry')}: {counts?.strawberry ?? 0}</Text>
+        <Text style={styles.fruitLine}>{t('fruit.peach')}: {counts?.peach ?? 0}</Text>
+        <Text style={styles.fruitLine}>{t('fruit.wild')}: {counts?.wildBellCount ?? 0}</Text>
       </View>
     </View>
   );

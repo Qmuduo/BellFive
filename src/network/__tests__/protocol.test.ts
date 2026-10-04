@@ -55,6 +55,17 @@ describe('room protocol decoding', () => {
     };
 
     expect(decodeServerMessage(JSON.stringify(message))).toEqual(message);
+    const snapshotWithDefaultNames = {
+      ...snapshot,
+      players: {
+        A: { ...snapshot.players.A, profile: { nickname: '', avatarId: 'strawberry' } },
+        B: { ...snapshot.players.B, profile: { nickname: '', avatarId: 'strawberry' } },
+      },
+    };
+    expect(decodeServerMessage(JSON.stringify({ ...message, snapshot: snapshotWithDefaultNames }))).toEqual({
+      ...message,
+      snapshot: snapshotWithDefaultNames,
+    });
     const readySnapshot = {
       ...snapshot,
       ready: { A: false, B: true },
@@ -138,10 +149,20 @@ describe('room protocol decoding', () => {
       roomCode: 'ABCD23',
       profile: { nickname: 'Kai', avatarId: 'pear' },
     };
+    const blankNameRoom = {
+      roomCode: 'ABCD23',
+      hostProfile: { nickname: '', avatarId: 'strawberry' },
+    };
+    const blankNameApplication = {
+      ...application,
+      profile: { nickname: '', avatarId: 'pear' },
+    };
 
     for (const message of [
       { type: 'room.lobby.snapshot', rooms: [room] },
+      { type: 'room.lobby.snapshot', rooms: [blankNameRoom] },
       { type: 'room.application.pending', application },
+      { type: 'room.application.pending', application: blankNameApplication },
       { type: 'room.application.status', applicationId: 'app-1', status: 'pending', message: 'Waiting for approval.' },
       { type: 'room.application.status', applicationId: 'app-1', status: 'rejected', message: 'Request declined.' },
       { type: 'room.application.status', applicationId: 'app-1', status: 'cancelled', message: 'Request cancelled.' },
@@ -157,10 +178,6 @@ describe('room protocol decoding', () => {
     expect(decodeServerMessage(JSON.stringify({
       type: 'room.application.pending',
       application: { ...application, roomCode: 'bad' },
-    }))).toBeNull();
-    expect(decodeServerMessage(JSON.stringify({
-      type: 'room.application.pending',
-      application: { ...application, profile: { nickname: '', avatarId: 'pear' } },
     }))).toBeNull();
     expect(decodeServerMessage(JSON.stringify({
       type: 'room.application.status',

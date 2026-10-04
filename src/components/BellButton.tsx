@@ -8,6 +8,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import type { RingOutcome } from '../game/types';
+import { useTranslation } from '../i18n/useTranslation';
 
 type BellButtonProps = Readonly<{
   disabled: boolean;
@@ -24,6 +25,7 @@ export function BellButton({
   feedbackKey,
   onRing,
 }: BellButtonProps) {
+  const { t } = useTranslation();
   const scale = useSharedValue(1);
   const shake = useSharedValue(0);
   const bellAnimation = useAnimatedStyle(() => ({
@@ -49,7 +51,7 @@ export function BellButton({
       <Animated.View style={[styles.bell, bellAnimation]}>
         <Pressable
           role="button"
-          aria-label="Ring Bell"
+          accessibilityLabel={t('bell.accessibility')}
           accessibilityState={{ disabled }}
           disabled={disabled}
           onPress={onRing}
@@ -58,7 +60,7 @@ export function BellButton({
           style={({ pressed }) => [styles.ringButton, pressed && styles.pressed]}
         >
           <Text pointerEvents="none" style={styles.bellIcon}>🔔</Text>
-          <Text pointerEvents="none" style={styles.ringLabel}>RING</Text>
+          <Text pointerEvents="none" style={styles.ringLabel}>{t('bell.ring')}</Text>
         </Pressable>
       </Animated.View>
       <Text
@@ -69,7 +71,7 @@ export function BellButton({
           outcome === 'wrong' && styles.wrongFeedback,
         ]}
       >
-        {outcome === 'correct' ? 'DING! Correct Ring' : outcome === 'wrong' ? 'Wrong Ring' : 'Ring anytime'}
+        {outcome === 'correct' ? t('bell.correct') : outcome === 'wrong' ? t('bell.wrong') : t('bell.anytime')}
       </Text>
     </View>
   );

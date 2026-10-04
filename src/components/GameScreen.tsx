@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { useAudioPlayer } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { PlayerId } from '../game/types';
 import { BellButton } from './BellButton';
@@ -11,9 +11,12 @@ import { PlayerDeck } from './PlayerDeck';
 import { RingActivityLog } from './RingActivityLog';
 import { RoomEntry } from './RoomEntry';
 import { WaitingRoom } from './WaitingRoom';
+import { LanguageSettings } from './LanguageSettings';
 import { useGameStore } from '../store/gameStore';
 import { usePlayerProfileStore } from '../store/profileStore';
 import { getPlayerDisplayName } from '../profile';
+import { formatGameError, playerSeatLabel } from '../i18n/translations';
+import { useTranslation } from '../i18n/useTranslation';
 import {
   playBellSound,
   playCardFlipSound,
@@ -24,6 +27,7 @@ import {
 import type { RingFeedbackEvent } from '../network/protocol';
 
 export default function GameScreen() {
+  const { language, t } = useTranslation();
   const bellAudioPlayer = useAudioPlayer(require('../../assets/audio/bell.wav'));
   const flipAudioPlayer = useAudioPlayer(require('../../assets/audio/card-flip.wav'));
   const victoryAudioPlayer = useAudioPlayer(require('../../assets/audio/victory.wav'));
@@ -60,6 +64,13 @@ export default function GameScreen() {
   const lastProcessedFlipVersion = useRef<number | null>(null);
   const lastObservedRoomSessionVersion = useRef<number | null>(null);
   const lastObservedPhase = useRef<string | null>(null);
+
+  useEffect(() => {
+    void setAudioModeAsync({
+      playsInSilentMode: true,
+      interruptionMode: 'mixWithOthers',
+    }).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (roomSnapshot || leavingRoom) return;
@@ -106,7 +117,7 @@ export default function GameScreen() {
     if (ringEvent && ringVersion > lastProcessedRingVersion.current) {
       lastProcessedRingVersion.current = ringVersion;
       setRingCue(ringEvent);
-      void playBellSound(bellAudioPlayer);
+      if (ringEvent.caller !== localPlayerId) playBellSound(bellAudioPlayer);
     }
 
     const flipEvent = roomSnapshot.lastFlipEvent;
@@ -115,7 +126,7 @@ export default function GameScreen() {
       lastProcessedFlipVersion.current = flipVersion;
     } else if (flipEvent && flipVersion > lastProcessedFlipVersion.current) {
       lastProcessedFlipVersion.current = flipVersion;
-      void playCardFlipSound(flipAudioPlayer);
+      if (flipEvent.player !== localPlayerId) playCardFlipSound(flipAudioPlayer);
     }
 
     const previousPhase = lastObservedPhase.current;
@@ -151,7 +162,7 @@ export default function GameScreen() {
           profile={playerProfile}
           profileHydrated={profileHydrated}
           onProfileChange={setPlayerProfile}
-          busyLabel={leavingRoom ? 'LEAVING…' : undefined}
+          busyLabel={leavingRoom ? t('entry.leaving') : undefined}
           openRooms={openRooms}
           applyingRoomCode={applyingRoomCode}
           applicationStatus={localApplicationStatus}
@@ -189,6 +200,7 @@ export default function GameScreen() {
   const formattedTime = formatRemainingTime(roomSnapshot.remainingSeconds);
   const handleFlip = () => {
     if (!canFlip) return;
+    playCardFlipSound(flipAudioPlayer);
     flip();
     triggerGameFeedback('flip');
   };
@@ -197,6 +209,7 @@ export default function GameScreen() {
   };
   const handleRing = () => {
     if (!canInteract) return;
+    playBellSound(bellAudioPlayer);
     triggerGameFeedback('press');
     ring();
   };
@@ -207,13 +220,14 @@ export default function GameScreen() {
       <View style={styles.screen}>
         <View style={styles.header}>
           <View>
-            <Text style={styles.eyebrow}>PRIVATE ROOM · PLAYER {localPlayerId}</Text>
+            <Text style={styles.eyebrow}>{t('game.privateRoomPlayer', { playerLabel: localPlayerId ? playerSeatLabel(localPlayerId, language) : '—' })}</Text>
             <Text style={styles.title}>BellFive</Text>
           </View>
           <View style={styles.headerActions}>
+            <LanguageSettings />
             {formattedTime ? <View style={styles.timerPill}><Text style={styles.timerText}>{formattedTime}</Text></View> : null}
-            <Pressable role="button" accessibilityLabel="Leave Room" onPress={leaveRoom} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
-              <Text style={styles.headerButtonText}>LEAVE</Text>
+            <Pressable role="button" accessibilityLabel={t('game.leaveRoom')} onPress={leaveRoom} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
+              <Text style={styles.headerButtonText}>{t('game.leave')}</Text>
             </Pressable>
           </View>
         </View>
@@ -239,28 +253,28 @@ export default function GameScreen() {
             <View style={[styles.turnDot, roomSnapshot.turn === 'B' ? styles.turnDotB : styles.turnDotA, isFinished && styles.turnDotFinished]} />
             <View style={styles.turnCopy}>
               <Text style={styles.turnLabel}>
-                {isFinished ? 'GAME OVER' : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? 'CONNECTION PAUSED' : roomSnapshot.turn ? `PLAYER ${roomSnapshot.turn} TO FLIP` : 'READY'}
+                {isFinished ? t('game.over') : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? t('game.connectionPaused') : roomSnapshot.turn ? t('game.playerToFlip', { playerLabel: playerSeatLabel(roomSnapshot.turn, language) }) : t('game.ready')}
               </Text>
               <Text style={styles.turnHint}>
-                {isFinished ? 'The round is complete' : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? 'Waiting for both phones to reconnect' : canFlip ? 'Your turn — flip one card' : `Player ${roomSnapshot.turn ?? '—'} flips next`}
+                {isFinished ? t('game.roundComplete') : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? t('game.waitReconnect') : canFlip ? t('game.yourTurnFlip') : t('game.playerFlipsNext', { playerLabel: roomSnapshot.turn ? playerSeatLabel(roomSnapshot.turn, language) : t('debug.noTurn') })}
               </Text>
             </View>
             <Text style={styles.roomCode}>{roomCode}</Text>
           </View>
 
           {roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? (
-            <View style={styles.pausedBanner}><Text style={styles.pausedText}>Connection paused</Text></View>
+            <View style={styles.pausedBanner}><Text style={styles.pausedText}>{t('game.connectionPausedBanner')}</Text></View>
           ) : null}
-          {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{error.message}</Text></View> : null}
+          {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{formatGameError(language, error.code)}</Text></View> : null}
 
           <View style={styles.tablePanel}>
             <View style={styles.tableHeading}>
-              <Text style={styles.tableTitle}>THE TABLE</Text>
-              <Text style={styles.tableHint}>TOP CARDS ONLY</Text>
+              <Text style={styles.tableTitle}>{t('game.table')}</Text>
+              <Text style={styles.tableHint}>{t('game.topCardsOnly')}</Text>
             </View>
             <View testID="play-mat" style={styles.playMat}>
-              <GameCard playerId="A" playerLabel={getPlayerDisplayName(roomSnapshot.players.A.profile, 'A')} card={roomSnapshot.players.A.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'A'} />
-              <GameCard playerId="B" playerLabel={getPlayerDisplayName(roomSnapshot.players.B.profile, 'B')} card={roomSnapshot.players.B.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'B'} />
+              <GameCard playerId="A" playerLabel={getPlayerDisplayName(roomSnapshot.players.A.profile, 'A', language)} card={roomSnapshot.players.A.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'A'} />
+              <GameCard playerId="B" playerLabel={getPlayerDisplayName(roomSnapshot.players.B.profile, 'B', language)} card={roomSnapshot.players.B.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'B'} />
               {ringCue ? <CardTransferFly key={ringCue.version} event={ringCue} /> : null}
             </View>
           </View>
@@ -268,14 +282,14 @@ export default function GameScreen() {
           {isFinished ? (
             <View style={styles.gameOver}>
               <Text style={styles.winnerLabel}>
-                {roomSnapshot.winner === null ? 'DRAW' : localWinner ? 'YOU WIN' : 'YOU LOSE'}
+                {roomSnapshot.winner === null ? t('game.draw') : localWinner ? t('game.youWin') : t('game.youLose')}
               </Text>
               <Text style={styles.youWin}>
                 {roomSnapshot.winner === null
-                  ? roomSnapshot.remainingSeconds === 0 ? 'TIME UP · TIED GAME' : 'THE MATCH IS TIED'
+                  ? roomSnapshot.remainingSeconds === 0 ? t('game.timeUpTied') : t('game.matchTied')
                   : roomSnapshot.remainingSeconds === 0
-                    ? `TIME UP · PLAYER ${roomSnapshot.winner} WINS`
-                    : `PLAYER ${roomSnapshot.winner} WINS`}
+                    ? t('game.timeUpWinner', { playerLabel: playerSeatLabel(roomSnapshot.winner, language) })
+                    : t('game.playerWins', { playerLabel: playerSeatLabel(roomSnapshot.winner, language) })}
               </Text>
             </View>
           ) : null}
@@ -294,7 +308,7 @@ export default function GameScreen() {
                 style={({ pressed }) => [styles.playAgain, roomSnapshot.ready[localPlayerId] && styles.readyAgain, connectionStatus !== 'connected' && styles.disabledButton, pressed && styles.pressed]}
               >
                 <Text style={[styles.flipText, roomSnapshot.ready[localPlayerId] && styles.readyAgainText]}>
-                  {roomSnapshot.ready[localPlayerId] ? 'CANCEL READY' : 'PLAY AGAIN'}
+                  {roomSnapshot.ready[localPlayerId] ? t('waiting.cancelReady') : t('game.playAgain')}
                 </Text>
               </Pressable>
             ) : null}
@@ -303,14 +317,14 @@ export default function GameScreen() {
           <View style={styles.actionDock}>
             <Pressable
               role="button"
-              aria-label="FLIP"
+              accessibilityLabel={t('game.flip')}
               accessibilityState={{ disabled: !canFlip }}
               disabled={!canFlip}
               onPress={handleFlip}
               style={({ pressed }) => [styles.flipButton, !canFlip && styles.disabledButton, pressed && canFlip && styles.pressed]}
             >
-              <Text style={styles.flipText}>FLIP</Text>
-              <Text style={styles.flipHint}>{canFlip ? `PLAYER ${localPlayerId}` : `WAIT · ${roomSnapshot.turn ?? '—'}`}</Text>
+              <Text style={styles.flipText}>{t('game.flip')}</Text>
+              <Text style={styles.flipHint}>{canFlip && localPlayerId ? t('game.flipPlayer', { playerLabel: playerSeatLabel(localPlayerId, language) }) : t('game.waitPlayer', { playerLabel: roomSnapshot.turn ? playerSeatLabel(roomSnapshot.turn, language) : t('debug.noTurn') })}</Text>
             </Pressable>
             <BellButton
               disabled={!canInteract}

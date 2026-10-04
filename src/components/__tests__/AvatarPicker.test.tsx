@@ -1,7 +1,12 @@
 import { render, screen, userEvent } from '@testing-library/react-native';
 import { AvatarPicker } from '../AvatarPicker';
+import { useSettingsStore } from '../../store/settingsStore';
 
 describe('AvatarPicker', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ language: 'en', hydrated: true });
+  });
+
   it('shows all six preset avatars and marks the selected avatar', async () => {
     await render(<AvatarPicker selected="pear" onSelect={jest.fn()} />);
 

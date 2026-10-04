@@ -95,7 +95,7 @@ describe('WebSocket room transport', () => {
     playerB.send(JSON.stringify({ type: 'room.lobby.subscribe' }));
     await expect(roomListPromise).resolves.toMatchObject({
       type: 'room.lobby.snapshot',
-      rooms: [{ roomCode: aSession.roomCode, hostProfile: { nickname: 'Player A' } }],
+      rooms: [{ roomCode: aSession.roomCode, hostProfile: { nickname: '' } }],
     });
 
     const pendingPromise = nextMessage(playerA, message => message.type === 'room.application.pending');

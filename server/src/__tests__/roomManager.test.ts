@@ -10,7 +10,7 @@ describe('RoomManager room lifecycle', () => {
     const subscribed = manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' });
 
     expect(messageOf(subscribed, 'socket-b', 'room.lobby.snapshot').rooms).toEqual([
-      { roomCode: room.roomCode, hostProfile: { nickname: 'Player A', avatarId: 'strawberry' } },
+      { roomCode: room.roomCode, hostProfile: { nickname: '', avatarId: 'strawberry' } },
     ]);
 
     const applied = manager.handleMessage('socket-b', {
@@ -269,8 +269,8 @@ describe('RoomManager room lifecycle', () => {
     expect(session.snapshot.players.A.connected).toBe(true);
     expect(session.snapshot.players.B.connected).toBe(false);
     expect(session.snapshot.players.A.drawCount).toBeNull();
-    expect(session.snapshot.players.A.profile).toEqual({ nickname: 'Player A', avatarId: 'strawberry' });
-    expect(session.snapshot.players.B.profile).toEqual({ nickname: 'Player B', avatarId: 'strawberry' });
+    expect(session.snapshot.players.A.profile).toEqual({ nickname: '', avatarId: 'strawberry' });
+    expect(session.snapshot.players.B.profile).toEqual({ nickname: '', avatarId: 'strawberry' });
     expect(session.snapshot.lastFlipEvent).toBeNull();
 
     const secondRoom = rooms.handleMessage('socket-a2', {
@@ -307,7 +307,7 @@ describe('RoomManager room lifecycle', () => {
     const bSession = messageOf(joined, 'socket-b', 'room.session');
     const aSnapshot = messageOf(joined, 'socket-a', 'room.snapshot').snapshot;
     expect(bSession.snapshot.players).toEqual(aSnapshot.players);
-    expect(bSession.snapshot.players.B.profile).toEqual({ nickname: 'Player B', avatarId: 'bell' });
+    expect(bSession.snapshot.players.B.profile).toEqual({ nickname: '', avatarId: 'bell' });
 
     const reconnected = rooms.handleMessage('socket-a-reconnected', {
       type: 'room.reconnect',
@@ -522,14 +522,16 @@ describe('RoomManager authoritative game transitions', () => {
     expect(latestSnapshot?.ringHistory[11]).toMatchObject({ version: 13, caller: 'A' });
   });
 
-  it('blocks only the false ringer until their next flip and still accepts the opponent ring', () => {
+  it('unblocks the false ringer after the opponent flips and still accepts another ring', () => {
     const rooms = joinBothPlayers(
       makeRoomManager({
-        gameFactory: () =>
-          customGame({
+        gameFactory: () => ({
+          ...customGame({
             A: { drawPile: [card('C001', ['banana']), card('C002', ['pear'])], playedPile: [] },
-            B: { drawPile: [card('C003', ['grape'])], playedPile: [] },
+            B: { drawPile: [card('C003', ['grape']), card('C004', ['pear'])], playedPile: [] },
           }),
+          turn: 'B',
+        }),
       }),
     );
     rooms.manager.handleMessage('socket-a', {
@@ -562,21 +564,27 @@ describe('RoomManager authoritative game transitions', () => {
       version: 2,
     });
 
-    const aFlip = rooms.manager.handleMessage('socket-a', {
-      type: 'game.flip',
-      actionId: 'a-after-cooldown-flip',
-    });
-    expect(messageOf(aFlip, 'socket-a', 'room.snapshot').snapshot.ringBlockedUntilFlip).toEqual({
-      A: false,
-      B: true,
-    });
-
     const bFlip = rooms.manager.handleMessage('socket-b', {
       type: 'game.flip',
-      actionId: 'b-after-cooldown-flip',
+      actionId: 'b-after-a-wrong-ring',
     });
     expect(messageOf(bFlip, 'socket-b', 'room.snapshot').snapshot.ringBlockedUntilFlip).toEqual({
       A: false,
+      B: false,
+    });
+
+    const aSecondWrongRing = rooms.manager.handleMessage('socket-a', {
+      type: 'game.ring',
+      actionId: 'a-second-wrong-ring-after-b-flips',
+      tableVersion: 1,
+    });
+    expect(messageOf(aSecondWrongRing, 'socket-a', 'action.result')).toMatchObject({
+      accepted: true,
+      outcome: 'wrong',
+      movedCardCount: 1,
+    });
+    expect(messageOf(aSecondWrongRing, 'socket-a', 'room.snapshot').snapshot.ringBlockedUntilFlip).toEqual({
+      A: true,
       B: false,
     });
   });

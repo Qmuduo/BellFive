@@ -1,4 +1,6 @@
 import type { PlayerId } from './game/types';
+import type { Language } from './i18n/types';
+import { playerSeatLabel } from './i18n/translations';
 
 export const AVATAR_OPTIONS = ['banana', 'grape', 'pear', 'strawberry', 'peach', 'bell'] as const;
 
@@ -30,7 +32,7 @@ export const DEFAULT_PLAYER_PROFILE: PlayerProfile = {
 
 export function sanitizePlayerProfile(
   profile: unknown,
-  playerId: PlayerId,
+  _playerId: PlayerId,
 ): PlayerProfile {
   const fields = isProfileRecord(profile) ? profile : {};
   const nickname = normalizeNickname(fields.nickname);
@@ -38,7 +40,9 @@ export function sanitizePlayerProfile(
     ? fields.avatarId
     : 'strawberry';
   return {
-    nickname: nickname || `Player ${playerId}`,
+    // Keep the empty value as the marker for a seat's localized default label.
+    // This also preserves a user-selected nickname such as "Player A".
+    nickname,
     avatarId,
   };
 }
@@ -55,8 +59,7 @@ function isProfileRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function getPlayerDisplayName(profile: PlayerProfile, playerId: PlayerId): string {
-  return profile.nickname === `Player ${playerId}`
-    ? profile.nickname
-    : `${profile.nickname} · ${playerId}`;
+export function getPlayerDisplayName(profile: PlayerProfile, playerId: PlayerId, language: Language = 'en'): string {
+  const seatLabel = playerSeatLabel(playerId, language);
+  return profile.nickname ? `${profile.nickname} · ${seatLabel}` : seatLabel;
 }

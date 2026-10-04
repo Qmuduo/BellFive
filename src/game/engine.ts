@@ -55,10 +55,7 @@ export function flipCard(state: GameState): GameState {
   return {
     ...state,
     turn: nextTurn,
-    ringBlockedUntilFlip: {
-      ...state.ringBlockedUntilFlip,
-      [state.turn]: false,
-    },
+    ringBlockedUntilFlip: { A: false, B: false },
     lastRingOutcome: null,
     players: {
       ...state.players,

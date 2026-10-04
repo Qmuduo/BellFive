@@ -3,8 +3,11 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import type { GameClientError } from '../network/GameClient';
 import type { OpenRoomSummary, ServerMessage } from '../network/protocol';
 import type { PlayerProfile, PlayerProfileInput } from '../profile';
-import { AVATAR_EMOJI } from '../profile';
+import { AVATAR_EMOJI, getPlayerDisplayName } from '../profile';
 import { AvatarPicker } from './AvatarPicker';
+import { LanguageSettings } from './LanguageSettings';
+import { formatApplicationStatus, formatGameError } from '../i18n/translations';
+import { useTranslation } from '../i18n/useTranslation';
 
 const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/;
 
@@ -32,44 +35,47 @@ export function RoomEntry({
   profile,
   profileHydrated,
   onProfileChange,
-  busyLabel = 'CONNECTING…',
+  busyLabel,
   openRooms = [],
   applyingRoomCode = null,
   applicationStatus = null,
   onRefreshLobby = () => undefined,
   onCancelApplication = () => undefined,
 }: RoomEntryProps) {
+  const { language, t } = useTranslation();
+  const currentBusyLabel = busyLabel ?? t('entry.connecting');
   const [code, setCode] = useState('');
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const [showValidationError, setShowValidationError] = useState(false);
   const applicationPending = Boolean(applyingRoomCode) || applicationStatus?.status === 'pending';
   const roomActionsBusy = busy || !profileHydrated || applicationPending;
 
   const join = () => {
     const normalized = code.trim().toUpperCase();
     if (!ROOM_CODE_PATTERN.test(normalized)) {
-      setValidationError('Enter a valid 6-character room code.');
+      setShowValidationError(true);
       return;
     }
-    setValidationError(null);
+    setShowValidationError(false);
     onJoin(normalized, profile);
   };
 
   return (
     <ScrollView contentContainerStyle={styles.screen} showsVerticalScrollIndicator={false}>
+      <View style={styles.settingsRow}><LanguageSettings /></View>
       <View style={styles.brandMark}><Text style={styles.bell}>🔔</Text></View>
-      <Text style={styles.eyebrow}>TWO PHONES · ONE TABLE</Text>
+      <Text style={styles.eyebrow}>{t('entry.eyebrow')}</Text>
       <Text style={styles.title}>BellFive</Text>
-      <Text style={styles.description}>Create a room or request to join an open table.</Text>
+      <Text style={styles.description}>{t('entry.description')}</Text>
 
       <View style={styles.profilePanel}>
-        <Text style={styles.profileLabel}>YOUR PROFILE</Text>
+        <Text style={styles.profileLabel}>{t('entry.profile')}</Text>
         <TextInput
-          accessibilityLabel="Nickname"
+          accessibilityLabel={t('entry.nickname')}
           autoCapitalize="words"
           autoCorrect={false}
           editable={!roomActionsBusy}
           onChangeText={nickname => onProfileChange({ ...profile, nickname })}
-          placeholder="YOUR NICKNAME"
+          placeholder={t('entry.nicknamePlaceholder')}
           placeholderTextColor="#9BA3AB"
           style={styles.nicknameInput}
           value={profile.nickname}
@@ -88,17 +94,17 @@ export function RoomEntry({
         onPress={() => onCreate(profile)}
         style={({ pressed }) => [styles.createButton, pressed && styles.pressed, roomActionsBusy && styles.disabled]}
       >
-        <Text style={styles.createText}>{busy ? busyLabel : profileHydrated ? 'Create Room' : 'LOADING PROFILE…'}</Text>
+        <Text style={styles.createText}>{busy ? currentBusyLabel : profileHydrated ? t('entry.createRoom') : t('entry.loadingProfile')}</Text>
       </Pressable>
 
       <View style={styles.roomsHeading}>
-        <Text style={styles.roomsTitle}>OPEN ROOMS</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh rooms" onPress={onRefreshLobby} hitSlop={8}>
-          <Text style={styles.refreshText}>REFRESH</Text>
+        <Text style={styles.roomsTitle}>{t('entry.openRooms')}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={t('entry.refreshRooms')} onPress={onRefreshLobby} hitSlop={8}>
+          <Text style={styles.refreshText}>{t('entry.refresh')}</Text>
         </Pressable>
       </View>
       {openRooms.length === 0 ? (
-        <Text style={styles.emptyRooms}>No open rooms yet. Create one and invite a friend.</Text>
+        <Text style={styles.emptyRooms}>{t('entry.emptyRooms')}</Text>
       ) : (
         <View style={styles.roomList}>
           {openRooms.map(room => {
@@ -107,17 +113,17 @@ export function RoomEntry({
               <View key={room.roomCode} style={styles.roomRow}>
                 <Text style={styles.roomAvatar}>{AVATAR_EMOJI[room.hostProfile.avatarId]}</Text>
                 <View style={styles.roomCopy}>
-                  <Text style={styles.roomName}>{room.hostProfile.nickname} · {room.roomCode}</Text>
-                  <Text style={styles.roomHint}>Waiting for one player</Text>
+                  <Text style={styles.roomName}>{getPlayerDisplayName(room.hostProfile, 'A', language)} · {room.roomCode}</Text>
+                  <Text style={styles.roomHint}>{t('entry.waitingForPlayer')}</Text>
                 </View>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Request to join ${room.roomCode}`}
+                  accessibilityLabel={t('entry.requestJoin', { roomCode: room.roomCode })}
                   disabled={roomActionsBusy || Boolean(applyingRoomCode)}
-                  onPress={() => { setValidationError(null); onJoin(room.roomCode, profile); }}
+                  onPress={() => { setShowValidationError(false); onJoin(room.roomCode, profile); }}
                   style={({ pressed }) => [styles.requestButton, pressed && styles.pressed, (roomActionsBusy || Boolean(applyingRoomCode)) && styles.disabled]}
                 >
-                  <Text style={styles.requestText}>{isApplying ? 'SENDING…' : 'JOIN'}</Text>
+                  <Text style={styles.requestText}>{isApplying ? t('entry.sending') : t('entry.join')}</Text>
                 </Pressable>
               </View>
             );
@@ -127,28 +133,28 @@ export function RoomEntry({
 
       {applicationStatus ? (
         <View style={[styles.applicationPanel, applicationStatus.status === 'pending' && styles.pendingPanel]}>
-          <Text accessibilityLiveRegion="polite" style={styles.applicationText}>{applicationStatus.message}</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.applicationText}>{formatApplicationStatus(language, applicationStatus.status)}</Text>
           {applicationStatus.status === 'pending' ? (
             <Pressable accessibilityRole="button" onPress={onCancelApplication} style={styles.cancelRequest}>
-              <Text style={styles.cancelRequestText}>Cancel Join Request</Text>
+              <Text style={styles.cancelRequestText}>{t('entry.cancelRequest')}</Text>
             </Pressable>
           ) : null}
         </View>
       ) : null}
 
-      <View style={styles.divider}><View style={styles.rule} /><Text style={styles.or}>OR JOIN BY CODE</Text><View style={styles.rule} /></View>
+      <View style={styles.divider}><View style={styles.rule} /><Text style={styles.or}>{t('entry.joinByCode')}</Text><View style={styles.rule} /></View>
 
       <TextInput
-        accessibilityLabel="Room code"
+        accessibilityLabel={t('entry.roomCode')}
         autoCapitalize="characters"
         autoCorrect={false}
         editable={!roomActionsBusy}
         maxLength={6}
         onChangeText={value => {
           setCode(value.replace(/\s/g, '').toUpperCase().slice(0, 6));
-          setValidationError(null);
+          setShowValidationError(false);
         }}
-        placeholder="ENTER 6-CHARACTER CODE"
+        placeholder={t('entry.roomCodePlaceholder')}
         placeholderTextColor="#9BA3AB"
         style={styles.input}
         value={code}
@@ -160,21 +166,22 @@ export function RoomEntry({
         onPress={join}
         style={({ pressed }) => [styles.joinButton, pressed && styles.pressed, roomActionsBusy && styles.disabled]}
       >
-        <Text style={styles.joinText}>Join Room</Text>
+        <Text style={styles.joinText}>{t('entry.joinRoom')}</Text>
       </Pressable>
 
-      {validationError ? (
+      {showValidationError ? (
         <Text accessibilityLiveRegion="polite" style={styles.error}>
-          {validationError}
+          {t('entry.invalidRoomCode')}
         </Text>
       ) : null}
-      {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error.message}</Text> : null}
+      {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{formatGameError(language, error.code)}</Text> : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 25, paddingVertical: 20, backgroundColor: '#F6F5F1' },
+  settingsRow: { alignItems: 'flex-end', marginBottom: 4 },
   brandMark: { alignSelf: 'center', width: 74, height: 74, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: '#F4CA42' },
   bell: { fontSize: 37 },
   eyebrow: { marginTop: 24, color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },

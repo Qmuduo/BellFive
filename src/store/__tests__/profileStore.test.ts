@@ -22,12 +22,9 @@ describe('local player profile store', () => {
     expect(store.getState().profile).toEqual({ nickname: '🍐ABCDEFGHIJK', avatarId: 'pear' });
   });
 
-  it.each([
-    ['A', 'Player A'],
-    ['B', 'Player B'],
-  ] as const)('uses the seat label for an empty nickname at seat %s', (playerId, fallback) => {
+  it.each(['A', 'B'] as const)('keeps an empty nickname empty at seat %s for localized display', playerId => {
     expect(sanitizePlayerProfile({ nickname: '   ', avatarId: 'bell' }, playerId)).toEqual({
-      nickname: fallback,
+      nickname: '',
       avatarId: 'bell',
     });
   });

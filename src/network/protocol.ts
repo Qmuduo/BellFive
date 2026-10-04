@@ -406,7 +406,8 @@ function isPlayerProfile(value: unknown): value is PlayerProfile {
     !isAvatarId(value.avatarId)
   ) return false;
   const nickname = Array.from(value.nickname);
-  return nickname.length > 0 && nickname.length <= 12 && value.nickname.trim() === value.nickname;
+  // Empty nicknames are valid: clients render the seat's localized fallback label.
+  return nickname.length <= 12 && value.nickname.trim() === value.nickname;
 }
 
 function isOpenRoomSummary(value: unknown): value is OpenRoomSummary {

@@ -2,6 +2,7 @@ import { act, render, screen, userEvent, within } from '@testing-library/react-n
 import { Share } from 'react-native';
 import GameScreen from '../GameScreen';
 import { useGameStore } from '../../store/gameStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import {
   playBellSound,
   playCardFlipSound,
@@ -25,9 +26,11 @@ const mockAudioPlayer = {
   play: jest.fn(),
   pause: jest.fn(),
 };
+const mockSetAudioModeAsync = jest.fn(async (_mode: unknown) => undefined);
 
 jest.mock('expo-audio', () => ({
   useAudioPlayer: () => mockAudioPlayer,
+  setAudioModeAsync: (mode: unknown) => mockSetAudioModeAsync(mode),
 }));
 
 jest.mock('../../store/profileStore', () => ({
@@ -45,6 +48,7 @@ jest.mock('../../store/profileStore', () => ({
 describe('GameScreen friend-room flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useSettingsStore.setState({ language: 'en', hydrated: true });
     mockAudioPlayer.play.mockClear();
     mockAudioPlayer.pause.mockClear();
     mockAudioPlayer.seekTo.mockClear();
@@ -78,6 +82,21 @@ describe('GameScreen friend-room flow', () => {
       rematch: jest.fn(),
       leaveRoom: jest.fn(),
       clearError: jest.fn(),
+    });
+  });
+
+  it('configures audio for short game sounds when the screen mounts', async () => {
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    expect(mockSetAudioModeAsync).toHaveBeenCalledWith({
+      playsInSilentMode: true,
+      interruptionMode: 'mixWithOthers',
     });
   });
 
@@ -158,8 +177,8 @@ describe('GameScreen friend-room flow', () => {
     });
     await render(<GameScreen />);
 
-    expect(screen.getByText('拍铃正确，获得 6 张牌')).toBeOnTheScreen();
-    expect(screen.getByText('2号玩家拍铃错误，你获得 1 张牌')).toBeOnTheScreen();
+    expect(screen.getByText('Correct ring — you collect 6 cards')).toBeOnTheScreen();
+    expect(screen.getByText('Player B rang incorrectly — you receive 1 card')).toBeOnTheScreen();
   });
 
   it('switches from waiting to the match when the server sends the second-player snapshot', async () => {
@@ -194,6 +213,7 @@ describe('GameScreen friend-room flow', () => {
     await render(<GameScreen />);
 
     expect(screen.getByRole('button', { name: 'FLIP' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Language settings' })).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: 'Player A deck' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Player B deck' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeEnabled();
@@ -236,11 +256,11 @@ describe('GameScreen friend-room flow', () => {
     });
     await render(<GameScreen />);
     const playMat = screen.getByTestId('play-mat');
-    expect(within(playMat).getByText('Mira · A')).toBeOnTheScreen();
-    expect(within(playMat).getByText('Kai · B')).toBeOnTheScreen();
-    expect(screen.getByText('A draw pile: 29')).toBeOnTheScreen();
-    expect(screen.getByText('B draw pile: 30')).toBeOnTheScreen();
-    expect(screen.getByText('Turn: A')).toBeOnTheScreen();
+    expect(within(playMat).getByText('Mira · Player A')).toBeOnTheScreen();
+    expect(within(playMat).getByText('Kai · Player B')).toBeOnTheScreen();
+    expect(screen.getByText('Player A draw pile: 29')).toBeOnTheScreen();
+    expect(screen.getByText('Player B draw pile: 30')).toBeOnTheScreen();
+    expect(screen.getByText('Turn: Player A')).toBeOnTheScreen();
   });
 
   it('pauses both controls during reconnect or a server connection pause', async () => {
@@ -266,7 +286,7 @@ describe('GameScreen friend-room flow', () => {
       roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
     });
     await render(<GameScreen />);
-    expect(screen.getByText('Room code was not found or has expired.')).toBeOnTheScreen();
+    expect(screen.getByText('That room is closed or no longer exists. Return to the lobby.')).toBeOnTheScreen();
     await user.press(screen.getByRole('button', { name: 'Leave Room' }));
     expect(useGameStore.getState().leaveRoom).toHaveBeenCalledTimes(1);
   });
@@ -441,16 +461,16 @@ describe('GameScreen friend-room flow', () => {
     expect(playDefeatSound).not.toHaveBeenCalled();
   });
 
-  it('plays one shared flip sound for each new accepted flip event', async () => {
+  it('plays one shared flip sound for each new opponent flip event', async () => {
     useGameStore.setState({
       connectionStatus: 'connected',
       roomCode: 'ABCD23',
-      localPlayerId: 'A',
-      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+      localPlayerId: 'B',
+      roomSnapshot: makeSnapshot('playing', 'B', { turn: 'A' }),
     });
     await render(<GameScreen />);
 
-    const flipped = makeSnapshot('playing', 'A', {
+    const flipped = makeSnapshot('playing', 'B', {
       turn: 'B',
       lastFlipEvent: { version: 1, player: 'A' },
     });
@@ -463,6 +483,57 @@ describe('GameScreen friend-room flow', () => {
 
     expect(playCardFlipSound).toHaveBeenCalledTimes(1);
     expect(playCardFlipSound).toHaveBeenCalledWith(mockAudioPlayer);
+  });
+
+  it('plays the local flip sound on tap and does not replay its server echo', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    await user.press(screen.getByRole('button', { name: 'FLIP' }));
+    expect(playCardFlipSound).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.snapshot',
+        snapshot: makeSnapshot('playing', 'A', {
+          turn: 'B',
+          lastFlipEvent: { version: 1, player: 'A' },
+        }),
+      });
+    });
+    expect(playCardFlipSound).toHaveBeenCalledTimes(1);
+  });
+
+  it('plays the local bell sound on tap and does not replay its server echo', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'B' }),
+    });
+    await render(<GameScreen />);
+
+    await user.press(screen.getByRole('button', { name: 'Ring Bell' }));
+    expect(playBellSound).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      useGameStore.getState().applyServerMessage({
+        type: 'room.snapshot',
+        snapshot: makeSnapshot('playing', 'A', {
+          turn: 'B',
+          ringVersion: 1,
+          lastRingEvent: { version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 1 },
+        }),
+      });
+    });
+    expect(playBellSound).toHaveBeenCalledTimes(1);
   });
 
   it('plays a local victory sound after observing the match finish', async () => {
@@ -575,8 +646,8 @@ function makeSnapshot(
     phase,
     localPlayerId,
     players: {
-      A: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: 'Player A', avatarId: 'strawberry' } },
-      B: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: 'Player B', avatarId: 'strawberry' } },
+      A: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: '', avatarId: 'strawberry' } },
+      B: { connected: true, drawCount: 30, playedCount: 0, topCard: null, profile: { nickname: '', avatarId: 'strawberry' } },
     },
     turn: null,
     winner: null,

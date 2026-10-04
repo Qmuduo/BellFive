@@ -1,5 +1,6 @@
 import { act, render, screen } from '@testing-library/react-native';
 import { BellButton } from '../BellButton';
+import { useSettingsStore } from '../../store/settingsStore';
 
 const mockWithTiming = jest.fn((value: number) => value);
 
@@ -17,6 +18,10 @@ jest.mock('react-native-reanimated', () => {
 });
 
 describe('BellButton', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ language: 'en', hydrated: true });
+  });
+
   it('shows shared result text without animating for a remote ringer', async () => {
     mockWithTiming.mockClear();
     await render(

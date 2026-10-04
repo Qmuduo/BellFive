@@ -184,7 +184,7 @@ describe('ring and pile transitions', () => {
     expect(canPlayerRing(result.state, 'B')).toBe(true);
   });
 
-  it('unblocks a false ringer after that player successfully flips their next card', () => {
+  it('unblocks a false ringer when either player flips the next card', () => {
     const state = makeState(
       { drawPile: CARD_DEFINITIONS.slice(0, 3), playedPile: [makeCard('A-top', ['banana'])] },
       { drawPile: CARD_DEFINITIONS.slice(3, 5), playedPile: [makeCard('B-top', ['pear'])] },
@@ -192,11 +192,9 @@ describe('ring and pile transitions', () => {
     );
     const afterWrongRing = ringBell(state, 'A').state;
     const afterBFlip = flipCard(afterWrongRing);
-    const afterANextFlip = flipCard(afterBFlip);
 
     expect(canPlayerRing(afterWrongRing, 'A')).toBe(false);
-    expect(canPlayerRing(afterBFlip, 'A')).toBe(false);
-    expect(canPlayerRing(afterANextFlip, 'A')).toBe(true);
+    expect(canPlayerRing(afterBFlip, 'A')).toBe(true);
   });
 
   it('counts draw and played cards for timeout scoring and draws on equal totals', () => {

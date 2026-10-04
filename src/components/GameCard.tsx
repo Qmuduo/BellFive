@@ -8,6 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { CardDefinition, GameElement, PlayerId } from '../game/types';
 import { getCardSymbolPositions } from '../game/cardLayout';
+import { useTranslation } from '../i18n/useTranslation';
 
 const ELEMENT_EMOJI: Record<GameElement, string> = {
   banana: '🍌',
@@ -26,6 +27,7 @@ type GameCardProps = {
 };
 
 export function GameCard({ playerId, playerLabel, card, active = false }: GameCardProps) {
+  const { t } = useTranslation();
   const rotation = useSharedValue(0);
   const slide = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -74,7 +76,7 @@ export function GameCard({ playerId, playerLabel, card, active = false }: GameCa
       ) : (
         <View style={styles.emptyArea}>
           <Text style={styles.empty}>—</Text>
-          <Text style={styles.emptyHint}>READY</Text>
+          <Text style={styles.emptyHint}>{t('card.ready')}</Text>
         </View>
       )}
     </View>

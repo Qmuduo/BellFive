@@ -3,8 +3,13 @@ import { Share } from 'react-native';
 import type { GameClientError } from '../../network/GameClient';
 import type { RoomSnapshot } from '../../network/protocol';
 import { WaitingRoom } from '../WaitingRoom';
+import { useSettingsStore } from '../../store/settingsStore';
 
 describe('WaitingRoom', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ language: 'en', hydrated: true });
+  });
+
   it('shows the room code and connection state, and shares an invite', async () => {
     const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
     const user = userEvent.setup();
@@ -20,11 +25,12 @@ describe('WaitingRoom', () => {
     );
 
     expect(screen.getByText('ABCD23')).toBeOnTheScreen();
-    expect(screen.getByText('Mira · A · You')).toBeOnTheScreen();
-    expect(screen.getByText('Kai · B')).toBeOnTheScreen();
+    expect(screen.getByText('Mira · Player A · You')).toBeOnTheScreen();
+    expect(screen.getByText('Kai · Player B')).toBeOnTheScreen();
     expect(screen.getByText('🍑')).toBeOnTheScreen();
     expect(screen.getByText('🍌')).toBeOnTheScreen();
     expect(screen.getByText('Waiting')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Language settings' })).toBeOnTheScreen();
     await user.press(screen.getByRole('button', { name: 'Share Invite' }));
     expect(share).toHaveBeenCalledWith({
       message: expect.stringContaining('ABCD23'),
@@ -46,7 +52,7 @@ describe('WaitingRoom', () => {
         onLeave={onLeave}
       />,
     );
-    expect(screen.getByText(error.message)).toBeOnTheScreen();
+    expect(screen.getByText('That room is closed or no longer exists. Return to the lobby.')).toBeOnTheScreen();
     await user.press(screen.getByRole('button', { name: 'Leave Room' }));
     expect(onLeave).toHaveBeenCalledTimes(1);
   });

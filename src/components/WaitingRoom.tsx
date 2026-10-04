@@ -4,6 +4,11 @@ import type { JoinApplication, RoomSnapshot } from '../network/protocol';
 import type { PlayerId } from '../game/types';
 import { AVATAR_EMOJI, getPlayerDisplayName } from '../profile';
 import type { PlayerProfile } from '../profile';
+import { LanguageSettings } from './LanguageSettings';
+import { formatGameError, translate } from '../i18n/translations';
+import type { TranslationKey } from '../i18n/translations';
+import type { Language } from '../i18n/types';
+import { useTranslation } from '../i18n/useTranslation';
 
 type WaitingRoomProps = Readonly<{
   roomCode: string;
@@ -28,45 +33,47 @@ export function WaitingRoom({
   onDecideApplication = () => undefined,
   onSetReady = () => undefined,
 }: WaitingRoomProps) {
+  const { language, t } = useTranslation();
   const otherPlayer: PlayerId = localPlayerId === 'A' ? 'B' : 'A';
   const localReady = snapshot.ready[localPlayerId];
   const playersConnected = snapshot.players.A.connected && snapshot.players.B.connected;
   const readyEnabled = connectionStatus === 'connected' && playersConnected;
   const shareInvite = () => Share.share({
-    message: `Join my BellFive game. Enter room code ${roomCode} in BellFive to play with me.`,
+    message: t('waiting.shareMessage', { roomCode }),
   });
 
   return (
     <ScrollView contentContainerStyle={styles.screen} showsVerticalScrollIndicator={false}>
-      <Text style={styles.eyebrow}>PUBLIC FRIEND ROOM</Text>
-      <Text style={styles.title}>You're in.</Text>
-      <Text style={styles.description}>Share this code or wait for a join request. Both players must be ready.</Text>
+      <View style={styles.settingsRow}><LanguageSettings /></View>
+      <Text style={styles.eyebrow}>{t('waiting.eyebrow')}</Text>
+      <Text style={styles.title}>{t('waiting.title')}</Text>
+      <Text style={styles.description}>{t('waiting.description')}</Text>
 
       <View style={styles.codeCard}>
-        <Text style={styles.codeLabel}>ROOM CODE</Text>
+        <Text style={styles.codeLabel}>{t('waiting.roomCode')}</Text>
         <Text selectable style={styles.code}>{roomCode}</Text>
       </View>
 
       <View style={styles.playerCard}>
-        <PlayerStatus playerId={localPlayerId} profile={snapshot.players[localPlayerId].profile} connected={snapshot.players[localPlayerId].connected} ready={snapshot.ready[localPlayerId]} local />
-        <PlayerStatus playerId={otherPlayer} profile={snapshot.players[otherPlayer].profile} connected={snapshot.players[otherPlayer].connected} ready={snapshot.ready[otherPlayer]} />
+        <PlayerStatus playerId={localPlayerId} profile={snapshot.players[localPlayerId].profile} connected={snapshot.players[localPlayerId].connected} ready={snapshot.ready[localPlayerId]} local language={language} />
+        <PlayerStatus playerId={otherPlayer} profile={snapshot.players[otherPlayer].profile} connected={snapshot.players[otherPlayer].connected} ready={snapshot.ready[otherPlayer]} language={language} />
       </View>
 
       {pendingApplications.length > 0 ? (
         <View style={styles.requestsPanel}>
-          <Text style={styles.requestsTitle}>JOIN REQUESTS</Text>
+          <Text style={styles.requestsTitle}>{t('waiting.joinRequests')}</Text>
           {pendingApplications.map(application => (
             <View key={application.applicationId} style={styles.requestRow}>
               <View style={styles.requestIdentity}>
                 <Text style={styles.requestAvatar}>{AVATAR_EMOJI[application.profile.avatarId]}</Text>
-                <Text style={styles.requestName}>{application.profile.nickname} wants to join</Text>
+                <Text style={styles.requestName}>{t('waiting.wantsToJoin', { nickname: application.profile.nickname || t('waiting.unnamed') })}</Text>
               </View>
               <View style={styles.requestActions}>
-                <Pressable accessibilityRole="button" accessibilityLabel={`Approve ${application.profile.nickname}`} onPress={() => onDecideApplication(application.applicationId, true)} style={styles.approveButton}>
-                  <Text style={styles.approveText}>APPROVE</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={t('waiting.approveLabel', { nickname: application.profile.nickname || t('waiting.unnamed') })} onPress={() => onDecideApplication(application.applicationId, true)} style={styles.approveButton}>
+                  <Text style={styles.approveText}>{t('waiting.approve')}</Text>
                 </Pressable>
-                <Pressable accessibilityRole="button" accessibilityLabel={`Reject ${application.profile.nickname}`} onPress={() => onDecideApplication(application.applicationId, false)} style={styles.rejectButton}>
-                  <Text style={styles.rejectText}>REJECT</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={t('waiting.rejectLabel', { nickname: application.profile.nickname || t('waiting.unnamed') })} onPress={() => onDecideApplication(application.applicationId, false)} style={styles.rejectButton}>
+                  <Text style={styles.rejectText}>{t('waiting.reject')}</Text>
                 </Pressable>
               </View>
             </View>
@@ -75,7 +82,7 @@ export function WaitingRoom({
       ) : null}
 
       <Text style={styles.connection}>
-        {error?.message ?? (connectionStatus === 'reconnecting' ? 'Reconnecting to the game server…' : localReady ? 'You are ready. Waiting for the other player.' : 'When both players are connected and ready, the match starts automatically.')}
+        {error ? formatGameError(language, error.code) : connectionStatus === 'reconnecting' ? t('waiting.reconnecting') : localReady ? t('waiting.youAreReady') : t('waiting.autoStart')}
       </Text>
 
       <Pressable
@@ -85,32 +92,34 @@ export function WaitingRoom({
         onPress={() => onSetReady(!localReady)}
         style={({ pressed }) => [styles.readyButton, localReady && styles.readyButtonOn, !readyEnabled && styles.disabled, pressed && readyEnabled && styles.pressed]}
       >
-        <Text style={[styles.readyText, localReady && styles.readyTextOn]}>{localReady ? 'CANCEL READY' : 'READY'}</Text>
+        <Text style={[styles.readyText, localReady && styles.readyTextOn]}>{localReady ? t('waiting.cancelReady') : t('waiting.ready')}</Text>
       </Pressable>
 
       <Pressable role="button" onPress={shareInvite} style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}>
-        <Text style={styles.shareText}>Share Invite</Text>
+        <Text style={styles.shareText}>{t('waiting.shareInvite')}</Text>
       </Pressable>
       <Pressable role="button" onPress={onLeave} style={styles.leaveButton}>
-        <Text style={styles.leaveText}>Leave Room</Text>
+        <Text style={styles.leaveText}>{t('waiting.leaveRoom')}</Text>
       </Pressable>
     </ScrollView>
   );
 }
 
-function PlayerStatus({ playerId, profile, connected, ready, local = false }: { playerId: PlayerId; profile: PlayerProfile; connected: boolean; ready: boolean; local?: boolean }) {
+function PlayerStatus({ playerId, profile, connected, ready, local = false, language }: { playerId: PlayerId; profile: PlayerProfile; connected: boolean; ready: boolean; local?: boolean; language: Language }) {
+  const t = (key: TranslationKey) => translate(language, key);
   return (
     <View style={styles.playerRow}>
       <View style={[styles.statusDot, connected ? styles.online : styles.offline]} />
       <View style={styles.avatar}><Text style={styles.avatarEmoji}>{AVATAR_EMOJI[profile.avatarId]}</Text></View>
-      <Text style={styles.playerName}>{getPlayerDisplayName(profile, playerId)}{local ? ' · You' : ''}</Text>
-      <Text style={[styles.status, connected ? styles.onlineText : null]}>{!connected ? 'Waiting' : ready ? 'Ready' : 'Connected'}</Text>
+      <Text style={styles.playerName}>{getPlayerDisplayName(profile, playerId, language)}{local ? ` · ${t('waiting.you')}` : ''}</Text>
+      <Text style={[styles.status, connected ? styles.onlineText : null]}>{!connected ? t('status.waiting') : ready ? t('status.ready') : t('status.connected')}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 22, paddingVertical: 20, backgroundColor: '#F6F5F1' },
+  settingsRow: { alignItems: 'flex-end', marginBottom: 10 },
   eyebrow: { color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 1.8, textAlign: 'center' },
   title: { marginTop: 7, color: '#202B37', fontSize: 31, fontWeight: '900', textAlign: 'center' },
   description: { marginTop: 7, marginBottom: 25, color: '#75808B', fontSize: 13, textAlign: 'center' },

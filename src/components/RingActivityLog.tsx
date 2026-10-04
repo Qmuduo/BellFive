@@ -2,6 +2,9 @@ import { useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { RingFeedbackEvent } from '../network/protocol';
 import type { PlayerId } from '../game/types';
+import { translate } from '../i18n/translations';
+import type { Language } from '../i18n/types';
+import { useTranslation } from '../i18n/useTranslation';
 
 type RingActivityLogProps = Readonly<{
   events: readonly RingFeedbackEvent[];
@@ -9,19 +12,20 @@ type RingActivityLogProps = Readonly<{
 }>;
 
 export function RingActivityLog({ events, localPlayerId }: RingActivityLogProps) {
+  const { language, t } = useTranslation();
   const scrollRef = useRef<ScrollView>(null);
   return (
     <View style={styles.panel}>
       <View style={styles.headingRow}>
-        <Text style={styles.heading}>RING LOG</Text>
+        <Text style={styles.heading}>{t('log.heading')}</Text>
         <Text style={styles.count}>{events.length}/12</Text>
       </View>
       {events.length === 0 ? (
-        <Text style={styles.empty}>No ring calls yet.</Text>
+        <Text style={styles.empty}>{t('log.empty')}</Text>
       ) : (
         <ScrollView
           ref={scrollRef}
-          accessibilityLabel="Ring activity log"
+          accessibilityLabel={t('log.accessibility')}
           style={styles.scroll}
           nestedScrollEnabled
           showsVerticalScrollIndicator
@@ -30,7 +34,7 @@ export function RingActivityLog({ events, localPlayerId }: RingActivityLogProps)
           {events.map(event => (
             <View key={event.version} style={styles.row}>
               <View style={[styles.dot, event.outcome === 'correct' ? styles.correctDot : styles.wrongDot]} />
-              <Text style={styles.message}>{formatRingActivity(event, localPlayerId)}</Text>
+              <Text style={styles.message}>{formatRingActivity(event, localPlayerId, language)}</Text>
             </View>
           ))}
         </ScrollView>
@@ -39,17 +43,20 @@ export function RingActivityLog({ events, localPlayerId }: RingActivityLogProps)
   );
 }
 
-export function formatRingActivity(event: RingFeedbackEvent, localPlayerId: PlayerId): string {
+export function formatRingActivity(event: RingFeedbackEvent, localPlayerId: PlayerId, language: Language = 'zh-CN'): string {
   const isLocalCaller = event.caller === localPlayerId;
-  const callerName = event.caller === 'A' ? '1号玩家' : '2号玩家';
+  const callerName = translate(language, event.caller === 'A' ? 'ring.seatA' : 'ring.seatB');
   const count = event.movedCardCount;
+  const cardWord = translate(language, count === 1 ? 'deck.cardWord.one' : 'deck.cardWord.many');
 
   if (event.outcome === 'correct') {
-    if (count === 0) return isLocalCaller ? '拍铃正确，桌面没有可收取的牌' : `${callerName}拍铃正确，桌面没有可收取的牌`;
-    return isLocalCaller ? `拍铃正确，获得 ${count} 张牌` : `${callerName}拍铃正确，获得 ${count} 张牌`;
+    return isLocalCaller
+      ? translate(language, count === 0 ? 'ring.correct.ownEmpty' : 'ring.correct.own', { count, cardWord })
+      : translate(language, count === 0 ? 'ring.correct.otherEmpty' : 'ring.correct.other', { count, cardWord, playerLabel: callerName });
   }
-  if (count === 0) return isLocalCaller ? '拍铃错误，没有牌可交出' : `${callerName}拍铃错误，没有牌转移`;
-  return isLocalCaller ? `拍铃错误，交出 ${count} 张牌` : `${callerName}拍铃错误，你获得 ${count} 张牌`;
+  return isLocalCaller
+    ? translate(language, count === 0 ? 'ring.wrong.ownEmpty' : 'ring.wrong.own', { count, cardWord })
+    : translate(language, count === 0 ? 'ring.wrong.otherEmpty' : 'ring.wrong.other', { count, cardWord, playerLabel: callerName });
 }
 
 const styles = StyleSheet.create({

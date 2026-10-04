@@ -11,6 +11,8 @@ describe('RingActivityLog', () => {
     expect(formatRingActivity(correctA, 'B')).toBe('1号玩家拍铃正确，获得 6 张牌');
     expect(formatRingActivity(wrongB, 'B')).toBe('拍铃错误，交出 1 张牌');
     expect(formatRingActivity(wrongB, 'A')).toBe('2号玩家拍铃错误，你获得 1 张牌');
+    expect(formatRingActivity(correctA, 'B', 'en')).toBe('Player A rang correctly — they collect 6 cards');
+    expect(formatRingActivity(wrongB, 'A', 'en')).toBe('Player B rang incorrectly — you receive 1 card');
   });
 
   it('explains a wrong ring when no penalty card could be transferred', () => {
@@ -26,7 +28,7 @@ describe('RingActivityLog', () => {
     ];
     await render(<RingActivityLog events={events} localPlayerId="A" />);
 
-    expect(screen.getByLabelText('Ring activity log')).toBeOnTheScreen();
+    expect(screen.getByLabelText('抢铃活动记录')).toBeOnTheScreen();
     expect(screen.getByText('2/12')).toBeOnTheScreen();
     expect(screen.getByText('拍铃正确，获得 6 张牌')).toBeOnTheScreen();
     expect(screen.getByText('2号玩家拍铃错误，你获得 1 张牌')).toBeOnTheScreen();
