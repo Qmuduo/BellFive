@@ -11,9 +11,9 @@ import Animated, {
 import type { PlayerId } from '../game/types';
 import type { RingFeedbackEvent } from '../network/protocol';
 
-type CardTransferFlyProps = Readonly<{ event: RingFeedbackEvent }>;
+type CardTransferFlyProps = Readonly<{ event: RingFeedbackEvent; localPlayerId: PlayerId }>;
 
-export function CardTransferFly({ event }: CardTransferFlyProps) {
+export function CardTransferFly({ event, localPlayerId }: CardTransferFlyProps) {
   const cardCount = Math.min(Math.max(0, event.movedCardCount), 5);
   if (cardCount === 0) return null;
 
@@ -31,13 +31,13 @@ export function CardTransferFly({ event }: CardTransferFlyProps) {
   return (
     <View testID={testId} pointerEvents="none" style={styles.flightLayer}>
       {Array.from({ length: cardCount }, (_, index) => (
-        <FlyingCard key={`${event.version}-${index}`} event={event} index={index} cardCount={cardCount} />
+        <FlyingCard key={`${event.version}-${index}`} event={event} index={index} cardCount={cardCount} localPlayerId={localPlayerId} />
       ))}
       {(['A', 'B'] as const).map(player => feedbackByPlayer[player] ? (
         <Text
           key={player}
           testID={`player-feedback-${player}`}
-          style={[styles.feedbackBadge, player === 'A' ? styles.badgeA : styles.badgeB]}
+          style={[styles.feedbackBadge, player === localPlayerId ? styles.badgeA : styles.badgeB]}
         >
           {feedbackByPlayer[player]}
         </Text>
@@ -50,16 +50,18 @@ function FlyingCard({
   event,
   index,
   cardCount,
+  localPlayerId,
 }: {
   event: RingFeedbackEvent;
   index: number;
   cardCount: number;
+  localPlayerId: PlayerId;
 }) {
   const progress = useSharedValue(0);
   const isCollection = event.outcome === 'correct';
   const opponent: PlayerId = event.caller === 'A' ? 'B' : 'A';
-  const callerX = event.caller === 'A' ? -70 : 70;
-  const opponentX = opponent === 'A' ? -70 : 70;
+  const callerX = event.caller === localPlayerId ? -70 : 70;
+  const opponentX = opponent === localPlayerId ? -70 : 70;
   const fanOffset = (index - (cardCount - 1) / 2) * 12;
   const fromX = isCollection ? fanOffset : callerX + fanOffset;
   const fromY = isCollection ? 0 : -260;

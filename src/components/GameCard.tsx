@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -9,6 +9,7 @@ import Animated, {
 import type { CardDefinition, GameElement, PlayerId } from '../game/types';
 import { getCardSymbolPositions } from '../game/cardLayout';
 import { useTranslation } from '../i18n/useTranslation';
+import { playerSeatLabel } from '../i18n/translations';
 
 const ELEMENT_EMOJI: Record<GameElement, string> = {
   banana: '🍌',
@@ -24,10 +25,16 @@ type GameCardProps = {
   playerLabel: string;
   card?: CardDefinition;
   active?: boolean;
+  drawCount?: number;
+  playedCount?: number;
+  isLocalPlayer?: boolean;
+  canFlip?: boolean;
+  onPress?: () => void;
+  compact?: boolean;
 };
 
-export function GameCard({ playerId, playerLabel, card, active = false }: GameCardProps) {
-  const { t } = useTranslation();
+export function GameCard({ playerId, playerLabel, card, active = false, drawCount = 0, playedCount = 0, isLocalPlayer = false, canFlip = false, onPress, compact = false }: GameCardProps) {
+  const { language, t } = useTranslation();
   const rotation = useSharedValue(0);
   const slide = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -57,8 +64,8 @@ export function GameCard({ playerId, playerLabel, card, active = false }: GameCa
     : [];
 
   return (
-    <View style={[styles.card, active && activeStyle]}>
-      <Text style={styles.label}>{playerLabel}</Text>
+    <Pressable role="button" accessibilityLabel={t('game.playerDeck', { playerLabel: playerSeatLabel(playerId, language) })} accessibilityState={{ disabled: !canFlip }} disabled={!canFlip} onPress={onPress} style={({ pressed }) => [styles.card, compact && styles.compactCard, active && activeStyle, pressed && canFlip && styles.pressed]}>
+      <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.label, isLocalPlayer && styles.localLabel]}>{playerLabel}</Text>
       {card ? (
         <Animated.View style={[styles.symbols, revealStyle]}>
           {card.symbols.map((symbol, index) => {
@@ -79,7 +86,8 @@ export function GameCard({ playerId, playerLabel, card, active = false }: GameCa
           <Text style={styles.emptyHint}>{t('card.ready')}</Text>
         </View>
       )}
-    </View>
+      <View style={styles.cardCounts}><Text style={styles.count}>{t('deck.cards', { count: drawCount, cardWord: t(drawCount === 1 ? 'deck.cardWord.one' : 'deck.cardWord.many') })}</Text><Text style={styles.played}>{t('deck.table', { count: playedCount })}</Text></View>
+    </Pressable>
   );
 }
 
@@ -87,17 +95,16 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     minWidth: 0,
-    minHeight: 218,
+    minHeight: 180,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 12,
-    marginHorizontal: 4,
-    borderRadius: 21,
-    borderColor: '#DDD9E9',
-    borderWidth: 1.5,
+    paddingHorizontal: 7,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderColor: '#2F194C',
+    borderWidth: 2,
     borderStyle: 'solid',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDF8',
     shadowColor: '#43516A',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
@@ -107,19 +114,32 @@ const styles = StyleSheet.create({
   activeA: {
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderColor: '#E87572',
+    borderColor: '#7040C4',
   },
   activeB: {
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderColor: '#5A9FC1',
+    borderColor: '#7040C4',
   },
   label: {
-    color: '#78828F',
-    fontSize: 9,
+    color: '#2F194C',
+    fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.8,
+    width: '100%',
+    marginBottom: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderRadius: 7,
+    backgroundColor: '#E2D5FF',
+    textAlign: 'center',
   },
+  localLabel: { backgroundColor: '#7040C4', color: '#F5F0FF' },
+  cardCounts: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', gap: 2, paddingTop: 6 },
+  count: { color: '#2F194C', fontSize: 11, fontWeight: '800', flexShrink: 1 },
+  played: { color: '#796887', fontSize: 10, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
+  pressed: { opacity: 0.8 },
+  compactCard: { minHeight: 152, paddingVertical: 5 },
   symbols: {
     flex: 1,
     width: '100%',
@@ -130,8 +150,8 @@ const styles = StyleSheet.create({
     width: 38,
     marginLeft: -19,
     marginTop: -20,
-    fontSize: 30,
-    lineHeight: 40,
+    fontSize: 28,
+    lineHeight: 34,
     textAlign: 'center',
   },
   emptyArea: {

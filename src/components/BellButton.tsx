@@ -16,6 +16,8 @@ type BellButtonProps = Readonly<{
   animateOutcome?: boolean;
   feedbackKey?: string | number | null;
   onRing: () => void;
+  compact?: boolean;
+  locked?: boolean;
 }>;
 
 export function BellButton({
@@ -24,6 +26,8 @@ export function BellButton({
   animateOutcome = true,
   feedbackKey,
   onRing,
+  compact = false,
+  locked = false,
 }: BellButtonProps) {
   const { t } = useTranslation();
   const scale = useSharedValue(1);
@@ -48,7 +52,7 @@ export function BellButton({
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.bell, bellAnimation]}>
+      <Animated.View style={[styles.bell, compact && styles.compactBell, bellAnimation]}>
         <Pressable
           role="button"
           accessibilityLabel={t('bell.accessibility')}
@@ -57,7 +61,7 @@ export function BellButton({
           onPress={onRing}
           onPressIn={() => { scale.value = withSpring(0.92, { damping: 14, stiffness: 280 }); }}
           onPressOut={() => { scale.value = withSpring(1, { damping: 12, stiffness: 240 }); }}
-          style={({ pressed }) => [styles.ringButton, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.ringButton, compact && styles.compactRingButton, disabled && styles.disabledButton, pressed && !disabled && styles.pressed]}
         >
           <Text pointerEvents="none" style={styles.bellIcon}>🔔</Text>
           <Text pointerEvents="none" style={styles.ringLabel}>{t('bell.ring')}</Text>
@@ -71,35 +75,30 @@ export function BellButton({
           outcome === 'wrong' && styles.wrongFeedback,
         ]}
       >
-        {outcome === 'correct' ? t('bell.correct') : outcome === 'wrong' ? t('bell.wrong') : t('bell.anytime')}
+        {locked ? t('match.ringLocked') : outcome === 'correct' ? t('bell.correct') : outcome === 'wrong' ? t('bell.wrong') : t('bell.anytime')}
       </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { width: 116, alignItems: 'center' },
+  container: { flex: 1, minWidth: 0, alignItems: 'stretch' },
   bell: {
-    width: 98,
-    height: 98,
-    alignItems: 'center',
+    flex: 1,
+    minHeight: 88,
+    alignItems: 'stretch',
     justifyContent: 'center',
-    borderRadius: 49,
-    borderWidth: 2,
-    borderColor: '#C6981E',
-    backgroundColor: '#F4CA42',
-    shadowColor: '#6B5213',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 7,
-    elevation: 4,
+    borderRadius: 16,
     overflow: 'hidden',
   },
-  ringButton: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' },
-  bellIcon: { fontSize: 36, lineHeight: 43 },
-  ringLabel: { color: '#493B10', fontSize: 8, fontWeight: '900', letterSpacing: 1.5 },
+  ringButton: { flex: 1, minHeight: 88, width: '100%', alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 2, borderColor: '#34214F', backgroundColor: '#E3FB88', shadowColor: '#8FA546', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 0, elevation: 4 },
+  compactBell: { minHeight: 0 },
+  compactRingButton: { minHeight: 88 },
+  bellIcon: { fontSize: 24, lineHeight: 29 },
+  ringLabel: { color: '#34214F', fontSize: 17, fontWeight: '900', letterSpacing: 1.5 },
+  disabledButton: { backgroundColor: '#675977', borderColor: '#675977' },
   pressed: { opacity: 0.72 },
-  feedback: { minHeight: 19, marginTop: 4, color: '#69747D', fontSize: 9, fontWeight: '800', textAlign: 'center' },
+  feedback: { minHeight: 14, marginTop: 5, color: '#C6B5DF', fontSize: 9, fontWeight: '800', textAlign: 'center' },
   correctFeedback: { color: '#24724C' },
   wrongFeedback: { color: '#B23A32' },
 });

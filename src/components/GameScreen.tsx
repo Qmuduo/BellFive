@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { PlayerId } from '../game/types';
@@ -7,7 +7,6 @@ import { BellButton } from './BellButton';
 import { CardTransferFly } from './CardTransferFly';
 import { DebugPanel } from './DebugPanel';
 import { GameCard } from './GameCard';
-import { PlayerDeck } from './PlayerDeck';
 import { RingActivityLog } from './RingActivityLog';
 import { RoomEntry } from './RoomEntry';
 import { WaitingRoom } from './WaitingRoom';
@@ -28,6 +27,8 @@ import type { RingFeedbackEvent } from '../network/protocol';
 
 export default function GameScreen() {
   const { language, t } = useTranslation();
+  const { height: windowHeight } = useWindowDimensions();
+  const compactMatch = windowHeight < 700;
   const bellAudioPlayer = useAudioPlayer(require('../../assets/audio/bell.wav'));
   const flipAudioPlayer = useAudioPlayer(require('../../assets/audio/card-flip.wav'));
   const victoryAudioPlayer = useAudioPlayer(require('../../assets/audio/victory.wav'));
@@ -59,6 +60,7 @@ export default function GameScreen() {
   const ring = useGameStore(state => state.ring);
   const leaveRoom = useGameStore(state => state.leaveRoom);
   const [ringCue, setRingCue] = useState<RingFeedbackEvent | null>(null);
+  const [showMatchDetails, setShowMatchDetails] = useState(false);
   const lastProcessedAction = useRef<string | null>(null);
   const lastProcessedRingVersion = useRef<number | null>(null);
   const lastProcessedFlipVersion = useRef<number | null>(null);
@@ -196,6 +198,7 @@ export default function GameScreen() {
   const isFinished = roomSnapshot.phase === 'finished';
   const canInteract = isPlaying && connectionStatus === 'connected';
   const canFlip = canInteract && Boolean(localPlayerId && localPlayerId === roomSnapshot.turn);
+  const canRing = canInteract && Boolean(localPlayerId && !roomSnapshot.ringBlockedUntilFlip[localPlayerId]);
   const localWinner = roomSnapshot.winner === localPlayerId;
   const formattedTime = formatRemainingTime(roomSnapshot.remainingSeconds);
   const handleFlip = () => {
@@ -208,7 +211,7 @@ export default function GameScreen() {
     if (player === localPlayerId) handleFlip();
   };
   const handleRing = () => {
-    if (!canInteract) return;
+    if (!canRing) return;
     playBellSound(bellAudioPlayer);
     triggerGameFeedback('press');
     ring();
@@ -219,10 +222,7 @@ export default function GameScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#F6F5F1" />
       <View style={styles.screen}>
         <View style={styles.header}>
-          <View>
-            <Text style={styles.eyebrow}>{t('game.privateRoomPlayer', { playerLabel: localPlayerId ? playerSeatLabel(localPlayerId, language) : '—' })}</Text>
-            <Text style={styles.title}>BellFive</Text>
-          </View>
+          <Text style={styles.title}>BellFive</Text>
           <View style={styles.headerActions}>
             <LanguageSettings />
             {formattedTime ? <View style={styles.timerPill}><Text style={styles.timerText}>{formattedTime}</Text></View> : null}
@@ -233,36 +233,7 @@ export default function GameScreen() {
         </View>
 
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.players}>
-            {(['A', 'B'] as const).map(player => (
-              <PlayerDeck
-                key={player}
-                player={player}
-                profile={roomSnapshot.players[player].profile}
-                drawCount={roomSnapshot.players[player].drawCount ?? 0}
-                playedCount={roomSnapshot.players[player].playedCount ?? 0}
-                isTurnOwner={roomSnapshot.turn === player}
-                isLocalPlayer={localPlayerId === player}
-                canFlip={canFlip && localPlayerId === player}
-                onPress={() => handleDeckFlip(player)}
-              />
-            ))}
-          </View>
-
-          <View style={styles.turnStrip}>
-            <View style={[styles.turnDot, roomSnapshot.turn === 'B' ? styles.turnDotB : styles.turnDotA, isFinished && styles.turnDotFinished]} />
-            <View style={styles.turnCopy}>
-              <Text style={styles.turnLabel}>
-                {isFinished ? t('game.over') : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? t('game.connectionPaused') : roomSnapshot.turn ? t('game.playerToFlip', { playerLabel: playerSeatLabel(roomSnapshot.turn, language) }) : t('game.ready')}
-              </Text>
-              <Text style={styles.turnHint}>
-                {isFinished ? t('game.roundComplete') : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? t('game.waitReconnect') : canFlip ? t('game.yourTurnFlip') : t('game.playerFlipsNext', { playerLabel: roomSnapshot.turn ? playerSeatLabel(roomSnapshot.turn, language) : t('debug.noTurn') })}
-              </Text>
-            </View>
-            <Text style={styles.roomCode}>{roomCode}</Text>
-          </View>
-
-          {roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? (
+          {roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' || connectionStatus === 'disconnected' ? (
             <View style={styles.pausedBanner}><Text style={styles.pausedText}>{t('game.connectionPausedBanner')}</Text></View>
           ) : null}
           {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{formatGameError(language, error.code)}</Text></View> : null}
@@ -270,12 +241,33 @@ export default function GameScreen() {
           <View style={styles.tablePanel}>
             <View style={styles.tableHeading}>
               <Text style={styles.tableTitle}>{t('game.table')}</Text>
-              <Text style={styles.tableHint}>{t('game.topCardsOnly')}</Text>
+              <Text style={styles.tableHint}>{roomCode}</Text>
             </View>
             <View testID="play-mat" style={styles.playMat}>
-              <GameCard playerId="A" playerLabel={getPlayerDisplayName(roomSnapshot.players.A.profile, 'A', language)} card={roomSnapshot.players.A.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'A'} />
-              <GameCard playerId="B" playerLabel={getPlayerDisplayName(roomSnapshot.players.B.profile, 'B', language)} card={roomSnapshot.players.B.topCard ?? undefined} active={isPlaying && roomSnapshot.turn === 'B'} />
-              {ringCue ? <CardTransferFly key={ringCue.version} event={ringCue} /> : null}
+              {(localPlayerId ? [localPlayerId, localPlayerId === 'A' ? 'B' : 'A'] as const : ['A', 'B'] as const).map(player => (
+                <GameCard
+                  key={player}
+                  playerId={player}
+                playerLabel={t(player === localPlayerId ? 'match.you' : 'match.opponent', { nickname: roomSnapshot.players[player].profile.nickname || playerSeatLabel(player, language) })}
+                  card={roomSnapshot.players[player].topCard ?? undefined}
+                  active={isPlaying && roomSnapshot.turn === player}
+                  isLocalPlayer={player === localPlayerId}
+                  drawCount={roomSnapshot.players[player].drawCount ?? 0}
+                  playedCount={roomSnapshot.players[player].playedCount ?? 0}
+                  canFlip={canFlip && localPlayerId === player}
+                  compact={compactMatch}
+                  onPress={() => handleDeckFlip(player)}
+                />
+              ))}
+              {ringCue ? <CardTransferFly key={ringCue.version} event={ringCue} localPlayerId={localPlayerId ?? 'A'} /> : null}
+            </View>
+          </View>
+
+          <View style={styles.turnStrip}>
+            <View style={[styles.turnDot, isFinished && styles.turnDotFinished]} />
+            <View style={styles.turnCopy}>
+              <Text style={styles.turnLabel}>{isFinished ? t('game.over') : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? t('game.connectionPaused') : canFlip ? t('game.yourTurnFlip') : t('game.playerFlipsNext', { playerLabel: roomSnapshot.turn === localPlayerId ? t('match.youLabel') : roomSnapshot.turn ? roomSnapshot.players[roomSnapshot.turn].profile.nickname || playerSeatLabel(roomSnapshot.turn, language) : t('debug.noTurn') })}</Text>
+              <Text style={styles.turnHint}>{isFinished ? t('game.roundComplete') : canRing ? t('bell.anytime') : localPlayerId && roomSnapshot.ringBlockedUntilFlip[localPlayerId] ? t('match.ringLocked') : t('game.waitReconnect')}</Text>
             </View>
           </View>
 
@@ -293,8 +285,10 @@ export default function GameScreen() {
               </Text>
             </View>
           ) : null}
-          {localPlayerId ? <RingActivityLog events={roomSnapshot.ringHistory} localPlayerId={localPlayerId} /> : null}
-          <DebugPanel snapshot={roomSnapshot} connectionStatus={connectionStatus} />
+          <Pressable role="button" accessibilityState={{ expanded: showMatchDetails }} accessibilityLabel={t('match.details')} onPress={() => setShowMatchDetails(value => !value)} style={styles.detailsButton}>
+            <Text style={styles.detailsText}>{t('match.details')} {showMatchDetails ? '−' : '+'}</Text>
+          </Pressable>
+          {showMatchDetails ? <View style={styles.detailsPanel}>{localPlayerId ? <RingActivityLog events={roomSnapshot.ringHistory} localPlayerId={localPlayerId} /> : null}<DebugPanel snapshot={roomSnapshot} connectionStatus={connectionStatus} /></View> : null}
         </ScrollView>
 
         {isFinished ? (
@@ -314,25 +308,36 @@ export default function GameScreen() {
             ) : null}
           </View>
         ) : (
-          <View style={styles.actionDock}>
+          <View style={styles.console}>
+            <View style={styles.consoleIdentity}>
+              <View style={styles.initial}><Text style={styles.initialText}>{localPlayerId ? (roomSnapshot.players[localPlayerId].profile.nickname.trim()[0] ?? getPlayerDisplayName(roomSnapshot.players[localPlayerId].profile, localPlayerId, language)[0] ?? '?').toLocaleUpperCase() : '?'}</Text></View>
+              <View style={styles.identityCopy}><Text numberOfLines={1} style={styles.identityCaption}>{t('match.console')}</Text><Text numberOfLines={1} style={styles.identityName}>{localPlayerId ? roomSnapshot.players[localPlayerId].profile.nickname || playerSeatLabel(localPlayerId, language) : '—'}</Text></View>
+              <View style={styles.drawCount}><Text style={styles.drawCaption}>{t('match.draw')}</Text><Text style={styles.drawValue}>{localPlayerId ? roomSnapshot.players[localPlayerId].drawCount ?? 0 : 0}</Text></View>
+            </View>
+            <Text style={styles.consolePrompt}>{isFinished ? t('game.roundComplete') : canFlip ? t('game.yourTurnFlip') : roomSnapshot.phase === 'connection-paused' || connectionStatus !== 'connected' ? t('game.connectionPaused') : t('game.playerFlipsNext', { playerLabel: roomSnapshot.turn === localPlayerId ? t('match.youLabel') : roomSnapshot.turn ? roomSnapshot.players[roomSnapshot.turn].profile.nickname || playerSeatLabel(roomSnapshot.turn, language) : t('debug.noTurn') })}</Text>
+            <View style={styles.actionDock}>
             <Pressable
               role="button"
               accessibilityLabel={t('game.flip')}
               accessibilityState={{ disabled: !canFlip }}
               disabled={!canFlip}
               onPress={handleFlip}
-              style={({ pressed }) => [styles.flipButton, !canFlip && styles.disabledButton, pressed && canFlip && styles.pressed]}
+              style={({ pressed }) => [styles.flipButton, compactMatch && styles.compactActionButton, !canFlip && styles.disabledButton, pressed && canFlip && styles.pressed]}
             >
               <Text style={styles.flipText}>{t('game.flip')}</Text>
-              <Text style={styles.flipHint}>{canFlip && localPlayerId ? t('game.flipPlayer', { playerLabel: playerSeatLabel(localPlayerId, language) }) : t('game.waitPlayer', { playerLabel: roomSnapshot.turn ? playerSeatLabel(roomSnapshot.turn, language) : t('debug.noTurn') })}</Text>
+              <Text style={styles.flipHint}>{t('match.leftHand')}</Text>
             </Pressable>
             <BellButton
-              disabled={!canInteract}
+              disabled={!canRing}
               outcome={roomSnapshot.lastRingOutcome}
               animateOutcome={roomSnapshot.lastRingEvent?.caller === localPlayerId}
               feedbackKey={roomSnapshot.ringVersion ?? roomSnapshot.tableVersion}
+              compact={compactMatch}
+              locked={Boolean(localPlayerId && roomSnapshot.ringBlockedUntilFlip[localPlayerId])}
               onRing={handleRing}
             />
+            </View>
+            <Text style={styles.consoleFoot}>{t('match.rightHand')}</Text>
           </View>
         )}
       </View>
@@ -348,47 +353,58 @@ function formatRemainingTime(remainingSeconds: number | null): string | null {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F6F5F1' },
-  screen: { flex: 1, paddingHorizontal: 18 },
-  header: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  eyebrow: { color: '#87909B', fontSize: 9, fontWeight: '800', letterSpacing: 1.4 },
-  title: { color: '#202B37', fontSize: 24, fontWeight: '900', letterSpacing: -0.6 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  timerPill: { minWidth: 66, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, paddingVertical: 10, borderRadius: 15, backgroundColor: '#FFF4D5' },
-  timerText: { color: '#A97613', fontSize: 15, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  headerButton: { minWidth: 83, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 11, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E1E3E7' },
-  headerButtonText: { color: '#596674', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  safeArea: { flex: 1, backgroundColor: '#F5F0FF' },
+  screen: { flex: 1, paddingHorizontal: 12, backgroundColor: '#F5F0FF' },
+  header: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  title: { color: '#2F194C', fontSize: 21, fontWeight: '900', letterSpacing: -0.8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  timerPill: { minWidth: 58, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 7, borderRadius: 12, backgroundColor: '#E3FB88' },
+  timerText: { color: '#2F194C', fontSize: 14, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  headerButton: { minWidth: 56, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8, borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D7C9E8' },
+  headerButtonText: { color: '#2F194C', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
   scroll: { flex: 1 },
-  scrollContent: { paddingTop: 2, paddingBottom: 14 },
-  players: { flexDirection: 'row', marginBottom: 12 },
-  turnStrip: { minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, paddingVertical: 8, marginBottom: 12, borderRadius: 16, borderWidth: 1, borderColor: '#E8E8E5', backgroundColor: '#FFFFFF' },
-  turnDot: { width: 11, height: 11, marginRight: 10, borderRadius: 6 },
-  turnDotA: { backgroundColor: '#E87572' },
-  turnDotB: { backgroundColor: '#5A9FC1' },
-  turnDotFinished: { backgroundColor: '#CFAC34' },
+  scrollContent: { paddingTop: 2, paddingBottom: 8 },
+  turnStrip: { minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, marginBottom: 4, borderRadius: 12, backgroundColor: '#E2D5FF' },
+  turnDot: { width: 8, height: 8, marginRight: 7, borderRadius: 4, backgroundColor: '#7040C4' },
+  turnDotFinished: { backgroundColor: '#E3FB88' },
   turnCopy: { flex: 1 },
-  turnLabel: { color: '#364451', fontSize: 11, fontWeight: '900', letterSpacing: 0.8 },
-  turnHint: { marginTop: 2, color: '#78848F', fontSize: 10, fontWeight: '500' },
-  roomCode: { color: '#7D8994', fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
+  turnLabel: { color: '#2F194C', fontSize: 10, fontWeight: '900' },
+  turnHint: { marginTop: 1, color: '#796887', fontSize: 9, fontWeight: '600' },
   pausedBanner: { alignItems: 'center', marginBottom: 10, paddingVertical: 8, borderRadius: 12, backgroundColor: '#FFF1D7' },
   pausedText: { color: '#946B22', fontSize: 11, fontWeight: '800' },
   errorBanner: { marginBottom: 10, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: '#FBE6E3' },
   errorText: { color: '#9D453F', fontSize: 11, fontWeight: '700', textAlign: 'center' },
-  tablePanel: { padding: 12, borderRadius: 27, borderWidth: 2, borderColor: '#C7D3EC', backgroundColor: '#E8EEFA' },
-  tableHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9, paddingHorizontal: 3 },
-  tableTitle: { color: '#4E6487', fontSize: 10, fontWeight: '900', letterSpacing: 1.4 },
-  tableHint: { color: '#8290A7', fontSize: 8, fontWeight: '800', letterSpacing: 0.8 },
-  playMat: { position: 'relative', flexDirection: 'row', alignItems: 'stretch' },
+  tablePanel: { padding: 0, marginBottom: 2 },
+  tableHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5, paddingHorizontal: 2 },
+  tableTitle: { color: '#796887', fontSize: 9, fontWeight: '800' },
+  tableHint: { color: '#796887', fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  playMat: { position: 'relative', flexDirection: 'row', alignItems: 'stretch', gap: 8 },
   gameOver: { alignItems: 'center', paddingVertical: 12 },
   winnerLabel: { color: '#3D6078', fontSize: 19, fontWeight: '900', letterSpacing: 0.8 },
   youWin: { marginTop: 1, color: '#D46D69', fontSize: 13, fontWeight: '900', letterSpacing: 1 },
-  actionDock: { flexDirection: 'row', alignItems: 'center', paddingTop: 10, paddingBottom: 4, borderTopWidth: 1, borderTopColor: '#E6E5E1', backgroundColor: '#F6F5F1' },
-  flipButton: { flex: 1, minHeight: 78, alignItems: 'center', justifyContent: 'center', marginRight: 12, borderRadius: 23, borderWidth: 1, borderColor: '#E6AEB7', backgroundColor: '#F2C4CC' },
-  disabledButton: { opacity: 0.5 },
-  flipText: { color: '#633E45', fontSize: 20, fontWeight: '900', letterSpacing: 1.8 },
-  flipHint: { marginTop: 1, color: '#865C63', fontSize: 8, fontWeight: '800', letterSpacing: 1 },
-  finishedDock: { alignItems: 'center', justifyContent: 'center', minHeight: 78, borderTopWidth: 1, borderTopColor: '#E6E5E1' },
-  playAgain: { width: '100%', minHeight: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: '#F2C4CC' },
+  console: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4, borderTopLeftRadius: 18, borderTopRightRadius: 18, backgroundColor: '#34214F' },
+  consoleIdentity: { minHeight: 46, flexDirection: 'row', alignItems: 'center' },
+  initial: { width: 37, height: 39, alignItems: 'center', justifyContent: 'center', marginRight: 8, borderRadius: 10, backgroundColor: '#E3FB88' },
+  initialText: { color: '#34214F', fontSize: 20, fontWeight: '900' },
+  identityCopy: { flex: 1, minWidth: 0 },
+  identityCaption: { color: '#C6B5DF', fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
+  identityName: { color: '#F9F5FF', fontSize: 20, fontWeight: '900' },
+  drawCount: { alignItems: 'flex-end', marginLeft: 8 },
+  drawCaption: { color: '#C6B5DF', fontSize: 12, fontWeight: '700' },
+  drawValue: { color: '#F9F5FF', fontSize: 22, fontWeight: '900' },
+  consolePrompt: { minHeight: 28, paddingTop: 5, color: '#E3FB88', fontSize: 12, fontWeight: '700' },
+  actionDock: { flexDirection: 'row', alignItems: 'stretch', gap: 14, paddingTop: 2, paddingBottom: 0 },
+  flipButton: { flex: 1, minWidth: 0, minHeight: 116, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 2, borderColor: '#C6A3F7', backgroundColor: '#9165D2', shadowColor: '#583780', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 0, elevation: 4 },
+  compactActionButton: { minHeight: 88 },
+  disabledButton: { opacity: 0.58 },
+  flipText: { color: '#FFF9FF', fontSize: 24, fontWeight: '900', letterSpacing: 1.5 },
+  flipHint: { marginTop: 4, color: '#F0E8FF', fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
+  consoleFoot: { paddingTop: 8, color: '#C6B5DF', fontSize: 11, textAlign: 'center' },
+  detailsButton: { alignSelf: 'flex-start', marginTop: 8, paddingVertical: 6, paddingHorizontal: 3 },
+  detailsText: { color: '#796887', fontSize: 10, fontWeight: '800' },
+  detailsPanel: { paddingBottom: 8 },
+  finishedDock: { alignItems: 'center', justifyContent: 'center', minHeight: 68, borderTopWidth: 1, borderTopColor: '#E6E5E1' },
+  playAgain: { width: '100%', minHeight: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: '#9165D2' },
   readyAgain: { backgroundColor: '#E3F1E7' },
   readyAgainText: { color: '#35744F' },
   pressed: { opacity: 0.84, transform: [{ scale: 0.98 }] },

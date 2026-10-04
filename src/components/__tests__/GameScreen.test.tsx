@@ -163,7 +163,7 @@ describe('GameScreen friend-room flow', () => {
     share.mockRestore();
   });
 
-  it('renders a persistent ring activity log with local-player wording', async () => {
+  it('keeps match diagnostics and activity available inside expandable details', async () => {
     useGameStore.setState({
       connectionStatus: 'connected',
       roomCode: 'ABCD23',
@@ -177,6 +177,9 @@ describe('GameScreen friend-room flow', () => {
     });
     await render(<GameScreen />);
 
+    expect(screen.queryByText('Correct ring — you collect 6 cards')).toBeNull();
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Match details' }));
     expect(screen.getByText('Correct ring — you collect 6 cards')).toBeOnTheScreen();
     expect(screen.getByText('Player B rang incorrectly — you receive 1 card')).toBeOnTheScreen();
   });
@@ -256,8 +259,10 @@ describe('GameScreen friend-room flow', () => {
     });
     await render(<GameScreen />);
     const playMat = screen.getByTestId('play-mat');
-    expect(within(playMat).getByText('Mira · Player A')).toBeOnTheScreen();
-    expect(within(playMat).getByText('Kai · Player B')).toBeOnTheScreen();
+    expect(within(playMat).getByText('You · Mira')).toBeOnTheScreen();
+    expect(within(playMat).getByText('Opponent · Kai')).toBeOnTheScreen();
+    const user = userEvent.setup();
+    await user.press(screen.getByRole('button', { name: 'Match details' }));
     expect(screen.getByText('Player A draw pile: 29')).toBeOnTheScreen();
     expect(screen.getByText('Player B draw pile: 30')).toBeOnTheScreen();
     expect(screen.getByText('Turn: Player A')).toBeOnTheScreen();
@@ -272,6 +277,18 @@ describe('GameScreen friend-room flow', () => {
     });
     await render(<GameScreen />);
     expect(screen.getByText('Connection paused')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'FLIP' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeDisabled();
+  });
+
+  it('disables both actions after the room connection is disconnected', async () => {
+    useGameStore.setState({
+      connectionStatus: 'disconnected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
     expect(screen.getByRole('button', { name: 'FLIP' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeDisabled();
   });
@@ -321,7 +338,7 @@ describe('GameScreen friend-room flow', () => {
     expect(useGameStore.getState().setReady).toHaveBeenCalledWith(true);
   });
 
-  it('shows the countdown and cooldown reminder while keeping Ring available', async () => {
+  it('locks ringing after a wrong ring until a snapshot clears the local lock', async () => {
     useGameStore.setState({
       connectionStatus: 'connected',
       roomCode: 'ABCD23',
@@ -337,14 +354,28 @@ describe('GameScreen friend-room flow', () => {
 
     expect(screen.getByText('05:00')).toBeOnTheScreen();
     expect(screen.getByText('Flip one card before ringing again.')).toBeOnTheScreen();
-    expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeDisabled();
     await act(async () => {
       useGameStore.getState().applyServerMessage({
         type: 'room.snapshot',
-        snapshot: makeSnapshot('playing', 'A', { turn: 'B', remainingSeconds: 299 }),
+        snapshot: makeSnapshot('playing', 'A', { turn: 'B', remainingSeconds: 299, ringBlockedUntilFlip: { A: false, B: false } }),
       });
     });
     expect(screen.getByText('04:59')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeEnabled();
+  });
+
+  it('keeps the local player on the left when the server assigns seat B', async () => {
+    useGameStore.setState({ connectionStatus: 'connected', roomCode: 'ABCD23', localPlayerId: 'B', roomSnapshot: makeSnapshot('playing', 'B', {
+      turn: 'B', players: {
+        A: { connected: true, drawCount: 20, playedCount: 2, topCard: null, profile: { nickname: 'Kai', avatarId: 'banana' } },
+        B: { connected: true, drawCount: 18, playedCount: 4, topCard: null, profile: { nickname: 'Mira', avatarId: 'peach' } },
+      },
+    }) });
+    await render(<GameScreen />);
+    const cards = within(screen.getByTestId('play-mat')).getAllByText(/You ·|Opponent ·/);
+    expect(cards[0]).toHaveTextContent('You · Mira');
+    expect(cards[1]).toHaveTextContent('Opponent · Kai');
   });
 
   it('shows DRAW when timeout leaves both players with the same number of cards', async () => {

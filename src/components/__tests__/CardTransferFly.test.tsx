@@ -25,6 +25,7 @@ describe('CardTransferFly', () => {
     await render(
       <CardTransferFly
         event={{ version: 1, caller, outcome, movedCardCount }}
+        localPlayerId="A"
       />,
     );
 
@@ -40,6 +41,7 @@ describe('CardTransferFly', () => {
     await render(
       <CardTransferFly
         event={{ version: 1, caller, outcome: 'wrong', movedCardCount: caller === 'A' ? 1 : 2 }}
+        localPlayerId="A"
       />,
     );
 
@@ -53,6 +55,7 @@ describe('CardTransferFly', () => {
     await render(
       <CardTransferFly
         event={{ version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 0 }}
+        localPlayerId="A"
       />,
     );
 
@@ -65,6 +68,7 @@ describe('CardTransferFly', () => {
     await render(
       <CardTransferFly
         event={{ version: 2, caller: 'A', outcome: 'correct', movedCardCount: 12 }}
+        localPlayerId="A"
       />,
     );
 
