@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { GameClientError } from '../network/GameClient';
 import type { OpenRoomSummary, ServerMessage } from '../network/protocol';
-import type { PlayerProfile, PlayerProfileInput } from '../profile';
+import type { PlayerProfile } from '../profile';
 import { AVATAR_EMOJI, getPlayerDisplayName } from '../profile';
 import type { SinglePlayerDifficulty } from '../game/singlePlayerController';
 import { AvatarPicker } from './AvatarPicker';
@@ -21,8 +21,8 @@ const DIFFICULTY_LABEL_KEYS: Readonly<Record<SinglePlayerDifficulty, Translation
 };
 
 type RoomEntryProps = Readonly<{
-  onCreate: (profile: PlayerProfileInput) => void;
-  onJoin: (roomCode: string, profile: PlayerProfileInput) => void;
+  onCreate: () => void;
+  onJoin: (roomCode: string) => void;
   error: GameClientError | null;
   busy: boolean;
   profile: PlayerProfile;
@@ -68,7 +68,7 @@ export function RoomEntry({
       return;
     }
     setShowValidationError(false);
-    onJoin(normalized, profile);
+    onJoin(normalized);
   };
 
   return (
@@ -103,7 +103,7 @@ export function RoomEntry({
         role="button"
         accessibilityState={{ disabled: roomActionsBusy }}
         disabled={roomActionsBusy}
-        onPress={() => onCreate(profile)}
+        onPress={() => onCreate()}
         style={({ pressed }) => [styles.createButton, pressed && styles.pressed, roomActionsBusy && styles.disabled]}
       >
         <Text style={styles.createText}>{busy ? currentBusyLabel : profileHydrated ? t('entry.createRoom') : t('entry.loadingProfile')}</Text>
@@ -164,7 +164,7 @@ export function RoomEntry({
                   accessibilityRole="button"
                   accessibilityLabel={t('entry.requestJoin', { roomCode: room.roomCode })}
                   disabled={roomActionsBusy || Boolean(applyingRoomCode)}
-                  onPress={() => { setShowValidationError(false); onJoin(room.roomCode, profile); }}
+                  onPress={() => { setShowValidationError(false); onJoin(room.roomCode); }}
                   style={({ pressed }) => [styles.requestButton, pressed && styles.pressed, (roomActionsBusy || Boolean(applyingRoomCode)) && styles.disabled]}
                 >
                   <Text style={styles.requestText}>{isApplying ? t('entry.sending') : t('entry.join')}</Text>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { fireEvent, render, screen, userEvent } from '@testing-library/react-native';
-import type { PlayerProfile, PlayerProfileInput } from '../../profile';
+import type { PlayerProfile } from '../../profile';
 import type { GameClientError } from '../../network/GameClient';
 import { RoomEntry } from '../RoomEntry';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -10,7 +10,7 @@ describe('RoomEntry', () => {
     useSettingsStore.setState({ language: 'en', hydrated: true });
   });
 
-  it('edits a local profile and sends it with create and join requests', async () => {
+  it('edits a local profile and sends create and join requests without profile arguments', async () => {
     const user = userEvent.setup();
     const onCreate = jest.fn();
     const onJoin = jest.fn();
@@ -21,11 +21,11 @@ describe('RoomEntry', () => {
     fireEvent.changeText(screen.getByLabelText('Nickname'), 'Kai');
     await user.press(screen.getByRole('button', { name: 'bell avatar' }));
     await user.press(screen.getByRole('button', { name: 'Create Room' }));
-    expect(onCreate).toHaveBeenCalledWith({ nickname: 'Kai', avatarId: 'bell' });
+    expect(onCreate).toHaveBeenCalledWith();
 
     await user.type(screen.getByLabelText('Room code'), ' abcd23 ');
     await user.press(screen.getByRole('button', { name: 'Join Room' }));
-    expect(onJoin).toHaveBeenCalledWith('ABCD23', { nickname: 'Kai', avatarId: 'bell' });
+    expect(onJoin).toHaveBeenCalledWith('ABCD23');
   });
 
   it('defaults entry copy to Chinese and switches to English in place', async () => {
@@ -114,7 +114,7 @@ describe('RoomEntry', () => {
     await user.press(screen.getByRole('button', { name: 'Refresh rooms' }));
     await user.press(screen.getByRole('button', { name: 'Request to join ABCD23' }));
     expect(onRefresh).toHaveBeenCalledTimes(1);
-    expect(onJoin).toHaveBeenCalledWith('ABCD23', { nickname: 'Kai', avatarId: 'banana' });
+    expect(onJoin).toHaveBeenCalledWith('ABCD23');
   });
 
   it('shows the application status and lets the requester cancel it', async () => {
@@ -167,8 +167,8 @@ function ControlledRoomEntry({
   busy,
   profileHydrated,
 }: {
-  onCreate: (profile: PlayerProfileInput) => void;
-  onJoin: (roomCode: string, profile: PlayerProfileInput) => void;
+  onCreate: () => void;
+  onJoin: (roomCode: string) => void;
   error: GameClientError | null;
   busy: boolean;
   profileHydrated: boolean;

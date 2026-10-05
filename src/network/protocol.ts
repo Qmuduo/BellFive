@@ -1,7 +1,7 @@
 import { canRing, countVisibleItems } from '../game/rules';
 import { FRUIT_TYPES, GAME_ELEMENTS } from '../game/types';
 import { isAvatarId } from '../profile';
-import type { PlayerProfile, PlayerProfileInput } from '../profile';
+import type { PlayerProfile } from '../profile';
 import type {
   CardDefinition,
   GameState,
@@ -13,8 +13,9 @@ import type {
 export type RoomPhase = 'waiting' | 'playing' | 'connection-paused' | 'finished';
 
 export type ClientMessage =
-  | { type: 'room.create'; requestId: string; profile?: PlayerProfileInput }
-  | { type: 'room.join'; requestId: string; roomCode: string; profile?: PlayerProfileInput }
+  | { type: 'session.authenticate'; token: string }
+  | { type: 'room.create'; requestId: string }
+  | { type: 'room.join'; requestId: string; roomCode: string }
   | { type: 'room.lobby.subscribe' }
   | { type: 'room.lobby.refresh' }
   | { type: 'room.lobby.unsubscribe' }
@@ -99,6 +100,7 @@ export type RoomSnapshotSource = Readonly<{
 }>;
 
 export type ServerMessage =
+  | { type: 'session.authenticated'; userId: string }
   | { type: 'room.lobby.snapshot'; rooms: readonly OpenRoomSummary[] }
   | { type: 'room.application.pending'; application: JoinApplication }
   | {
@@ -140,12 +142,13 @@ export function decodeClientMessage(raw: string): ClientMessage | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
 
   switch (value.type) {
+    case 'session.authenticate':
+      return isNonEmptyString(value.token) ? { type: 'session.authenticate', token: value.token } : null;
     case 'room.create':
-      if (!isNonEmptyString(value.requestId) || !isOptionalPlayerProfileInput(value.profile)) return null;
+      if (!isNonEmptyString(value.requestId)) return null;
       return {
         type: 'room.create',
         requestId: value.requestId,
-        ...(value.profile === undefined ? {} : { profile: value.profile }),
       };
     case 'room.leave':
       return isNonEmptyString(value.requestId)
@@ -154,14 +157,12 @@ export function decodeClientMessage(raw: string): ClientMessage | null {
     case 'room.join':
       if (
         !isNonEmptyString(value.requestId) ||
-        !isRoomCode(value.roomCode) ||
-        !isOptionalPlayerProfileInput(value.profile)
+        !isRoomCode(value.roomCode)
       ) return null;
       return {
         type: 'room.join',
         requestId: value.requestId,
         roomCode: value.roomCode,
-        ...(value.profile === undefined ? {} : { profile: value.profile }),
       };
     case 'room.lobby.subscribe':
     case 'room.lobby.refresh':
@@ -214,6 +215,8 @@ export function decodeServerMessage(raw: string): ServerMessage | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
 
   switch (value.type) {
+    case 'session.authenticated':
+      return isNonEmptyString(value.userId) ? { type: 'session.authenticated', userId: value.userId } : null;
     case 'room.lobby.snapshot':
       return Array.isArray(value.rooms) && value.rooms.every(isOpenRoomSummary)
         ? { type: 'room.lobby.snapshot', rooms: value.rooms }
@@ -420,14 +423,6 @@ function isJoinApplication(value: unknown): value is JoinApplication {
     isNonEmptyString(value.applicationId) &&
     isRoomCode(value.roomCode) &&
     isPlayerProfile(value.profile)
-  );
-}
-
-function isOptionalPlayerProfileInput(value: unknown): value is PlayerProfileInput | undefined {
-  return value === undefined || (
-    isRecord(value) &&
-    typeof value.nickname === 'string' &&
-    typeof value.avatarId === 'string'
   );
 }
 

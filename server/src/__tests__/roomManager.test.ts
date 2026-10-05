@@ -1,3 +1,4 @@
+import type { AuthPrincipal } from '../auth/types';
 import type { ClientMessage, RoomSnapshot, ServerMessage } from '../../../src/network/protocol';
 import type { CardDefinition, GameElement, GameState } from '../../../src/game/types';
 import { RoomManager } from '../roomManager';
@@ -7,7 +8,7 @@ describe('RoomManager room lifecycle', () => {
   it('lists an open room, keeps applicants unseated until host approval, then removes the full room', () => {
     const manager = makeRoomManager();
     const room = createWaitingRoom(manager);
-    const subscribed = manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' });
+    const subscribed = manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' }, principalFor('socket-b'));
 
     expect(messageOf(subscribed, 'socket-b', 'room.lobby.snapshot').rooms).toEqual([
       { roomCode: room.roomCode, hostProfile: { nickname: '', avatarId: 'strawberry' } },
@@ -17,8 +18,7 @@ describe('RoomManager room lifecycle', () => {
       type: 'room.join',
       requestId: 'apply-b',
       roomCode: room.roomCode,
-      profile: { nickname: 'Kai', avatarId: 'banana' },
-    });
+    }, { ...principalFor('socket-b'), profile: { nickname: 'Kai', avatarId: 'banana' } });
     const pending = messageOf(applied, 'socket-a', 'room.application.pending');
     expect(pending.application.profile).toEqual({ nickname: 'Kai', avatarId: 'banana' });
     expect(messageOf(applied, 'socket-b', 'room.application.status')).toMatchObject({
@@ -32,7 +32,7 @@ describe('RoomManager room lifecycle', () => {
       type: 'room.application.decision',
       applicationId: pending.application.applicationId,
       approved: true,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(approved, 'socket-b', 'room.session')).toMatchObject({
       requestId: 'apply-b',
       roomCode: room.roomCode,
@@ -46,22 +46,22 @@ describe('RoomManager room lifecycle', () => {
     const room = createWaitingRoom(manager);
     const first = manager.handleMessage('socket-b', {
       type: 'room.join', requestId: 'apply-reject', roomCode: room.roomCode,
-    });
+    }, principalFor('socket-b'));
     const firstApplication = messageOf(first, 'socket-a', 'room.application.pending').application;
     const rejected = manager.handleMessage('socket-a', {
       type: 'room.application.decision',
       applicationId: firstApplication.applicationId,
       approved: false,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(rejected, 'socket-b', 'room.application.status').status).toBe('rejected');
 
     const second = manager.handleMessage('socket-b', {
       type: 'room.join', requestId: 'apply-cancel', roomCode: room.roomCode,
-    });
+    }, principalFor('socket-b'));
     const secondApplication = messageOf(second, 'socket-a', 'room.application.pending').application;
     const cancelled = manager.handleMessage('socket-b', {
       type: 'room.application.cancel', applicationId: secondApplication.applicationId,
-    });
+    }, principalFor('socket-b'));
     expect(messageOf(cancelled, 'socket-a', 'room.application.status')).toMatchObject({
       applicationId: secondApplication.applicationId,
       status: 'cancelled',
@@ -72,10 +72,10 @@ describe('RoomManager room lifecycle', () => {
   it('resends pending requests when the host reconnects and removes requests when an applicant disconnects', () => {
     const manager = makeRoomManager();
     const room = createWaitingRoom(manager);
-    manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' });
+    manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' }, principalFor('socket-b'));
     const applied = manager.handleMessage('socket-b', {
       type: 'room.join', requestId: 'apply-b', roomCode: room.roomCode,
-    });
+    }, principalFor('socket-b'));
     const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
 
     const hostDisconnected = manager.disconnect('socket-a');
@@ -85,7 +85,7 @@ describe('RoomManager room lifecycle', () => {
       requestId: 'reconnect-host',
       roomCode: room.roomCode,
       seatToken: room.seatTokenA,
-    });
+    }, principalFor('socket-a2'));
     expect(messageOf(hostReconnected, 'socket-a2', 'room.application.pending').application)
       .toEqual(application);
 
@@ -100,10 +100,10 @@ describe('RoomManager room lifecycle', () => {
     let now = 1_000;
     const manager = makeRoomManager({ now: () => now });
     const room = createWaitingRoom(manager);
-    manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' });
+    manager.handleMessage('socket-b', { type: 'room.lobby.subscribe' }, principalFor('socket-b'));
     const applied = manager.handleMessage('socket-b', {
       type: 'room.join', requestId: 'apply-expiring', roomCode: room.roomCode,
-    });
+    }, principalFor('socket-b'));
     const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
 
     now += 15 * 60 * 1000 + 1;
@@ -121,14 +121,14 @@ describe('RoomManager room lifecycle', () => {
     const room = createWaitingRoom(manager);
     const applicationA = messageOf(manager.handleMessage('socket-b', {
       type: 'room.join', requestId: 'apply-b', roomCode: room.roomCode,
-    }), 'socket-a', 'room.application.pending').application;
+    }, principalFor('socket-b')), 'socket-a', 'room.application.pending').application;
     const applicationC = messageOf(manager.handleMessage('socket-c', {
       type: 'room.join', requestId: 'apply-c', roomCode: room.roomCode,
-    }), 'socket-a', 'room.application.pending').application;
+    }, principalFor('socket-c')), 'socket-a', 'room.application.pending').application;
 
     const firstApproval = manager.handleMessage('socket-a', {
       type: 'room.application.decision', applicationId: applicationA.applicationId, approved: true,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(firstApproval, 'socket-b', 'room.session').localPlayerId).toBe('B');
     expect(messageOf(firstApproval, 'socket-c', 'room.application.status')).toMatchObject({
       applicationId: applicationC.applicationId,
@@ -137,7 +137,7 @@ describe('RoomManager room lifecycle', () => {
 
     const staleApproval = manager.handleMessage('socket-a', {
       type: 'room.application.decision', applicationId: applicationC.applicationId, approved: true,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(staleApproval, 'socket-a', 'error').code).toBe('APPLICATION_NOT_FOUND');
   });
 
@@ -151,11 +151,11 @@ describe('RoomManager room lifecycle', () => {
     const room = createWaitingRoom(manager);
     const applied = manager.handleMessage('socket-b', {
       type: 'room.join', requestId: 'ready-join-b', roomCode: room.roomCode,
-    });
+    }, principalFor('socket-b'));
     const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
     const approved = manager.handleMessage('socket-a', {
       type: 'room.application.decision', applicationId: application.applicationId, approved: true,
-    });
+    }, principalFor('socket-a'));
 
     expect(gameFactory).not.toHaveBeenCalled();
     expect(messageOf(approved, 'socket-b', 'room.session').snapshot).toMatchObject({
@@ -166,11 +166,11 @@ describe('RoomManager room lifecycle', () => {
     });
     expect(messageOf(manager.handleMessage('socket-a', {
       type: 'game.flip', actionId: 'flip-before-ready',
-    }), 'socket-a', 'error').code).toBe('GAME_NOT_STARTED');
+    }, principalFor('socket-a')), 'socket-a', 'error').code).toBe('GAME_NOT_STARTED');
 
     const aReady = manager.handleMessage('socket-a', {
       type: 'room.ready', actionId: 'ready-a', ready: true,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(aReady, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
       phase: 'waiting', ready: { A: true, B: false }, remainingSeconds: null,
     });
@@ -180,7 +180,7 @@ describe('RoomManager room lifecycle', () => {
 
     const bReady = manager.handleMessage('socket-b', {
       type: 'room.ready', actionId: 'ready-b', ready: true,
-    });
+    }, principalFor('socket-b'));
     expect(messageOf(bReady, 'socket-b', 'room.snapshot').snapshot).toMatchObject({
       phase: 'playing',
       ready: { A: true, B: true },
@@ -202,7 +202,7 @@ describe('RoomManager room lifecycle', () => {
 
     const ring = manager.handleMessage('socket-a', {
       type: 'game.ring', actionId: 'before-rematch-ring', tableVersion: 0,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(ring, 'socket-a', 'room.snapshot').snapshot.ringHistory).toHaveLength(1);
 
     now += 5_000;
@@ -211,7 +211,7 @@ describe('RoomManager room lifecycle', () => {
     });
     const hostReady = manager.handleMessage('socket-a', {
       type: 'room.ready', actionId: 'rematch-ready-a', ready: true,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(hostReady, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
       phase: 'finished', ready: { A: true, B: false }, remainingSeconds: 0,
     });
@@ -219,7 +219,7 @@ describe('RoomManager room lifecycle', () => {
 
     const guestReady = manager.handleMessage('socket-b', {
       type: 'room.ready', actionId: 'rematch-ready-b', ready: true,
-    });
+    }, principalFor('socket-b'));
     expect(messageOf(guestReady, 'socket-b', 'room.snapshot').snapshot).toMatchObject({
       phase: 'playing', ready: { A: true, B: true }, remainingSeconds: 5, ringHistory: [],
     });
@@ -231,14 +231,14 @@ describe('RoomManager room lifecycle', () => {
     const waiting = createWaitingRoom(manager);
     const applied = manager.handleMessage('socket-b', {
       type: 'room.join', requestId: 'disconnect-ready-join', roomCode: waiting.roomCode,
-    });
+    }, principalFor('socket-b'));
     const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
     manager.handleMessage('socket-a', {
       type: 'room.application.decision', applicationId: application.applicationId, approved: true,
-    });
+    }, principalFor('socket-a'));
     const ready = manager.handleMessage('socket-a', {
       type: 'room.ready', actionId: 'ready-before-disconnect', ready: true,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(ready, 'socket-a', 'room.snapshot').snapshot.ready.A).toBe(true);
 
     const disconnected = manager.disconnect('socket-b');
@@ -259,7 +259,7 @@ describe('RoomManager room lifecycle', () => {
     const created = rooms.handleMessage('socket-a', {
       type: 'room.create',
       requestId: 'create-a',
-    });
+    }, principalFor('socket-a'));
     const session = messageOf(created, 'socket-a', 'room.session');
 
     expect(session.localPlayerId).toBe('A');
@@ -276,19 +276,18 @@ describe('RoomManager room lifecycle', () => {
     const secondRoom = rooms.handleMessage('socket-a2', {
       type: 'room.create',
       requestId: 'create-a2',
-    });
+    }, principalFor('socket-a2'));
     expect(messageOf(secondRoom, 'socket-a2', 'room.session').roomCode).not.toBe(
       session.roomCode,
     );
   });
 
-  it('sanitizes, shares, and preserves each player profile across room sessions', () => {
+  it('shares and preserves server supplied profiles across room sessions', () => {
     const rooms = makeRoomManager();
     const created = rooms.handleMessage('socket-a', {
       type: 'room.create',
       requestId: 'profile-create',
-      profile: { nickname: ' 🍐ABCDEFGHIJKLM ', avatarId: 'not-a-preset' },
-    });
+    }, { ...principalFor('socket-a'), profile: { nickname: '🍐ABCDEFGHIJK', avatarId: 'strawberry' } });
     const aSession = messageOf(created, 'socket-a', 'room.session');
     expect(aSession.snapshot.players.A.profile).toEqual({ nickname: '🍐ABCDEFGHIJK', avatarId: 'strawberry' });
 
@@ -296,14 +295,13 @@ describe('RoomManager room lifecycle', () => {
       type: 'room.join',
       requestId: 'profile-join',
       roomCode: aSession.roomCode,
-      profile: { nickname: '   ', avatarId: 'bell' },
-    });
+    }, { ...principalFor('socket-b'), profile: { nickname: '', avatarId: 'bell' } });
     const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
     const joined = rooms.handleMessage('socket-a', {
       type: 'room.application.decision',
       applicationId: application.applicationId,
       approved: true,
-    });
+    }, principalFor('socket-a'));
     const bSession = messageOf(joined, 'socket-b', 'room.session');
     const aSnapshot = messageOf(joined, 'socket-a', 'room.snapshot').snapshot;
     expect(bSession.snapshot.players).toEqual(aSnapshot.players);
@@ -314,7 +312,7 @@ describe('RoomManager room lifecycle', () => {
       requestId: 'profile-reconnect',
       roomCode: aSession.roomCode,
       seatToken: aSession.seatToken,
-    });
+    }, principalFor('socket-a-reconnected'));
     expect(messageOf(reconnected, 'socket-a-reconnected', 'room.session').snapshot.players.A.profile)
       .toEqual({ nickname: '🍐ABCDEFGHIJK', avatarId: 'strawberry' });
   });
@@ -326,13 +324,13 @@ describe('RoomManager room lifecycle', () => {
       type: 'room.join',
       requestId: 'join-b',
       roomCode: room.roomCode,
-    });
+    }, principalFor('socket-b'));
     const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
     const events = rooms.handleMessage('socket-a', {
       type: 'room.application.decision',
       applicationId: application.applicationId,
       approved: true,
-    });
+    }, principalFor('socket-a'));
     const started = managerReadyBoth(rooms);
 
     const bSession = messageOf(events, 'socket-b', 'room.session');
@@ -357,7 +355,7 @@ describe('RoomManager room lifecycle', () => {
       type: 'room.join',
       requestId: 'join-c',
       roomCode: room.roomCode,
-    });
+    }, principalFor('socket-c'));
 
     expect(messageOf(events, 'socket-c', 'error').code).toBe('ROOM_FULL');
   });
@@ -369,13 +367,13 @@ describe('RoomManager room lifecycle', () => {
     const rejected = rooms.handleMessage('socket-b', {
       type: 'game.flip',
       actionId: 'b-flip-too-soon',
-    });
+    }, principalFor('socket-b'));
     expect(messageOf(rejected, 'socket-b', 'error').code).toBe('NOT_YOUR_TURN');
 
     const flipped = rooms.handleMessage('socket-a', {
       type: 'game.flip',
       actionId: 'a-flip-1',
-    });
+    }, principalFor('socket-a'));
 
     expect(messageOf(flipped, 'socket-a', 'action.result')).toMatchObject({
       actionId: 'a-flip-1',
@@ -402,8 +400,8 @@ describe('RoomManager room lifecycle', () => {
       }),
     );
 
-    rooms.manager.handleMessage('socket-a', { type: 'game.flip', actionId: 'flip-a' });
-    const bFlip = rooms.manager.handleMessage('socket-b', { type: 'game.flip', actionId: 'flip-b' });
+    rooms.manager.handleMessage('socket-a', { type: 'game.flip', actionId: 'flip-a' }, principalFor('socket-a'));
+    const bFlip = rooms.manager.handleMessage('socket-b', { type: 'game.flip', actionId: 'flip-b' }, principalFor('socket-b'));
     const bSnapshot = messageOf(bFlip, 'socket-b', 'room.snapshot').snapshot;
     expect(bSnapshot.lastFlipEvent).toEqual({ version: 2, player: 'B' });
 
@@ -411,7 +409,7 @@ describe('RoomManager room lifecycle', () => {
       type: 'game.ring',
       actionId: 'correct-after-flips',
       tableVersion: bSnapshot.tableVersion,
-    });
+    }, principalFor('socket-b'));
     const afterRing = messageOf(ring, 'socket-a', 'room.snapshot').snapshot;
 
     expect(messageOf(ring, 'socket-b', 'action.result')).toMatchObject({ outcome: 'correct' });
@@ -438,7 +436,7 @@ describe('RoomManager authoritative game transitions', () => {
       type: 'game.ring',
       actionId: 'b-correct-ring',
       tableVersion: 0,
-    });
+    }, principalFor('socket-b'));
     const result = messageOf(events, 'socket-b', 'action.result');
     const snapshot = messageOf(events, 'socket-a', 'room.snapshot').snapshot;
 
@@ -469,7 +467,7 @@ describe('RoomManager authoritative game transitions', () => {
       type: 'game.ring',
       actionId: 'a-wrong-ring',
       tableVersion: 0,
-    });
+    }, principalFor('socket-a'));
     const result = messageOf(events, 'socket-a', 'action.result');
     const snapshot = messageOf(events, 'socket-b', 'room.snapshot').snapshot;
     const remoteSnapshot = messageOf(events, 'socket-a', 'room.snapshot').snapshot;
@@ -508,12 +506,12 @@ describe('RoomManager authoritative game transitions', () => {
       const socket = player === 'A' ? 'socket-a' : 'socket-b';
       const ringEvents = rooms.manager.handleMessage(socket, {
         type: 'game.ring', actionId: `ring-${index}`, tableVersion: latestSnapshot?.tableVersion ?? 0,
-      });
+      }, principalFor(socket));
       expect(messageOf(ringEvents, socket, 'action.result')).toMatchObject({ accepted: true, outcome: 'wrong' });
       latestSnapshot = messageOf(ringEvents, socket, 'room.snapshot').snapshot;
       const flipEvents = rooms.manager.handleMessage(socket, {
         type: 'game.flip', actionId: `flip-${index}`,
-      });
+      }, principalFor(socket));
       latestSnapshot = messageOf(flipEvents, socket, 'room.snapshot').snapshot;
     }
 
@@ -538,13 +536,13 @@ describe('RoomManager authoritative game transitions', () => {
       type: 'game.ring',
       actionId: 'a-first-wrong-ring',
       tableVersion: 0,
-    });
+    }, principalFor('socket-a'));
 
     const blocked = rooms.manager.handleMessage('socket-a', {
       type: 'game.ring',
       actionId: 'a-blocked-ring',
       tableVersion: 0,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(blocked, 'socket-a', 'error').code).toBe('RING_COOLDOWN');
     expect(messageOf(blocked, 'socket-a', 'room.snapshot').snapshot.players.A.drawCount).toBe(1);
     expect(messageOf(blocked, 'socket-a', 'room.snapshot').snapshot.ringVersion).toBe(1);
@@ -553,7 +551,7 @@ describe('RoomManager authoritative game transitions', () => {
       type: 'game.ring',
       actionId: 'b-opponent-ring',
       tableVersion: 0,
-    });
+    }, principalFor('socket-b'));
     expect(messageOf(opponentRing, 'socket-b', 'action.result')).toMatchObject({
       accepted: true,
       outcome: 'wrong',
@@ -567,7 +565,7 @@ describe('RoomManager authoritative game transitions', () => {
     const bFlip = rooms.manager.handleMessage('socket-b', {
       type: 'game.flip',
       actionId: 'b-after-a-wrong-ring',
-    });
+    }, principalFor('socket-b'));
     expect(messageOf(bFlip, 'socket-b', 'room.snapshot').snapshot.ringBlockedUntilFlip).toEqual({
       A: false,
       B: false,
@@ -577,7 +575,7 @@ describe('RoomManager authoritative game transitions', () => {
       type: 'game.ring',
       actionId: 'a-second-wrong-ring-after-b-flips',
       tableVersion: 1,
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(aSecondWrongRing, 'socket-a', 'action.result')).toMatchObject({
       accepted: true,
       outcome: 'wrong',
@@ -600,8 +598,8 @@ describe('RoomManager authoritative game transitions', () => {
       }),
     );
 
-    rooms.manager.handleMessage('socket-a', { type: 'game.ring', actionId: 'wrong-1', tableVersion: 0 });
-    const secondRing = rooms.manager.handleMessage('socket-b', { type: 'game.ring', actionId: 'wrong-2', tableVersion: 0 });
+    rooms.manager.handleMessage('socket-a', { type: 'game.ring', actionId: 'wrong-1', tableVersion: 0 }, principalFor('socket-a'));
+    const secondRing = rooms.manager.handleMessage('socket-b', { type: 'game.ring', actionId: 'wrong-2', tableVersion: 0 }, principalFor('socket-b'));
 
     expect(messageOf(secondRing, 'socket-b', 'room.snapshot').snapshot).toMatchObject({
       tableVersion: 0,
@@ -624,13 +622,13 @@ describe('RoomManager authoritative game transitions', () => {
       type: 'game.ring',
       actionId: 'a-ring',
       tableVersion: 0,
-    });
+    }, principalFor('socket-a'));
 
     const stale = rooms.manager.handleMessage('socket-b', {
       type: 'game.ring',
       actionId: 'b-stale-ring',
       tableVersion: 0,
-    });
+    }, principalFor('socket-b'));
 
     expect(messageOf(stale, 'socket-b', 'error').code).toBe('STALE_TABLE');
     expect(messageOf(stale, 'socket-b', 'room.snapshot').snapshot.players.B.drawCount).toBe(1);
@@ -652,9 +650,9 @@ describe('RoomManager authoritative game transitions', () => {
       actionId: 'same-action-id',
       tableVersion: 0,
     };
-    rooms.manager.handleMessage('socket-a', ring);
+    rooms.manager.handleMessage('socket-a', ring, principalFor('socket-a'));
 
-    const duplicate = rooms.manager.handleMessage('socket-a', ring);
+    const duplicate = rooms.manager.handleMessage('socket-a', ring, principalFor('socket-a'));
 
     expect(messageOf(duplicate, 'socket-a', 'action.result')).toMatchObject({
       actionId: 'same-action-id',
@@ -675,11 +673,11 @@ describe('RoomManager authoritative game transitions', () => {
           }),
       }),
     );
-    rooms.manager.handleMessage('socket-a', { type: 'game.flip', actionId: 'last-card' });
+    rooms.manager.handleMessage('socket-a', { type: 'game.flip', actionId: 'last-card' }, principalFor('socket-a'));
     const finished = rooms.manager.handleMessage('socket-b', {
       type: 'game.flip',
       actionId: 'empty-flip',
-    });
+    }, principalFor('socket-b'));
 
     expect(messageOf(finished, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
       phase: 'finished',
@@ -706,19 +704,19 @@ describe('RoomManager authoritative game transitions', () => {
     );
     now += 2_000;
     expect(messageOf(rooms.manager.tick(now), 'socket-a', 'room.snapshot').snapshot.remainingSeconds).toBe(3);
-    rooms.manager.handleMessage('socket-a', { type: 'game.flip', actionId: 'last-card' });
-    rooms.manager.handleMessage('socket-b', { type: 'game.flip', actionId: 'empty-flip' });
+    rooms.manager.handleMessage('socket-a', { type: 'game.flip', actionId: 'last-card' }, principalFor('socket-a'));
+    rooms.manager.handleMessage('socket-b', { type: 'game.flip', actionId: 'empty-flip' }, principalFor('socket-b'));
 
     const guestShortcut = rooms.manager.handleMessage('socket-b', {
       type: 'game.rematch',
       actionId: 'b-rematch',
-    });
+    }, principalFor('socket-b'));
     expect(messageOf(guestShortcut, 'socket-b', 'error').code).toBe('READY_REQUIRED');
 
     const hostShortcut = rooms.manager.handleMessage('socket-a', {
       type: 'game.rematch',
       actionId: 'a-rematch',
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(hostShortcut, 'socket-a', 'error').code).toBe('READY_REQUIRED');
     expect(gameCount).toBe(1);
     expect(messageOf(hostShortcut, 'socket-a', 'room.snapshot').snapshot.phase).toBe('finished');
@@ -735,14 +733,14 @@ describe('RoomManager reconnect and expiry', () => {
     }));
     const ring = rooms.manager.handleMessage('socket-a', {
       type: 'game.ring', actionId: 'history-before-disconnect', tableVersion: 0,
-    });
+    }, principalFor('socket-a'));
     const history = messageOf(ring, 'socket-a', 'room.snapshot').snapshot.ringHistory;
     rooms.manager.disconnect('socket-a');
 
     const reconnected = rooms.manager.handleMessage('socket-a2', {
       type: 'room.reconnect', requestId: 'reconnect-with-history',
       roomCode: rooms.roomCode, seatToken: rooms.seatTokenA,
-    });
+    }, principalFor('socket-a2'));
 
     expect(messageOf(reconnected, 'socket-a2', 'room.session').snapshot.ringHistory).toEqual(history);
   });
@@ -753,7 +751,7 @@ describe('RoomManager reconnect and expiry', () => {
     const left = rooms.manager.handleMessage('socket-a', {
       type: 'room.leave',
       requestId: 'leave-a',
-    });
+    }, principalFor('socket-a'));
 
     expect(messageOf(left, 'socket-a', 'room.left')).toEqual({
       type: 'room.left',
@@ -764,7 +762,7 @@ describe('RoomManager reconnect and expiry', () => {
       message: expect.stringContaining('left'),
     });
     expect(messageOf(
-      rooms.manager.handleMessage('socket-a', { type: 'room.leave', requestId: 'leave-a' }),
+      rooms.manager.handleMessage('socket-a', { type: 'room.leave', requestId: 'leave-a' }, principalFor('socket-a')),
       'socket-a',
       'room.left',
     )).toEqual({ type: 'room.left', requestId: 'leave-a' });
@@ -773,13 +771,13 @@ describe('RoomManager reconnect and expiry', () => {
       type: 'room.join',
       requestId: 'old-room-join',
       roomCode: rooms.roomCode,
-    });
+    }, principalFor('socket-c'));
     expect(messageOf(oldRoomJoin, 'socket-c', 'error').code).toBe('ROOM_NOT_FOUND');
 
     const newRoom = rooms.manager.handleMessage('socket-b', {
       type: 'room.create',
       requestId: 'create-after-leave',
-    });
+    }, principalFor('socket-b'));
     expect(messageOf(newRoom, 'socket-b', 'room.session').localPlayerId).toBe('A');
   });
 
@@ -794,7 +792,7 @@ describe('RoomManager reconnect and expiry', () => {
     const pausedFlip = rooms.manager.handleMessage('socket-a', {
       type: 'game.flip',
       actionId: 'paused-flip',
-    });
+    }, principalFor('socket-a'));
     expect(messageOf(pausedFlip, 'socket-a', 'error').code).toBe('CONNECTION_PAUSED');
 
     const resumed = rooms.manager.handleMessage('socket-b2', {
@@ -802,7 +800,7 @@ describe('RoomManager reconnect and expiry', () => {
       requestId: 'reconnect-b',
       roomCode: rooms.roomCode,
       seatToken: rooms.seatTokenB,
-    });
+    }, principalFor('socket-b2'));
     expect(messageOf(resumed, 'socket-b2', 'room.session')).toMatchObject({
       localPlayerId: 'B',
       snapshot: { phase: 'playing' },
@@ -814,7 +812,7 @@ describe('RoomManager reconnect and expiry', () => {
     let now = 1_000;
     const manager = makeRoomManager({ now: () => now });
     const waiting = messageOf(
-      manager.handleMessage('socket-a', { type: 'room.create', requestId: 'create-clock-a' }),
+      manager.handleMessage('socket-a', { type: 'room.create', requestId: 'create-clock-a' }, principalFor('socket-a')),
       'socket-a',
       'room.session',
     );
@@ -824,13 +822,13 @@ describe('RoomManager reconnect and expiry', () => {
       type: 'room.join',
       requestId: 'join-clock-b',
       roomCode: waiting.roomCode,
-    });
+    }, principalFor('socket-b'));
     const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
     const joined = manager.handleMessage('socket-a', {
       type: 'room.application.decision',
       applicationId: application.applicationId,
       approved: true,
-    });
+    }, principalFor('socket-a'));
     const bSession = messageOf(joined, 'socket-b', 'room.session');
     const started = managerReadyBoth(manager);
     expect(messageOf(started, 'socket-b', 'room.snapshot').snapshot.remainingSeconds).toBe(300);
@@ -850,7 +848,7 @@ describe('RoomManager reconnect and expiry', () => {
       requestId: 'reconnect-clock-b',
       roomCode: waiting.roomCode,
       seatToken: bSession.seatToken,
-    });
+    }, principalFor('socket-b2'));
     expect(messageOf(resumed, 'socket-b2', 'room.session').snapshot.remainingSeconds).toBe(240);
 
     now += 30_000;
@@ -878,13 +876,13 @@ describe('RoomManager reconnect and expiry', () => {
         type: 'room.join',
         requestId: 'join-timeout-b',
         roomCode: room.roomCode,
-      });
+      }, principalFor('socket-b'));
       const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
       manager.handleMessage('socket-a', {
         type: 'room.application.decision',
         applicationId: application.applicationId,
         approved: true,
-      });
+      }, principalFor('socket-a'));
       managerReadyBoth(manager);
 
       now += 5_000;
@@ -899,7 +897,7 @@ describe('RoomManager reconnect and expiry', () => {
       const afterTimeout = manager.handleMessage('socket-a', {
         type: 'game.flip',
         actionId: 'flip-after-timeout',
-      });
+      }, principalFor('socket-a'));
       expect(messageOf(afterTimeout, 'socket-a', 'error').code).toBe('GAME_FINISHED');
     },
   );
@@ -919,19 +917,19 @@ describe('RoomManager reconnect and expiry', () => {
       type: 'room.join',
       requestId: 'join-cached-timeout-b',
       roomCode: room.roomCode,
-    });
+    }, principalFor('socket-b'));
     const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
     manager.handleMessage('socket-a', {
       type: 'room.application.decision',
       applicationId: application.applicationId,
       approved: true,
-    });
+    }, principalFor('socket-a'));
     managerReadyBoth(manager);
     const action: ClientMessage = { type: 'game.flip', actionId: 'cached-before-timeout' };
-    expect(messageOf(manager.handleMessage('socket-a', action), 'socket-a', 'action.result').accepted).toBe(true);
+    expect(messageOf(manager.handleMessage('socket-a', action, principalFor('socket-a')), 'socket-a', 'action.result').accepted).toBe(true);
 
     now += 5_000;
-    const retry = manager.handleMessage('socket-a', action);
+    const retry = manager.handleMessage('socket-a', action, principalFor('socket-a'));
 
     expect(messageOf(retry, 'socket-a', 'action.result').accepted).toBe(true);
     expect(messageOf(retry, 'socket-a', 'room.snapshot').snapshot).toMatchObject({
@@ -951,7 +949,7 @@ describe('RoomManager reconnect and expiry', () => {
       requestId: 'bad-reconnect',
       roomCode: room.roomCode,
       seatToken: 'wrong-token',
-    });
+    }, principalFor('socket-b'));
     expect(messageOf(badToken, 'socket-b', 'error').code).toBe('INVALID_SEAT_TOKEN');
 
     now += 15 * 60 * 1000 + 1;
@@ -960,7 +958,7 @@ describe('RoomManager reconnect and expiry', () => {
       type: 'room.join',
       requestId: 'expired-join',
       roomCode: room.roomCode,
-    });
+    }, principalFor('socket-c'));
     expect(messageOf(join, 'socket-c', 'error').code).toBe('ROOM_NOT_FOUND');
   });
 });
@@ -988,7 +986,7 @@ function createWaitingRoom(manager: RoomManager) {
   const events = manager.handleMessage('socket-a', {
     type: 'room.create',
     requestId: 'create-a',
-  });
+  }, principalFor('socket-a'));
   const session = messageOf(events, 'socket-a', 'room.session');
   return { roomCode: session.roomCode, seatTokenA: session.seatToken };
 }
@@ -999,13 +997,13 @@ function joinBothPlayers(manager: RoomManager) {
     type: 'room.join',
     requestId: 'join-b',
     roomCode: waiting.roomCode,
-  });
+  }, principalFor('socket-b'));
   const application = messageOf(applied, 'socket-a', 'room.application.pending').application;
   const events = manager.handleMessage('socket-a', {
     type: 'room.application.decision',
     applicationId: application.applicationId,
     approved: true,
-  });
+  }, principalFor('socket-a'));
   const session = messageOf(events, 'socket-b', 'room.session');
   const started = managerReadyBoth(manager, waiting.roomCode);
   return {
@@ -1018,8 +1016,8 @@ function joinBothPlayers(manager: RoomManager) {
 }
 
 function managerReadyBoth(manager: RoomManager, key = 'match') {
-  manager.handleMessage('socket-a', { type: 'room.ready', actionId: `ready-a-${key}`, ready: true });
-  return manager.handleMessage('socket-b', { type: 'room.ready', actionId: `ready-b-${key}`, ready: true });
+  manager.handleMessage('socket-a', { type: 'room.ready', actionId: `ready-a-${key}`, ready: true }, principalFor('socket-a'));
+  return manager.handleMessage('socket-b', { type: 'room.ready', actionId: `ready-b-${key}`, ready: true }, principalFor('socket-b'));
 }
 
 function messageOf<T extends ServerMessage['type']>(
@@ -1048,4 +1046,8 @@ function customGame(players: CustomPlayers): GameState {
 
 function card(id: string, symbols: readonly GameElement[]): CardDefinition {
   return { id, symbols };
+}
+
+function principalFor(connectionId: string): AuthPrincipal {
+  return { userId: connectionId.replace(/(socket-[a-z]).*/, '$1'), username: null, profile: { nickname: '', avatarId: 'strawberry' } };
 }

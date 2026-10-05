@@ -8,6 +8,7 @@ import type { ServerMessage } from '../../src/network/protocol';
 import { RoomManager } from './roomManager';
 import type { RoomManagerEvent } from './roomManager';
 import type { AuthService } from './auth/service';
+import type { AuthPrincipal } from './auth/types';
 import { handleAuthHttpRequest } from './auth/httpApi';
 
 export type CreateWebSocketServerOptions = Readonly<{
@@ -27,10 +28,17 @@ export type RunningRoomServer = Readonly<{
   close: () => Promise<void>;
 }>;
 
+type Connection = {
+  socket: WebSocket;
+  principal: AuthPrincipal | null;
+  authTimer: ReturnType<typeof setTimeout>;
+  authenticating: boolean;
+};
+
 export async function createWebSocketServer(
   options: CreateWebSocketServerOptions,
 ): Promise<RunningRoomServer> {
-  const connections = new Map<string, WebSocket>();
+  const connections = new Map<string, Connection>();
   const roomManager = options.roomManager;
   const httpServer = createServer((request, response) => {
     void handleAuthHttpRequest(request, response, options.authService, {
@@ -53,7 +61,7 @@ export async function createWebSocketServer(
 
   const sendEvents = (events: readonly RoomManagerEvent[]) => {
     for (const event of events) {
-      const socket = connections.get(event.connectionId);
+      const socket = connections.get(event.connectionId)?.socket;
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify(event.message));
       }
@@ -62,10 +70,36 @@ export async function createWebSocketServer(
 
   webSocketServer.on('connection', socket => {
     const connectionId = randomUUID();
-    connections.set(connectionId, socket);
+    const connection: Connection = {
+      socket, principal: null, authenticating: false,
+      authTimer: setTimeout(() => socket.close(4401, 'Authentication required'), 5_000),
+    };
+    connections.set(connectionId, connection);
 
-    socket.on('message', raw => {
+    socket.on('message', async raw => {
+      if (socket.readyState !== WebSocket.OPEN) return;
       const message = decodeClientMessage(raw.toString());
+      if (!connection.principal) {
+        if (message?.type !== 'session.authenticate' || connection.authenticating) {
+          socket.close(4401, 'Authentication required');
+          return;
+        }
+        connection.authenticating = true;
+        try {
+          const principal = await options.authService?.authenticateToken(message.token);
+          if (connections.get(connectionId) !== connection || socket.readyState !== WebSocket.OPEN) return;
+          if (!principal) {
+            socket.close(4401, 'Authentication required');
+            return;
+          }
+          connection.principal = principal;
+          clearTimeout(connection.authTimer);
+          sendMessage(socket, { type: 'session.authenticated', userId: principal.userId });
+        } catch {
+          socket.close(4401, 'Authentication required');
+        }
+        return;
+      }
       if (!message) {
         sendMessage(socket, {
           type: 'error',
@@ -74,9 +108,13 @@ export async function createWebSocketServer(
         });
         return;
       }
+      if (message.type === 'session.authenticate') {
+        socket.close(4401, 'Already authenticated');
+        return;
+      }
 
       try {
-        const events = roomManager.handleMessage(connectionId, message);
+        const events = roomManager.handleMessage(connectionId, message, connection.principal);
         sendEvents(events);
         const invalidSeatToken = message.type === 'room.reconnect' && events.some(event =>
           event.connectionId === connectionId &&
@@ -96,6 +134,7 @@ export async function createWebSocketServer(
     });
 
     socket.on('close', () => {
+      clearTimeout(connection.authTimer);
       connections.delete(connectionId);
       sendEvents(roomManager.disconnect(connectionId));
     });
@@ -157,11 +196,14 @@ function listen(server: HttpServer, port: number, host: string): Promise<void> {
 async function closeServers(
   httpServer: HttpServer,
   webSocketServer: WebSocketServer,
-  connections: Map<string, WebSocket>,
+  connections: Map<string, Connection>,
   ticker?: ReturnType<typeof setInterval>,
 ): Promise<void> {
   if (ticker) clearInterval(ticker);
-  for (const socket of connections.values()) socket.terminate();
+  for (const connection of connections.values()) {
+    clearTimeout(connection.authTimer);
+    connection.socket.terminate();
+  }
   connections.clear();
 
   const closeWebSockets = new Promise<void>(resolve => {

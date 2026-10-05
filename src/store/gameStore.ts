@@ -19,12 +19,12 @@ import type { SinglePlayerDifficulty } from '../game/singlePlayerController';
 export type GameSessionMode = 'none' | 'online' | 'single-player';
 
 export interface GameClientPort {
-  createRoom(profile?: PlayerProfileInput): string;
-  joinRoom(code: string, profile?: PlayerProfileInput): string;
+  createRoom(): string;
+  joinRoom(code: string): string;
   subscribeLobby(): void;
   refreshLobby(): void;
   unsubscribeLobby(): void;
-  applyToRoom(code: string, profile?: PlayerProfileInput): string;
+  applyToRoom(code: string): string;
   decideApplication(applicationId: string, approved: boolean): void;
   cancelApplication(applicationId: string): void;
   setReady(ready: boolean): string;
@@ -35,7 +35,7 @@ export interface GameClientPort {
   disconnect(): void;
 }
 
-export type GameClientFactory = (handlers: GameClientHandlers) => GameClientPort;
+export type GameClientFactory = (handlers: GameClientHandlers, authToken: string) => GameClientPort;
 
 type GameStore = {
   sessionMode: GameSessionMode;
@@ -54,12 +54,12 @@ type GameStore = {
   localApplicationStatus: Extract<ServerMessage, { type: 'room.application.status' }> | null;
   client: GameClientPort | null;
   startSinglePlayer: (profile: PlayerProfileInput, difficulty: SinglePlayerDifficulty) => void;
-  createRoom: (profile?: PlayerProfileInput) => void;
-  joinRoom: (code: string, profile?: PlayerProfileInput) => void;
+  createRoom: () => string;
+  joinRoom: (code: string) => string;
   openLobby: () => void;
   refreshLobby: () => void;
   closeLobby: () => void;
-  applyToRoom: (code: string, profile?: PlayerProfileInput) => void;
+  applyToRoom: (code: string) => string;
   decideApplication: (applicationId: string, approved: boolean) => void;
   cancelApplication: () => void;
   setReady: (ready: boolean) => void;
@@ -71,9 +71,24 @@ type GameStore = {
   applyServerMessage: (message: ServerMessage) => void;
 };
 
-export function createGameStore(clientFactory: GameClientFactory = createDefaultClient) {
+export function createGameStore(
+  clientFactory: GameClientFactory,
+  authTokenProvider: () => string | null,
+) {
   return create<GameStore>()((set, get) => {
     let singlePlayerController: SinglePlayerController | null = null;
+    let clientToken: string | null = null;
+
+    const clearAuthentication = (error: GameClientError) => {
+      const client = get().client;
+      clientToken = null;
+      set({ client: null, sessionMode: 'none', connectionStatus: 'error', roomSnapshot: null,
+        roomCode: null, localPlayerId: null, leavingRoom: false, lastActionResult: null,
+        openRooms: [], pendingApplications: [], applyingRoomCode: null,
+        localApplicationId: null, localApplicationStatus: null, error });
+      client?.disconnect();
+      set({ connectionStatus: 'error' });
+    };
 
     const applyServerMessage = (message: ServerMessage) => {
       switch (message.type) {
@@ -132,6 +147,10 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
           return;
         case 'error':
           if (get().sessionMode === 'single-player') return;
+          if (message.code === 'AUTH_REQUIRED') {
+            clearAuthentication(message);
+            return;
+          }
           set(state => ({
             error: message,
             ...(message.requestId && state.applyingRoomCode ? { applyingRoomCode: null } : {}),
@@ -139,9 +158,15 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
       }
     };
 
-    const getClient = (): GameClientPort => {
+    const getClient = (): GameClientPort | null => {
+      const authToken = authTokenProvider();
+      if (!authToken?.trim()) {
+        clearAuthentication({ code: 'AUTH_REQUIRED', message: 'Sign in before connecting to online rooms.' });
+        return null;
+      }
       const current = get().client;
-      if (current) return current;
+      if (current && clientToken === authToken) return current;
+      if (current) clearAuthentication({ code: 'AUTH_REQUIRED', message: 'The account session changed.' });
 
       const handlers: GameClientHandlers = {
         onStatusChange: connectionStatus => set({ connectionStatus }),
@@ -176,6 +201,10 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
         },
         onError: error => {
           if (get().sessionMode === 'single-player') return;
+          if (error.code === 'AUTH_REQUIRED') {
+            clearAuthentication(error);
+            return;
+          }
           set({
             ...(error.code === 'ROOM_NOT_FOUND' || error.code === 'INVALID_SEAT_TOKEN'
               ? { sessionMode: 'none' as const, roomSnapshot: null, roomCode: null, localPlayerId: null, leavingRoom: false }
@@ -184,9 +213,19 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
           });
         },
       };
-      const client = clientFactory(handlers);
+      const client = clientFactory(handlers, authToken);
+      clientToken = authToken;
       set({ client });
       return client;
+    };
+
+    const getActiveClient = (): GameClientPort | null => {
+      const authToken = authTokenProvider();
+      if (!authToken?.trim() || (get().client && clientToken !== authToken)) {
+        clearAuthentication({ code: 'AUTH_REQUIRED', message: 'Sign in before connecting to online rooms.' });
+        return null;
+      }
+      return get().client;
     };
 
     return {
@@ -235,43 +274,50 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
         }));
         controller.start(profile, difficulty);
       },
-      createRoom: profile => {
-        if (get().leavingRoom) return;
+      createRoom: () => {
+        if (get().leavingRoom) return '';
         singlePlayerController?.stop();
         singlePlayerController = null;
         set({ sessionMode: 'none', roomSnapshot: null, roomCode: null, localPlayerId: null, error: null, lastActionResult: null });
-        getClient().createRoom(profile);
+        return getClient()?.createRoom() ?? '';
       },
-      joinRoom: (code, profile) => {
-        if (get().leavingRoom) return;
+      joinRoom: code => {
+        if (get().leavingRoom) return '';
         singlePlayerController?.stop();
         singlePlayerController = null;
         set({ sessionMode: 'none', roomSnapshot: null, roomCode: null, localPlayerId: null, lastActionResult: null });
-        get().applyToRoom(code, profile);
+        return get().applyToRoom(code);
       },
-      openLobby: () => getClient().subscribeLobby(),
-      refreshLobby: () => getClient().refreshLobby(),
-      closeLobby: () => getClient().unsubscribeLobby(),
-      applyToRoom: (code, profile) => {
-        if (get().leavingRoom) return;
+      openLobby: () => { getClient()?.subscribeLobby(); },
+      refreshLobby: () => { getClient()?.refreshLobby(); },
+      closeLobby: () => {
+        if (get().client) getActiveClient()?.unsubscribeLobby();
+      },
+      applyToRoom: code => {
+        if (get().leavingRoom) return '';
+        const client = getClient();
+        if (!client) return '';
         set({
           applyingRoomCode: code.trim().toUpperCase(),
           localApplicationId: null,
           localApplicationStatus: null,
           error: null,
         });
-        getClient().applyToRoom(code, profile);
+        return client.applyToRoom(code);
       },
       decideApplication: (applicationId, approved) => {
         if (get().leavingRoom) return;
-        getClient().decideApplication(applicationId, approved);
+        const client = getClient();
+        if (!client) return;
+        client.decideApplication(applicationId, approved);
         set(state => ({
           pendingApplications: state.pendingApplications.filter(item => item.applicationId !== applicationId),
           error: null,
         }));
       },
       cancelApplication: () => {
-        const { client, localApplicationId } = get();
+        const client = getActiveClient();
+        const { localApplicationId } = get();
         if (localApplicationId) client?.cancelApplication(localApplicationId);
       },
       setReady: ready => {
@@ -283,7 +329,7 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
           return;
         }
         set({ error: null });
-        get().client?.setReady(ready);
+        getActiveClient()?.setReady(ready);
       },
       flip: () => {
         if (get().sessionMode === 'single-player') {
@@ -291,15 +337,16 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
           return;
         }
         set({ error: null });
-        get().client?.flip();
+        getActiveClient()?.flip();
       },
       ring: () => {
         if (get().sessionMode === 'single-player') {
           singlePlayerController?.ring();
           return;
         }
-        const { client, roomSnapshot } = get();
+        const { roomSnapshot } = get();
         set({ error: null });
+        const client = getActiveClient();
         if (roomSnapshot) client?.ring(roomSnapshot.tableVersion);
       },
       rematch: () => {
@@ -311,7 +358,7 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
           return;
         }
         set({ error: null });
-        get().client?.rematch();
+        getActiveClient()?.rematch();
       },
       leaveRoom: () => {
         if (get().leavingRoom) return;
@@ -329,7 +376,9 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
           });
           return;
         }
-        get().client?.leaveRoom();
+        const client = getActiveClient();
+        if (!client) return;
+        client.leaveRoom();
         set({
           sessionMode: 'none',
           leavingRoom: true,
@@ -346,12 +395,13 @@ export function createGameStore(clientFactory: GameClientFactory = createDefault
   });
 }
 
-function createDefaultClient(handlers: GameClientHandlers): GameClient {
+function createDefaultClient(handlers: GameClientHandlers, authToken: string): GameClient {
   const configuredUrl = process.env.EXPO_PUBLIC_GAME_SERVER_URL?.trim();
   return new GameClient({
     url: configuredUrl || 'ws://localhost:8787',
     handlers,
+    authToken,
   });
 }
 
-export const useGameStore = createGameStore();
+export const useGameStore = createGameStore(createDefaultClient, () => null);

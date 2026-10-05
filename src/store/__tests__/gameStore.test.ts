@@ -1,6 +1,5 @@
 import type { RoomSnapshot, ServerMessage } from '../../network/protocol';
 import type { GameClientHandlers } from '../../network/GameClient';
-import type { PlayerProfileInput } from '../../profile';
 import { createGameStore } from '../gameStore';
 import type { GameClientPort } from '../gameStore';
 
@@ -14,8 +13,8 @@ describe('friend room game store', () => {
     fixture.handlers.onLobbySnapshot?.(rooms);
     expect(fixture.store.getState().openRooms).toEqual(rooms);
 
-    fixture.store.getState().applyToRoom('ABCD23', { nickname: 'Kai', avatarId: 'banana' });
-    expect(fixture.client.applyCalls).toEqual([{ roomCode: 'ABCD23', profile: { nickname: 'Kai', avatarId: 'banana' } }]);
+    fixture.store.getState().applyToRoom('ABCD23');
+    expect(fixture.client.applyCalls).toEqual([{ roomCode: 'ABCD23' }]);
     expect(fixture.store.getState().applyingRoomCode).toBe('ABCD23');
     fixture.handlers.onApplicationStatus?.({
       type: 'room.application.status',
@@ -72,16 +71,14 @@ describe('friend room game store', () => {
     });
   });
 
-  it('forwards the saved profile when creating or joining a room', () => {
+  it('returns transport request IDs when creating or joining a room', () => {
     const fixture = makeStore();
-    const creatorProfile = { nickname: 'Mira', avatarId: 'peach' };
-    const joinerProfile = { nickname: 'Kai', avatarId: 'banana' };
 
-    fixture.store.getState().createRoom(creatorProfile);
-    fixture.store.getState().joinRoom('ABCD23', joinerProfile);
+    expect(fixture.store.getState().createRoom()).toBe('request-create');
+    expect(fixture.store.getState().joinRoom('ABCD23')).toBe('request-apply');
 
-    expect(fixture.client.createRoomProfiles).toEqual([creatorProfile]);
-    expect(fixture.client.applyCalls).toEqual([{ roomCode: 'ABCD23', profile: joinerProfile }]);
+    expect(fixture.client.createRoomCalls).toBe(1);
+    expect(fixture.client.applyCalls).toEqual([{ roomCode: 'ABCD23' }]);
     expect(fixture.store.getState().applyingRoomCode).toBe('ABCD23');
   });
 
@@ -140,7 +137,7 @@ describe('friend room game store', () => {
     fixture.store.getState().createRoom();
     fixture.store.getState().joinRoom('XYZ234');
     expect(fixture.client.createRoomCalls).toBe(0);
-    expect(fixture.client.applyCalls).toEqual([{ roomCode: 'BAD123', profile: undefined }]);
+    expect(fixture.client.applyCalls).toEqual([{ roomCode: 'BAD123' }]);
     fixture.handlers.onRoomLeft?.();
     expect(fixture.store.getState().leavingRoom).toBe(false);
   });
@@ -196,7 +193,7 @@ function makeStore() {
     fixture.handlers = handlers;
     fixture.client = new FakeGameClient();
     return fixture.client;
-  });
+  }, () => 'test-token');
   return {
     store,
     get handlers() { return fixture.handlers; },
@@ -206,31 +203,27 @@ function makeStore() {
 
 class FakeGameClient implements GameClientPort {
   createRoomCalls = 0;
-  createRoomProfiles: (PlayerProfileInput | undefined)[] = [];
   joinRoomCalls: string[] = [];
-  joinRoomProfiles: { code: string; profile: PlayerProfileInput | undefined }[] = [];
   flipCalls = 0;
   ringCalls: number[] = [];
   rematchCalls = 0;
   subscribeLobbyCalls = 0;
   refreshLobbyCalls = 0;
   unsubscribeLobbyCalls = 0;
-  applyCalls: { roomCode: string; profile: PlayerProfileInput | undefined }[] = [];
+  applyCalls: { roomCode: string }[] = [];
   decisionCalls: { applicationId: string; approved: boolean }[] = [];
   cancelApplicationCalls: string[] = [];
   readyCalls: boolean[] = [];
   disconnectCalls = 0;
   leaveRoomCalls = 0;
 
-  createRoom(profile?: PlayerProfileInput): string {
+  createRoom(): string {
     this.createRoomCalls += 1;
-    this.createRoomProfiles.push(profile);
     return 'request-create';
   }
 
-  joinRoom(code: string, profile?: PlayerProfileInput): string {
+  joinRoom(code: string): string {
     this.joinRoomCalls.push(code);
-    this.joinRoomProfiles.push({ code, profile });
     return 'request-join';
   }
 
@@ -261,8 +254,8 @@ class FakeGameClient implements GameClientPort {
     this.unsubscribeLobbyCalls += 1;
   }
 
-  applyToRoom(roomCode: string, profile?: PlayerProfileInput): string {
-    this.applyCalls.push({ roomCode, profile });
+  applyToRoom(roomCode: string): string {
+    this.applyCalls.push({ roomCode });
     return 'request-apply';
   }
 

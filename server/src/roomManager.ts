@@ -13,7 +13,8 @@ import type {
 } from '../../src/network/protocol';
 import type { GameState, PlayerId } from '../../src/game/types';
 import { DEFAULT_PLAYER_PROFILE, sanitizePlayerProfile } from '../../src/profile';
-import type { PlayerProfile, PlayerProfileInput } from '../../src/profile';
+import type { PlayerProfile } from '../../src/profile';
+import type { AuthPrincipal } from './auth/types';
 
 const ROOM_CODE_CHARACTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_CODE_LENGTH = 6;
@@ -23,6 +24,7 @@ export const MATCH_DURATION_MS = 5 * 60 * 1000;
 const REMEMBERED_ACTION_LIMIT = 128;
 
 type RoomSeat = {
+  userId: string;
   playerId: PlayerId;
   token: string;
   connectionId: string | null;
@@ -50,6 +52,7 @@ type RoomRecord = {
 };
 
 type PendingApplication = JoinApplication & {
+  userId: string;
   requestId: string;
   connectionId: string;
 };
@@ -88,16 +91,19 @@ export class RoomManager {
     this.matchDurationMs = options.matchDurationMs ?? MATCH_DURATION_MS;
   }
 
-  handleMessage(connectionId: string, message: ClientMessage): RoomManagerEvent[] {
+  handleMessage(connectionId: string, message: ClientMessage, principal: AuthPrincipal): RoomManagerEvent[] {
     const maintenance = this.expireRooms(this.now());
     let events: RoomManagerEvent[];
 
     switch (message.type) {
+      case 'session.authenticate':
+        events = [];
+        break;
       case 'room.create':
-        events = this.createRoom(connectionId, message.requestId, message.profile);
+        events = this.createRoom(connectionId, message.requestId, principal);
         break;
       case 'room.join':
-        events = this.joinRoom(connectionId, message.requestId, message.roomCode, message.profile);
+        events = this.joinRoom(connectionId, message.requestId, message.roomCode, principal);
         break;
       case 'room.lobby.subscribe':
         this.lobbySubscribers.add(connectionId);
@@ -125,6 +131,7 @@ export class RoomManager {
           message.requestId,
           message.roomCode,
           message.seatToken,
+          principal,
         );
         break;
       case 'room.leave':
@@ -217,7 +224,7 @@ export class RoomManager {
   private createRoom(
     connectionId: string,
     requestId: string,
-    profile?: PlayerProfileInput,
+    principal: AuthPrincipal,
   ): RoomManagerEvent[] {
     if (this.connectionToSeat.has(connectionId)) {
       return [this.errorEvent(connectionId, 'ALREADY_IN_ROOM', 'This connection already has a room seat.', requestId)];
@@ -237,10 +244,11 @@ export class RoomManager {
       phase: 'waiting',
       seats: {
         A: {
+          userId: principal.userId,
           playerId: 'A',
           token,
           connectionId,
-          profile: sanitizePlayerProfile(profile ?? DEFAULT_PLAYER_PROFILE, 'A'),
+          profile: { ...principal.profile },
         },
       },
       game: null,
@@ -277,7 +285,7 @@ export class RoomManager {
     connectionId: string,
     requestId: string,
     roomCode: string,
-    profile?: PlayerProfileInput,
+    principal: AuthPrincipal,
   ): RoomManagerEvent[] {
     if (this.connectionToSeat.has(connectionId)) {
       return [this.errorEvent(connectionId, 'ALREADY_IN_ROOM', 'This connection already has a room seat.', requestId)];
@@ -286,6 +294,9 @@ export class RoomManager {
     const room = this.rooms.get(roomCode);
     if (!room) {
       return [this.errorEvent(connectionId, 'ROOM_NOT_FOUND', 'Room code was not found or has expired.', requestId)];
+    }
+    if (Object.values(room.seats).some(seat => seat?.userId === principal.userId)) {
+      return [this.errorEvent(connectionId, 'ALREADY_IN_ROOM', 'This account already has a seat in this room.', requestId)];
     }
     if (room.seats.B || room.phase !== 'waiting') {
       return [this.errorEvent(connectionId, 'ROOM_FULL', 'This room already has two players.', requestId)];
@@ -302,11 +313,12 @@ export class RoomManager {
     }
 
     const application: PendingApplication = {
+      userId: principal.userId,
       applicationId: randomUUID(),
       requestId,
       roomCode,
       connectionId,
-      profile: sanitizePlayerProfile(profile ?? DEFAULT_PLAYER_PROFILE, 'B'),
+      profile: { ...principal.profile },
     };
     this.applications.set(application.applicationId, application);
     room.lastActivityAt = this.now();
@@ -362,6 +374,7 @@ export class RoomManager {
 
     const token = this.tokenFactory();
     room.seats.B = {
+      userId: application.userId,
       playerId: 'B',
       token,
       connectionId: application.connectionId,
@@ -415,6 +428,7 @@ export class RoomManager {
     requestId: string,
     roomCode: string,
     seatToken: string,
+    principal: AuthPrincipal,
   ): RoomManagerEvent[] {
     if (this.connectionToSeat.has(connectionId)) {
       return [this.errorEvent(connectionId, 'ALREADY_IN_ROOM', 'This connection already has a room seat.', requestId)];
@@ -432,7 +446,7 @@ export class RoomManager {
     }
 
     const seat = room.seats[playerId];
-    if (!seat) {
+    if (!seat || seat.userId !== principal.userId) {
       return [this.errorEvent(connectionId, 'INVALID_SEAT_TOKEN', 'This seat token is not valid for the room.', requestId)];
     }
 

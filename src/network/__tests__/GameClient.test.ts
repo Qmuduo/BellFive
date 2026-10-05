@@ -8,6 +8,7 @@ describe('GameClient room commands', () => {
     client.subscribeLobby();
     expect(sockets).toHaveLength(1);
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     expect(sockets[0].sentMessages()).toEqual([{ type: 'room.lobby.subscribe' }]);
 
     client.refreshLobby();
@@ -32,15 +33,16 @@ describe('GameClient room commands', () => {
     });
     client.subscribeLobby();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive({ type: 'room.lobby.snapshot', rooms: [
       { roomCode: 'ABCD23', hostProfile: { nickname: 'Mira', avatarId: 'peach' } },
     ] });
 
-    client.applyToRoom('ABCD23', { nickname: 'Kai', avatarId: 'banana' });
+    client.applyToRoom('ABCD23');
     expect(sockets).toHaveLength(1);
     const joinMessage = sockets[0].sentMessages().slice(-1)[0];
     expect(joinMessage).toMatchObject({
-      type: 'room.join', roomCode: 'ABCD23', profile: { nickname: 'Kai' },
+      type: 'room.join', roomCode: 'ABCD23',
     });
     sockets[0].receive({
       type: 'room.application.status',
@@ -55,7 +57,7 @@ describe('GameClient room commands', () => {
     expect(client.getStatus()).toBe('connected');
     expect(sockets).toHaveLength(1);
 
-    client.applyToRoom('ABCD23', { nickname: 'Kai', avatarId: 'banana' });
+    client.applyToRoom('ABCD23');
     sockets[0].receive({
       type: 'room.application.status',
       applicationId: 'app-2', status: 'pending', message: 'Waiting for approval.',
@@ -76,6 +78,7 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient({ reconnectDelayMs: 20 });
     client.subscribeLobby();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     client.applyToRoom('ABCD23');
     sockets[0].receive({
       type: 'room.application.status',
@@ -90,6 +93,7 @@ describe('GameClient room commands', () => {
 
     expect(sockets).toHaveLength(2);
     sockets[1].open();
+    sockets[1].receive({ type: 'session.authenticated', userId: 'user-a' });
     expect(sockets[1].sentMessages()).toEqual([{ type: 'room.lobby.subscribe' }]);
     expect(client.getStatus()).toBe('connected');
     client.disconnect();
@@ -100,6 +104,7 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient();
     client.subscribeLobby();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
 
     client.decideApplication('app-1', true);
     client.cancelApplication('app-2');
@@ -116,17 +121,18 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient();
     client.subscribeLobby();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     client.applyToRoom('ABCD23');
     sockets[0].receive({
       type: 'room.application.status',
       applicationId: 'app-local', status: 'pending', message: 'Waiting for approval.',
     });
 
-    client.createRoom({ nickname: 'Kai', avatarId: 'banana' });
+    client.createRoom();
 
     expect(sockets[0].sentMessages().slice(-2)).toEqual([
       { type: 'room.application.cancel', applicationId: 'app-local' },
-      expect.objectContaining({ type: 'room.create', profile: { nickname: 'Kai', avatarId: 'banana' } }),
+      expect.objectContaining({ type: 'room.create' }),
     ]);
     sockets[0].receive(makeSession('A'));
     expect(sockets[0].sentMessages().slice(-1)).toEqual([{ type: 'room.lobby.unsubscribe' }]);
@@ -136,6 +142,7 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient();
     client.subscribeLobby();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     expect(client.getStatus()).toBe('connected');
 
     client.createRoom();
@@ -145,23 +152,23 @@ describe('GameClient room commands', () => {
     expect(client.getStatus()).toBe('connected');
   });
 
-  it('sends create and join requests after the socket opens', () => {
+  it('sends create and join requests after authentication', () => {
     const { client, sockets } = createClient();
-    const profileA = { nickname: 'Mira', avatarId: 'peach' };
-    const profileB = { nickname: 'Kai', avatarId: 'banana' };
-    const createRequestId = client.createRoom(profileA);
+    const createRequestId = client.createRoom();
     expect(client.getStatus()).toBe('connecting');
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     expect(sockets[0].sentMessages()).toEqual([
-      { type: 'room.create', requestId: createRequestId, profile: profileA },
+      { type: 'room.create', requestId: createRequestId },
     ]);
 
     client.disconnect();
-    client.joinRoom(' abcd23 ', profileB);
+    client.joinRoom(' abcd23 ');
     sockets[1].open();
+    sockets[1].receive({ type: 'session.authenticated', userId: 'user-a' });
     expect(sockets[1].sentMessages()).toMatchObject([
       { type: 'room.lobby.subscribe' },
-      { type: 'room.join', roomCode: 'ABCD23', profile: profileB },
+      { type: 'room.join', roomCode: 'ABCD23' },
     ]);
   });
 
@@ -169,6 +176,7 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient();
     client.createRoom();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive(makeSession('A'));
 
     const flipId = client.flip();
@@ -198,6 +206,7 @@ describe('GameClient room commands', () => {
 
     client.createRoom();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive(makeSession('A'));
     sockets[0].receive({
       type: 'room.snapshot',
@@ -223,6 +232,7 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient({ reconnectDelayMs: 100 });
     client.createRoom();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive(makeSession('A'));
     const actionId = client.flip();
 
@@ -232,6 +242,7 @@ describe('GameClient room commands', () => {
 
     expect(sockets).toHaveLength(2);
     sockets[1].open();
+    sockets[1].receive({ type: 'session.authenticated', userId: 'user-a' });
     expect(sockets[1].sentMessages()).toEqual([
       expect.objectContaining({
         type: 'room.reconnect',
@@ -251,6 +262,7 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient({ reconnectDelayMs: 100 });
     client.createRoom();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive(makeSession('B'));
     client.disconnect();
     jest.advanceTimersByTime(1_000);
@@ -265,10 +277,12 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient({ reconnectDelayMs: 100 });
     client.createRoom();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive(makeSession('A'));
     sockets[0].closeFromServer();
     jest.advanceTimersByTime(100);
     sockets[1].open();
+    sockets[1].receive({ type: 'session.authenticated', userId: 'user-a' });
     const reconnect = sockets[1].sentMessages()[0] as { requestId: string };
     sockets[1].receive({
       type: 'error',
@@ -300,6 +314,7 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient({ handlers: { onRoomLeft: () => completed.push('left') } });
     client.createRoom();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive(makeSession('A'));
 
     const requestId = client.leaveRoom();
@@ -321,6 +336,7 @@ describe('GameClient room commands', () => {
     });
     client.createRoom();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive(makeSession('B'));
 
     sockets[0].receive({
@@ -344,12 +360,14 @@ describe('GameClient room commands', () => {
     });
     client.createRoom();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive(makeSession('A'));
     sockets[0].closeFromServer();
 
     client.leaveRoom();
     expect(sockets).toHaveLength(2);
     sockets[1].open();
+    sockets[1].receive({ type: 'session.authenticated', userId: 'user-a' });
     expect(sockets[1].sentMessages()[0]).toMatchObject({ type: 'room.reconnect' });
     sockets[1].receive(makeSession('A'));
 
@@ -366,6 +384,7 @@ describe('GameClient room commands', () => {
     const { client, sockets } = createClient();
     client.createRoom();
     sockets[0].open();
+    sockets[0].receive({ type: 'session.authenticated', userId: 'user-a' });
     sockets[0].receive(makeSession('A'));
     const requestId = client.leaveRoom();
     if (!requestId) throw new Error('Expected an active room leave request.');
@@ -389,6 +408,7 @@ function createClient(options: { reconnectDelayMs?: number; handlers?: GameClien
   const sockets: FakeSocket[] = [];
   const client = new GameClient({
     url: 'ws://localhost:8787',
+    authToken: 'test-token',
     reconnectDelayMs: options.reconnectDelayMs ?? 10,
     handlers: options.handlers,
     webSocketFactory: () => {
@@ -475,7 +495,7 @@ class FakeSocket implements SocketLike {
   }
 
   sentMessages(): unknown[] {
-    return this.messages.map(message => JSON.parse(message) as unknown);
+    return this.messages.map(message => JSON.parse(message) as { type: string }).filter(message => message.type !== 'session.authenticate');
   }
 
   get closed(): boolean {

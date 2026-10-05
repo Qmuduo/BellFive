@@ -6,13 +6,22 @@ import type { ServerMessage } from '../../../src/network/protocol';
 import { RoomManager } from '../roomManager';
 import { createWebSocketServer } from '../websocketServer';
 import type { RunningRoomServer } from '../websocketServer';
+import { openAuthDatabase } from '../auth/database';
+import { AuthRepository } from '../auth/repository';
+import { AuthService } from '../auth/service';
+import { WechatCodeExchanger } from '../auth/wechat';
 
 describe('WebSocket room transport', () => {
   let server: RunningRoomServer;
+  let database: ReturnType<typeof openAuthDatabase>;
+  let authService: AuthService;
   const sockets: WebSocket[] = [];
 
   beforeEach(async () => {
+    database = openAuthDatabase(':memory:');
+    authService = new AuthService(new AuthRepository(database), new WechatCodeExchanger());
     server = await createWebSocketServer({
+      authService,
       roomManager: new RoomManager(),
       host: '127.0.0.1',
       port: 0,
@@ -26,6 +35,7 @@ describe('WebSocket room transport', () => {
       }
     }
     await server.close();
+    database.close();
   });
 
   it('serves health and forwards approved room sessions and snapshots to both phones', async () => {
@@ -132,6 +142,7 @@ describe('WebSocket room transport', () => {
     await server.close();
     let now = 1_000;
     server = await createWebSocketServer({
+      authService,
       roomManager: new RoomManager({ now: () => now, matchDurationMs: 2_000 }),
       host: '127.0.0.1',
       port: 0,
@@ -288,12 +299,16 @@ describe('WebSocket room transport', () => {
   }
 
   async function connect(url: string): Promise<WebSocket> {
+    const session = await authService.register({ username: `player_${sockets.length}`, password: 'Password123' }, { nickname: '', avatarId: 'strawberry' });
     const socket = new WebSocket(url);
     sockets.push(socket);
     await new Promise<void>((resolve, reject) => {
       socket.once('open', () => resolve());
       socket.once('error', reject);
     });
+    const authenticated = nextMessage(socket, message => message.type === 'session.authenticated');
+    socket.send(JSON.stringify({ type: 'session.authenticate', token: session.token }));
+    await authenticated;
     return socket;
   }
 

@@ -10,8 +10,6 @@ describe('room protocol decoding', () => {
   it.each([
     { type: 'room.create', requestId: 'request-1' },
     { type: 'room.join', requestId: 'request-2', roomCode: 'ABCD23' },
-    { type: 'room.create', requestId: 'request-profile', profile: { nickname: 'Mira', avatarId: 'peach' } },
-    { type: 'room.join', requestId: 'join-profile', roomCode: 'ABCD23', profile: { nickname: 'Kai', avatarId: 'banana' } },
     {
       type: 'room.reconnect',
       requestId: 'request-3',
@@ -37,7 +35,6 @@ describe('room protocol decoding', () => {
     JSON.stringify({ type: 'game.flip' }),
     JSON.stringify({ type: 'game.ring', actionId: 'a', tableVersion: -1 }),
     JSON.stringify({ type: 'room.join', requestId: 'r', roomCode: 'bad' }),
-    JSON.stringify({ type: 'room.join', requestId: 'r', roomCode: 'ABCD23', profile: { nickname: 12, avatarId: 'pear' } }),
     JSON.stringify({ type: 'unknown.action', actionId: 'a' }),
   ])('rejects malformed client message %p', raw => {
     expect(decodeClientMessage(raw)).toBeNull();
