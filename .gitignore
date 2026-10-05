@@ -13,6 +13,20 @@ expo-env.d.ts
 /miniprogram/.swc/
 /miniprogram/project.private.config.json
 
+# Local environment and credentials. Keep checked-in example templates visible.
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Account data (including SQLite write-ahead log and shared-memory files).
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+
 # Native
 .kotlin/
 *.orig.*
@@ -33,9 +47,6 @@ yarn-error.*
 # macOS
 .DS_Store
 *.pem
-
-# local env files
-.env*.local
 
 # typescript
 *.tsbuildinfo
