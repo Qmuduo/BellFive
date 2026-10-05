@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { GameClient } from '../network/GameClient';
 import type {
   GameClientError,
   GameClientHandlers,

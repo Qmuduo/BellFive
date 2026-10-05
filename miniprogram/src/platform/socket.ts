@@ -8,13 +8,13 @@ export function createTaroSocket(url: string): SocketLike {
   let closed = false;
   let listenersAttached = false;
   let connectionFailed = false;
-  let errorReported = false;
+  let failureReported = false;
 
   const reportConnectionError = () => {
-    if (handlers && connectionFailed && !errorReported) {
-      errorReported = true;
-      handlers.onError();
-    }
+    if (!handlers || !connectionFailed || failureReported || closed) return;
+    failureReported = true;
+    handlers.onError();
+    handlers.onClose();
   };
 
   const attachListeners = () => {
