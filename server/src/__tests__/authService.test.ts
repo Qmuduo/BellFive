@@ -3,6 +3,7 @@ import { openAuthDatabase } from '../auth/database';
 import { AuthRepository } from '../auth/repository';
 import { AuthService } from '../auth/service';
 import { WechatCodeExchanger } from '../auth/wechat';
+import * as crypto from '../auth/crypto';
 
 let db: ReturnType<typeof openAuthDatabase>;
 let repository: AuthRepository;
@@ -152,4 +153,76 @@ test('logout revokes only the presented session and expired sessions fail authen
   expect(await service.authenticateToken(second.token)).not.toBeNull();
   db.prepare('UPDATE sessions SET expires_at = ?').run(Date.now());
   expect(await service.authenticateToken(second.token)).toBeNull();
+});
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+test('login cannot issue a session from credentials reset while verification was pending', async () => {
+  const original = await service.loginWithWechat('identity');
+  await service.addPasswordCredential(original.user.userId, 'kai', password);
+  const verified = deferred();
+  const resume = deferred();
+  const realVerify = crypto.verifyPassword;
+  const verifier = jest.spyOn(crypto, 'verifyPassword').mockImplementation(async (...args) => {
+    const result = await realVerify(...args);
+    verified.resolve();
+    await resume.promise;
+    return result;
+  });
+  try {
+    const pending = service.login('kai', password);
+    const rejection = expect(pending).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+    await verified.promise;
+    const reset = await service.resetPasswordWithWechat('identity', 'NewPassword123');
+    resume.resolve();
+    await rejection;
+    expect(await service.authenticateToken(reset.token)).not.toBeNull();
+    expect(db.prepare('SELECT COUNT(*) AS count FROM sessions').get()).toEqual({ count: 1 });
+  } finally { resume.resolve(); verifier.mockRestore(); }
+});
+
+test('binding cannot transfer identity after credentials reset during the code exchange', async () => {
+  const target = await service.loginWithWechat('target-identity');
+  await service.addPasswordCredential(target.user.userId, 'kai', password);
+  const temporary = await service.loginWithWechat('temporary-identity');
+  const exchanged = deferred();
+  const resume = deferred();
+  const bindingService = new AuthService(repository, {
+    async exchange() {
+      exchanged.resolve();
+      await resume.promise;
+      return { appId: 'other-app', openid: 'transfer-identity' };
+    },
+  });
+  // Use another app identity so target's existing reset identity does not cause a uniqueness conflict.
+  repository.attachWechatIdentity(temporary.user.userId, 'other-app', 'transfer-identity');
+  const pending = bindingService.bindWechat({ code: 'code', username: 'kai', password, confirmedTransfer: true });
+  const rejection = expect(pending).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+  await exchanged.promise;
+  const reset = await service.resetPasswordWithWechat('target-identity', 'NewPassword123');
+  resume.resolve();
+  await rejection;
+  expect(repository.findByWechatIdentity('other-app', 'transfer-identity')?.userId).toBe(temporary.user.userId);
+  expect(await service.authenticateToken(temporary.token)).not.toBeNull();
+  expect(await service.authenticateToken(reset.token)).not.toBeNull();
+  expect(db.prepare('SELECT COUNT(*) AS count FROM sessions').get()).toEqual({ count: 2 });
+});
+
+test('failed replacement session insertion rolls back password reset and prior-session revocation', async () => {
+  const account = await service.loginWithWechat('identity');
+  await service.addPasswordCredential(account.user.userId, 'kai', password);
+  const before = repository.findPasswordCredential(account.user.userId);
+  db.exec(`CREATE TRIGGER fail_reset_session BEFORE INSERT ON sessions
+    BEGIN SELECT RAISE(ABORT, 'injected replacement session failure'); END`);
+  await expect(service.resetPasswordWithWechat('identity', 'NewPassword123')).rejects.toThrow('injected replacement session failure');
+  expect(repository.findPasswordCredential(account.user.userId)).toEqual(before);
+  expect(await service.authenticateToken(account.token)).not.toBeNull();
+  expect(db.prepare('SELECT COUNT(*) AS count FROM sessions').get()).toEqual({ count: 1 });
+  db.exec('DROP TRIGGER fail_reset_session');
+  expect((await service.login('kai', password)).user.userId).toBe(account.user.userId);
+  await expect(service.login('kai', 'NewPassword123')).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
 });

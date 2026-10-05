@@ -1,7 +1,7 @@
 import { DEFAULT_PLAYER_PROFILE, sanitizePlayerProfile, type PlayerProfile } from '../../../src/profile';
 import { generateSessionToken, hashPassword, hashSessionToken, sessionExpiresAt, verifyPassword } from './crypto';
 import { AuthRepository, normalizeUsername } from './repository';
-import { AuthServiceError, type AuthPrincipal, type AuthSession, type AuthUser, type BindWechatInput, type RegisterInput } from './types';
+import { AuthServiceError, type AuthPrincipal, type AuthSession, type AuthUser, type BindWechatInput, type PasswordCredential, type RegisterInput } from './types';
 import { WechatCodeExchanger } from './wechat';
 
 function validatedUsername(username: string): string {
@@ -42,7 +42,9 @@ export class AuthService {
   }
 
   async login(username: string, password: string): Promise<AuthSession> {
-    return this.issueSession(await this.verifyCredentials(username, password));
+    const verified = await this.verifyCredentials(username, password);
+    this.requireCurrentCredential(verified.user.userId, verified.credential);
+    return this.issueSession(this.requireUser(verified.user.userId));
   }
 
   async loginWithWechat(code: string): Promise<AuthSession> {
@@ -53,8 +55,10 @@ export class AuthService {
   }
 
   async bindWechat(input: BindWechatInput): Promise<AuthSession> {
-    const target = await this.verifyCredentials(input?.username, input?.password);
+    const verified = await this.verifyCredentials(input?.username, input?.password);
     const { appId, openid } = await this.exchanger.exchange(input.code);
+    const target = verified.user;
+    this.requireCurrentCredential(target.userId, verified.credential);
     const owner = this.repository.findByWechatIdentity(appId, openid);
     if (owner && owner.userId !== target.userId && (owner.username !== null || input.confirmedTransfer !== true)) {
       throw new AuthServiceError('WECHAT_IDENTITY_CONFLICT');
@@ -95,9 +99,10 @@ export class AuthService {
     if (this.repository.findByWechatIdentity(appId, openid)?.userId !== owner.userId) {
       throw new AuthServiceError('INVALID_CREDENTIALS');
     }
-    this.repository.updatePasswordCredential(owner.userId, credential.passwordSalt, credential.passwordDigest);
-    this.repository.revokeUserSessions(owner.userId);
-    return this.issueSession(this.requireUser(owner.userId));
+    const { token, tokenHash } = generateSessionToken();
+    const expiresAt = sessionExpiresAt();
+    this.repository.resetPasswordAndSession(owner.userId, credential, { tokenHash, expiresAt });
+    return { token, expiresAt, user: this.requireUser(owner.userId) };
   }
 
   async authenticateToken(token: string): Promise<AuthPrincipal | null> {
@@ -119,12 +124,19 @@ export class AuthService {
     if (typeof token === 'string' && token) this.repository.revokeSession(hashSessionToken(token));
   }
 
-  private async verifyCredentials(username: string, password: string): Promise<AuthUser> {
+  private async verifyCredentials(username: string, password: string): Promise<{ user: AuthUser; credential: PasswordCredential }> {
     if (typeof username !== 'string' || typeof password !== 'string') throw new AuthServiceError('INVALID_CREDENTIALS');
     const user = this.repository.findByUsername(username);
     const credential = user && this.repository.findPasswordCredential(user.userId);
     if (!user || !credential || !await verifyPassword(password, credential)) throw new AuthServiceError('INVALID_CREDENTIALS');
-    return user;
+    return { user, credential };
+  }
+
+  private requireCurrentCredential(userId: string, verified: PasswordCredential): void {
+    const current = this.repository.findPasswordCredential(userId);
+    if (!current || current.passwordSalt !== verified.passwordSalt || current.passwordDigest !== verified.passwordDigest) {
+      throw new AuthServiceError('INVALID_CREDENTIALS');
+    }
   }
 
   private requireUser(userId: string): AuthUser {

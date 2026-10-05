@@ -73,6 +73,18 @@ export class AuthRepository {
     if (result.changes !== 1) throw new Error('Password credential does not exist');
   }
 
+  resetPasswordAndSession(
+    userId: string,
+    credential: PasswordCredential,
+    session: { tokenHash: string; expiresAt: number },
+  ): void {
+    this.db.transaction(() => {
+      this.updatePasswordCredential(userId, credential.passwordSalt, credential.passwordDigest);
+      this.revokeUserSessions(userId);
+      this.createSession({ userId, ...session });
+    })();
+  }
+
   updateProfile(userId: string, profile: PlayerProfile): void {
     const result = this.db.prepare('UPDATE users SET nickname = ?, avatar_id = ? WHERE id = ?')
       .run(profile.nickname, profile.avatarId, userId);
