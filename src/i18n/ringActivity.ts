@@ -10,7 +10,7 @@ export function formatRingActivity(
   opponentName?: string,
 ): string {
   const isLocalCaller = event.caller === localPlayerId;
-  const callerName = event.caller === 'B' && opponentName
+  const callerName = !isLocalCaller && opponentName
     ? opponentName
     : translate(language, event.caller === 'A' ? 'ring.seatA' : 'ring.seatB');
   const count = event.movedCardCount;

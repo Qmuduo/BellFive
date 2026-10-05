@@ -21,6 +21,14 @@ describe('RingActivityLog', () => {
     expect(formatRingActivity(event, 'B')).toBe('1号玩家拍铃错误，没有牌转移');
   });
 
+  it('uses the opponent nickname when the opponent is in either seat', () => {
+    const callerA: RingFeedbackEvent = { version: 4, caller: 'A', outcome: 'correct', movedCardCount: 2 };
+    const callerB: RingFeedbackEvent = { version: 5, caller: 'B', outcome: 'wrong', movedCardCount: 1 };
+
+    expect(formatRingActivity(callerA, 'B', 'zh-CN', 'Mira · 玩家 1')).toBe('Mira · 玩家 1拍铃正确，获得 2 张牌');
+    expect(formatRingActivity(callerB, 'A', 'zh-CN', 'Mira · 玩家 2')).toBe('Mira · 玩家 2拍铃错误，你获得 1 张牌');
+  });
+
   it('keeps the supplied events in a scrollable activity panel', async () => {
     const events: RingFeedbackEvent[] = [
       { version: 1, caller: 'A', outcome: 'correct', movedCardCount: 6 },

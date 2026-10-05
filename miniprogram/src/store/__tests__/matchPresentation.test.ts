@@ -106,6 +106,16 @@ test('selects the latest twelve ring events and formats them in the selected lan
   expect(entries[entries.length - 1]?.message).toBe('Wrong ring — no cards to give');
 });
 
+test('formats Mini ring history with the opponent nickname for either local seat', () => {
+  const callerA: RingFeedbackEvent = { version: 1, caller: 'A', outcome: 'correct', movedCardCount: 2 };
+  const callerB: RingFeedbackEvent = { version: 2, caller: 'B', outcome: 'wrong', movedCardCount: 1 };
+
+  expect(presentation.getMiniRingLogEntries?.([callerA], null, 'B', 'zh-CN', 'Mira · 玩家 1')[0]?.message)
+    .toBe('Mira · 玩家 1拍铃正确，获得 2 张牌');
+  expect(presentation.getMiniRingLogEntries?.([callerB], null, 'A', 'zh-CN', 'Mira · 玩家 2')[0]?.message)
+    .toBe('Mira · 玩家 2拍铃错误，你获得 1 张牌');
+});
+
 function makeSnapshot(overrides: Partial<RoomSnapshot>): RoomSnapshot {
   return {
     roomCode: 'ABC123',

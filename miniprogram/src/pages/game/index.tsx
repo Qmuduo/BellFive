@@ -3,6 +3,7 @@ import Taro from '@tarojs/taro';
 import { Button, ScrollView, Text, View } from '@tarojs/components';
 import type { RoomSnapshot } from '../../../../src/network/protocol';
 import type { PlayerId } from '../../../../src/game/types';
+import { getPlayerDisplayName } from '../../../../src/profile';
 import { formatGameError, translate } from '../../../../src/i18n/translations';
 import { useMiniGameStore } from '../../store/gameStore';
 import { useMiniSettingsStore } from '../../store/settingsStore';
@@ -255,7 +256,7 @@ export default function GamePage(): JSX.Element {
             snapshot={snapshot}
             localPlayerId={localPlayerId}
             language={language}
-            opponentName={isSolo ? t('solo.opponent') : undefined}
+            opponentName={isSolo ? t('solo.opponent') : getPlayerDisplayName(opponent.profile, opponentPlayerId, language)}
           />
         ) : null}
       </View>
