@@ -11,7 +11,8 @@
   "include": [
     "src/**/*.ts",
     "../src/game/**/*.ts",
-    "../src/network/protocol.ts"
+    "../src/network/protocol.ts",
+    "../src/profile.ts"
   ],
   "exclude": [
     "src/__tests__",
