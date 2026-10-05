@@ -14,6 +14,13 @@ const baseConfig: UserConfigExport<'webpack5'> = {
   },
   sourceRoot: 'src',
   outputRoot: 'dist',
+  copy: {
+    patterns: ['bell.wav', 'defeat.wav', 'card-flip.wav', 'victory.wav'].map(name => ({
+      from: path.resolve(__dirname, `../../assets/audio/${name}`),
+      to: path.resolve(__dirname, `../dist/assets/audio/${name}`),
+    })),
+    options: {},
+  },
   plugins: ['@tarojs/plugin-framework-react'],
   framework: 'react',
   compiler: 'webpack5',

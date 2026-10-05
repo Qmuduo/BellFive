@@ -1,0 +1,95 @@
+.mini-game-screen { height: 100vh; background: #f7f5f0; }
+.mini-game-shell { display: flex; flex-direction: column; box-sizing: border-box; padding: 13px 16px 28px; }
+.mini-game-header { display: flex; flex-direction: row; align-items: center; justify-content: space-between; min-height: 42px; }
+.mini-game-brand { display: flex; flex-direction: row; align-items: center; min-width: 0; }
+.mini-game-brand-icon { display: flex; width: 35px; height: 35px; align-items: center; justify-content: center; margin-right: 8px; border-radius: 12px; background: #e4f3a7; font-size: 19px; }
+.mini-game-brand-name { display: block; color: #493450; font-size: 14px; font-weight: 900; letter-spacing: .2px; }
+.mini-game-brand-caption { display: block; margin-top: 2px; color: #938997; font-size: 8px; font-weight: 800; letter-spacing: .9px; }
+.mini-game-header-actions { display: flex; flex-direction: row; align-items: center; }
+.mini-header-button, .mini-leave-button { min-width: 35px; height: 31px; margin-left: 5px; padding: 0 7px; border: 1px solid #e6dee9; border-radius: 10px; background: #fffefa; color: #493450; font-size: 9px; font-weight: 900; line-height: 29px; }
+.mini-leave-button { border-color: #eed8d4; background: #fff5f2; color: #a65e56; }
+.mini-paused-banner, .mini-error-banner { display: block; margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: #fff0d9; color: #8b622d; font-size: 10px; font-weight: 800; text-align: center; }
+.mini-error-banner { background: #fbe6e3; color: #a6534d; }
+.mini-match-status, .mini-table-panel, .mini-action-console, .mini-ring-log { margin-top: 12px; padding: 12px; border: 1px solid #e7e0e9; border-radius: 17px; background: #fffefa; box-shadow: 0 3px 12px rgba(57, 41, 68, .035); }
+.mini-status-heading, .mini-table-heading, .mini-ring-log-heading, .mini-console-heading { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+.mini-status-room { color: #493450; font-size: 11px; font-weight: 900; letter-spacing: .7px; }
+.mini-connection-state { color: #968d98; font-size: 8px; font-weight: 800; }
+.mini-connection-online { color: #37845d; }
+.mini-connection-offline { color: #a6534d; }
+.mini-status-grid { display: flex; flex-direction: row; margin-top: 10px; }
+.mini-status-cell { display: flex; flex: 1; min-width: 0; flex-direction: column; padding: 8px 7px; border-radius: 10px; background: #f8f4f8; }
+.mini-status-cell + .mini-status-cell { margin-left: 6px; }
+.mini-status-label { color: #99919c; font-size: 7px; font-weight: 900; letter-spacing: .7px; }
+.mini-status-value { overflow: hidden; margin-top: 4px; color: #493450; font-size: 10px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+.mini-status-time { font-variant-numeric: tabular-nums; }
+.mini-winner-banner { display: block; margin-top: 9px; padding: 8px; border-radius: 10px; background: #eff6d9; color: #4e692b; font-size: 11px; font-weight: 900; text-align: center; }
+.mini-ready-row { display: flex; flex-direction: row; margin-top: 8px; }
+.mini-ready-chip { display: block; flex: 1; padding: 6px 4px; border-radius: 8px; background: #f2eff3; color: #897f8e; font-size: 8px; font-weight: 800; text-align: center; }
+.mini-ready-chip + .mini-ready-chip { margin-left: 6px; }
+.mini-ready-on { background: #e6f3d5; color: #4d7a3f; }
+.mini-panel-title { color: #66576d; font-size: 9px; font-weight: 900; letter-spacing: 1px; }
+.mini-table-version, .mini-ring-count { color: #958b98; font-size: 8px; font-weight: 800; }
+.mini-table-decks { display: flex; flex-direction: row; justify-content: space-between; margin-top: 9px; }
+.mini-player-deck { display: flex; flex: 1; min-width: 0; flex-direction: column; padding: 7px; border: 1px solid #eee7ef; border-radius: 13px; background: #fff; transition: border-color .16s ease, background-color .16s ease, transform .16s ease, opacity .16s ease; }
+.mini-player-deck + .mini-player-deck { margin-left: 7px; }
+.mini-player-deck-a.mini-player-deck-active { border-color: #cbaee9; background: #fcf8ff; }
+.mini-player-deck-b.mini-player-deck-active { border-color: #b9d7e5; background: #f8fcff; }
+.mini-player-heading { display: flex; flex-direction: row; align-items: center; min-height: 32px; }
+.mini-player-avatar { display: flex; width: 28px; height: 28px; align-items: center; justify-content: center; margin-right: 6px; border-radius: 9px; background: #f2eaf5; font-size: 17px; }
+.mini-player-deck-b .mini-player-avatar { background: #e4f0f5; }
+.mini-player-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+.mini-player-name { overflow: hidden; color: #493450; font-size: 8px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+.mini-player-count { margin-top: 2px; color: #988f9a; font-size: 7px; font-weight: 800; }
+.mini-turn-badge { max-width: 40px; overflow: hidden; padding: 4px; border-radius: 7px; background: #e9e0f2; color: #634a72; font-size: 7px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+.mini-card-action { display: flex; width: 100%; min-height: 0; align-items: stretch; justify-content: stretch; margin: 7px 0 0; padding: 0; overflow: visible; border: 0; border-radius: 10px; background: transparent; line-height: normal; }
+.mini-card-action::after, .mini-flip-button::after, .mini-replay-button::after, .mini-bell-button::after, .mini-header-button::after, .mini-leave-button::after { border: 0; }
+.mini-card-action[disabled] { opacity: 1; }
+.mini-game-card { position: relative; display: flex; width: 100%; height: 154px; align-items: center; justify-content: center; overflow: hidden; border: 2px solid #d8cde2; border-radius: 10px; background: #fffdf8; box-sizing: border-box; }
+.mini-game-card-a { border-color: #d9c4ed; }
+.mini-game-card-b { border-color: #c9dde6; }
+.mini-game-card-revealed { animation: mini-card-reveal .26s ease-out both; }
+.mini-game-card-hidden { background: #f1eaf4; }
+.mini-card-symbols { position: absolute; inset: 6px; }
+.mini-card-symbol { position: absolute; display: block; width: 42px; height: 36px; margin-top: -18px; margin-left: -21px; font-size: 27px; line-height: 36px; text-align: center; transform: translate(-50%, -50%); }
+.mini-card-back { display: flex; width: 85%; height: 85%; align-items: center; justify-content: center; flex-direction: column; border: 1px dashed #cdbed5; border-radius: 7px; }
+.mini-card-back-mark { font-size: 25px; }
+.mini-card-back-word { margin-top: 3px; color: #9d8ea5; font-size: 7px; font-weight: 900; letter-spacing: 1.3px; }
+.mini-empty-card { display: flex; width: 100%; height: 154px; align-items: center; justify-content: center; flex-direction: column; border: 1px dashed #e4dfe5; border-radius: 10px; box-sizing: border-box; color: #d2cbd3; font-size: 23px; }
+.mini-empty-card-hint { color: #aaa2ad; font-size: 7px; font-weight: 900; letter-spacing: .7px; }
+.mini-played-count { padding: 7px 2px 1px; color: #8c8290; font-size: 7px; font-weight: 800; text-align: right; }
+.mini-table-footnote { display: block; margin-top: 7px; color: #aaa2ad; font-size: 7px; text-align: center; }
+.mini-deck-collect { animation: mini-collect .38s ease-out both; }
+.mini-deck-penalty { animation: mini-penalty .36s ease-out both; }
+.mini-console-heading { min-height: 16px; }
+.mini-console-count { color: #978b9c; font-size: 8px; font-weight: 800; }
+.mini-action-prompt { display: block; margin: 8px 0 9px; color: #77717d; font-size: 9px; font-weight: 800; text-align: center; }
+.mini-action-row { display: flex; flex-direction: row; align-items: stretch; min-height: 94px; }
+.mini-flip-button { display: flex; flex: 1; min-height: 94px; align-items: center; justify-content: center; margin: 0 7px 0 0; border: 2px solid #493450; border-radius: 14px; background: #eee5f5; color: #493450; font-size: 22px; font-weight: 900; line-height: 1.2; transition: opacity .12s ease, transform .12s ease; }
+.mini-action-disabled { opacity: .42; }
+.mini-bell-button { display: flex; flex: 1.15; min-height: 94px; flex-direction: column; align-items: center; justify-content: center; margin: 0; border: 2px solid #34214f; border-radius: 14px; background: #e3fb88; color: #34214f; box-shadow: 0 4px 0 #b3cd61; transition: transform .12s ease, opacity .12s ease; }
+.mini-bell-disabled { background: #ebe7ed; border-color: #c9c0ce; color: #9b929f; box-shadow: 0 4px 0 #d5cfd9; }
+.mini-bell-pressed { transform: scale(.96); }
+.mini-bell-icon { display: block; font-size: 24px; line-height: 29px; }
+.mini-bell-label { display: block; margin-top: 2px; font-size: 21px; font-weight: 900; letter-spacing: 1px; }
+.bell-feedback-correct { animation: mini-bell-success .32s ease-out; }
+.bell-feedback-wrong { animation: mini-bell-wrong .3s ease-out; }
+.mini-bell-feedback { display: block; min-height: 13px; margin-top: 7px; color: #887b90; font-size: 9px; font-weight: 800; text-align: center; }
+.mini-feedback-correct { color: #38845e; }
+.mini-feedback-wrong { color: #b23a32; }
+.mini-replay-button { display: flex; min-height: 46px; align-items: center; justify-content: center; margin: 0; border-radius: 13px; background: #71528e; color: #fff; font-size: 12px; font-weight: 900; line-height: 1.2; }
+.mini-replay-ready { background: #d5ef84; color: #493450; }
+.mini-ring-log-heading { margin-bottom: 6px; }
+.mini-ring-scroll { max-height: 150px; }
+.mini-ring-row { display: flex; flex-direction: row; align-items: center; min-height: 28px; border-top: 1px solid #f0edf0; }
+.mini-ring-dot { width: 6px; height: 6px; flex: none; margin-right: 8px; border-radius: 50%; }
+.mini-ring-dot-correct { background: #48a878; }
+.mini-ring-dot-wrong { background: #d76d67; }
+.mini-ring-message { flex: 1; color: #53616d; font-size: 8px; font-weight: 700; line-height: 1.35; }
+.mini-ring-empty { display: block; padding: 8px 0 3px; color: #9aa2a9; font-size: 9px; }
+.mini-game-loading { display: flex; min-height: 100vh; align-items: center; justify-content: center; padding: 24px; background: #f7f5f0; color: #77717d; font-size: 12px; text-align: center; }
+
+@keyframes mini-card-reveal { from { opacity: .45; transform: translateY(6px) scale(.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes mini-bell-success { 0% { transform: scale(.94); } 65% { transform: scale(1.07); } 100% { transform: scale(1); } }
+@keyframes mini-bell-wrong { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 50% { transform: translateX(4px); } 75% { transform: translateX(-2px); } }
+@keyframes mini-collect { 0% { opacity: .65; transform: scale(.96); } 65% { opacity: 1; transform: scale(1.025); } 100% { transform: scale(1); } }
+@keyframes mini-penalty { 0% { opacity: .65; transform: scale(1.035); } 70% { opacity: 1; transform: scale(.985); } 100% { transform: scale(1); } }

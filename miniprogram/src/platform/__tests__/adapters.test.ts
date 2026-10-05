@@ -6,6 +6,7 @@ jest.mock('@tarojs/taro', () => ({
     removeStorage: jest.fn(),
     connectSocket: jest.fn(),
     vibrateShort: jest.fn(),
+    createInnerAudioContext: jest.fn(),
   },
 }), { virtual: true });
 
@@ -15,6 +16,7 @@ const Taro = jest.requireMock('@tarojs/taro').default as {
   removeStorage: jest.Mock;
   connectSocket: jest.Mock;
   vibrateShort: jest.Mock;
+  createInnerAudioContext: jest.Mock;
 };
 
 const { createTaroStorage } = require('../storage') as typeof import('../storage');
@@ -144,6 +146,20 @@ test('maps supported Mini feedback to short vibration and tolerates API failures
 
   Taro.vibrateShort.mockRejectedValue(new Error('unavailable'));
   expect(() => playMiniFeedback('finish')).not.toThrow();
+});
+
+test('respects the persisted audio setting and plays bundled Mini feedback when enabled', () => {
+  const context = { src: '', volume: 1, play: jest.fn(), destroy: jest.fn(), onEnded: jest.fn() };
+  Taro.createInnerAudioContext.mockReturnValue(context);
+
+  playMiniFeedback('flip', false);
+  expect(Taro.vibrateShort).not.toHaveBeenCalled();
+  expect(Taro.createInnerAudioContext).not.toHaveBeenCalled();
+
+  playMiniFeedback('flip', true);
+  expect(Taro.createInnerAudioContext).toHaveBeenCalledTimes(1);
+  expect(context.src).toContain('card-flip.wav');
+  expect(context.play).toHaveBeenCalledTimes(1);
 });
 
 function createSocketTask() {

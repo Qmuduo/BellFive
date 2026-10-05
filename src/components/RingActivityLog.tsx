@@ -2,8 +2,7 @@ import { useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { RingFeedbackEvent } from '../network/protocol';
 import type { PlayerId } from '../game/types';
-import { translate } from '../i18n/translations';
-import type { Language } from '../i18n/types';
+import { formatRingActivity } from '../i18n/ringActivity';
 import { useTranslation } from '../i18n/useTranslation';
 
 type RingActivityLogProps = Readonly<{
@@ -44,28 +43,7 @@ export function RingActivityLog({ events, localPlayerId, opponentName }: RingAct
   );
 }
 
-export function formatRingActivity(
-  event: RingFeedbackEvent,
-  localPlayerId: PlayerId,
-  language: Language = 'zh-CN',
-  opponentName?: string,
-): string {
-  const isLocalCaller = event.caller === localPlayerId;
-  const callerName = event.caller === 'B' && opponentName
-    ? opponentName
-    : translate(language, event.caller === 'A' ? 'ring.seatA' : 'ring.seatB');
-  const count = event.movedCardCount;
-  const cardWord = translate(language, count === 1 ? 'deck.cardWord.one' : 'deck.cardWord.many');
-
-  if (event.outcome === 'correct') {
-    return isLocalCaller
-      ? translate(language, count === 0 ? 'ring.correct.ownEmpty' : 'ring.correct.own', { count, cardWord })
-      : translate(language, count === 0 ? 'ring.correct.otherEmpty' : 'ring.correct.other', { count, cardWord, playerLabel: callerName });
-  }
-  return isLocalCaller
-    ? translate(language, count === 0 ? 'ring.wrong.ownEmpty' : 'ring.wrong.own', { count, cardWord })
-    : translate(language, count === 0 ? 'ring.wrong.otherEmpty' : 'ring.wrong.other', { count, cardWord, playerLabel: callerName });
-}
+export { formatRingActivity };
 
 const styles = StyleSheet.create({
   panel: { marginTop: 12, paddingHorizontal: 12, paddingTop: 11, paddingBottom: 7, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7E9', backgroundColor: '#FFFFFF' },

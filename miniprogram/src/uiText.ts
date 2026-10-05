@@ -78,6 +78,11 @@ const copy = {
     reject: 'Reject',
     wantsToJoin: 'wants to join',
     serviceError: 'The service could not process this request. Please retry.',
+    matchPhase: 'MATCH STATUS',
+    matchTurn: 'NEXT TO FLIP',
+    matchTime: 'REMAINING',
+    matchPlaying: 'In progress',
+    matchPaused: 'Connection paused',
   },
   'zh-CN': {
     guest: '游客',
@@ -156,6 +161,11 @@ const copy = {
     reject: '拒绝',
     wantsToJoin: '申请加入',
     serviceError: '服务暂时无法处理请求，请重试。',
+    matchPhase: '对局状态',
+    matchTurn: '下一位翻牌',
+    matchTime: '剩余时间',
+    matchPlaying: '进行中',
+    matchPaused: '连接已暂停',
   },
 } as const;
 
