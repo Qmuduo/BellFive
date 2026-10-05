@@ -7,12 +7,16 @@ import { decodeClientMessage } from '../../src/network/protocol';
 import type { ServerMessage } from '../../src/network/protocol';
 import { RoomManager } from './roomManager';
 import type { RoomManagerEvent } from './roomManager';
+import type { AuthService } from './auth/service';
+import { handleAuthHttpRequest } from './auth/httpApi';
 
 export type CreateWebSocketServerOptions = Readonly<{
   roomManager: RoomManager;
   host: string;
   port: number;
   tickIntervalMs?: number;
+  authService?: AuthService;
+  corsOrigins?: readonly string[];
 }>;
 
 export type RunningRoomServer = Readonly<{
@@ -29,14 +33,17 @@ export async function createWebSocketServer(
   const connections = new Map<string, WebSocket>();
   const roomManager = options.roomManager;
   const httpServer = createServer((request, response) => {
-    if (request.method === 'GET' && request.url === '/health') {
-      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-      response.end(JSON.stringify({ status: 'ok' }));
-      return;
-    }
-
-    response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
-    response.end(JSON.stringify({ error: 'not_found' }));
+    void handleAuthHttpRequest(request, response, options.authService, {
+      corsOrigins: options.corsOrigins ?? [],
+    }).then(handled => {
+      if (handled) return;
+      response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ error: 'not_found' }));
+      request.resume();
+    }).catch(() => {
+      response.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ error: { code: 'SERVER_ERROR', message: 'The service could not process that request.' } }));
+    });
   });
   const webSocketServer = new WebSocketServer({ server: httpServer, maxPayload: 64 * 1024 });
 

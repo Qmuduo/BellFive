@@ -120,6 +120,10 @@ export class AuthService {
     return sanitized;
   }
 
+  async getUser(userId: string): Promise<AuthUser> {
+    return this.requireUser(userId);
+  }
+
   async logout(token: string): Promise<void> {
     if (typeof token === 'string' && token) this.repository.revokeSession(hashSessionToken(token));
   }
