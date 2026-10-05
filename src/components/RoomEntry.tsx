@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { GameClientError } from '../network/GameClient';
 import type { OpenRoomSummary, ServerMessage } from '../network/protocol';
@@ -35,6 +35,12 @@ type RoomEntryProps = Readonly<{
   onRefreshLobby?: () => void;
   onCancelApplication?: () => void;
   onStartSinglePlayer?: (difficulty: SinglePlayerDifficulty) => void;
+  initialRoomCode?: string;
+  onlineEnabled?: boolean;
+  onlineHydrated?: boolean;
+  profileEditable?: boolean;
+  onAuthenticate?: (action: 'create' | 'join' | 'lobby', roomCode?: string) => void;
+  onAccount?: () => void;
 }>;
 
 export function RoomEntry({
@@ -52,6 +58,12 @@ export function RoomEntry({
   onRefreshLobby = () => undefined,
   onCancelApplication = () => undefined,
   onStartSinglePlayer,
+  initialRoomCode,
+  onlineEnabled = true,
+  onlineHydrated = true,
+  profileEditable = true,
+  onAuthenticate,
+  onAccount,
 }: RoomEntryProps) {
   const { language, t } = useTranslation();
   const currentBusyLabel = busyLabel ?? t('entry.connecting');
@@ -59,7 +71,26 @@ export function RoomEntry({
   const [showValidationError, setShowValidationError] = useState(false);
   const [showDifficulties, setShowDifficulties] = useState(false);
   const applicationPending = Boolean(applyingRoomCode) || applicationStatus?.status === 'pending';
-  const roomActionsBusy = busy || !profileHydrated || applicationPending;
+  const roomActionsBusy = busy || !profileHydrated || !onlineHydrated || applicationPending;
+
+  useEffect(() => {
+    if (initialRoomCode) setCode(initialRoomCode.trim().toUpperCase().slice(0, 6));
+  }, [initialRoomCode]);
+
+  const requestCreate = () => {
+    if (onlineEnabled) onCreate();
+    else onAuthenticate?.('create');
+  };
+
+  const requestJoin = (roomCode: string) => {
+    if (onlineEnabled) onJoin(roomCode);
+    else onAuthenticate?.('join', roomCode);
+  };
+
+  const refreshRooms = () => {
+    if (onlineEnabled) onRefreshLobby();
+    else onAuthenticate?.('lobby');
+  };
 
   const join = () => {
     const normalized = code.trim().toUpperCase();
@@ -68,7 +99,7 @@ export function RoomEntry({
       return;
     }
     setShowValidationError(false);
-    onJoin(normalized);
+    requestJoin(normalized);
   };
 
   return (
@@ -78,6 +109,18 @@ export function RoomEntry({
       <Text style={styles.eyebrow}>{t('entry.eyebrow')}</Text>
       <Text style={styles.title}>BellFive</Text>
       <Text style={styles.description}>{t('entry.description')}</Text>
+      <View style={styles.authRow}>
+        {!onlineEnabled ? <Text style={styles.authHint}>{t('entry.onlineSignIn')}</Text> : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !onlineHydrated }}
+          disabled={!onlineHydrated}
+          onPress={onlineEnabled ? onAccount : () => onAuthenticate?.('lobby')}
+          style={({ pressed }) => [styles.authButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.authButtonText}>{t(onlineEnabled ? 'entry.account' : 'entry.signIn')}</Text>
+        </Pressable>
+      </View>
 
       <View style={styles.profilePanel}>
         <Text style={styles.profileLabel}>{t('entry.profile')}</Text>
@@ -85,7 +128,7 @@ export function RoomEntry({
           accessibilityLabel={t('entry.nickname')}
           autoCapitalize="words"
           autoCorrect={false}
-          editable={!roomActionsBusy}
+          editable={!roomActionsBusy && profileEditable}
           onChangeText={nickname => onProfileChange({ ...profile, nickname })}
           placeholder={t('entry.nicknamePlaceholder')}
           placeholderTextColor={gameColors.muted}
@@ -94,7 +137,7 @@ export function RoomEntry({
         />
         <AvatarPicker
           selected={profile.avatarId}
-          disabled={roomActionsBusy}
+          disabled={roomActionsBusy || !profileEditable}
           onSelect={avatarId => onProfileChange({ ...profile, avatarId })}
         />
       </View>
@@ -103,7 +146,7 @@ export function RoomEntry({
         role="button"
         accessibilityState={{ disabled: roomActionsBusy }}
         disabled={roomActionsBusy}
-        onPress={() => onCreate()}
+        onPress={requestCreate}
         style={({ pressed }) => [styles.createButton, pressed && styles.pressed, roomActionsBusy && styles.disabled]}
       >
         <Text style={styles.createText}>{busy ? currentBusyLabel : profileHydrated ? t('entry.createRoom') : t('entry.loadingProfile')}</Text>
@@ -143,12 +186,12 @@ export function RoomEntry({
 
       <View style={styles.roomsHeading}>
         <Text style={styles.roomsTitle}>{t('entry.openRooms')}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel={t('entry.refreshRooms')} onPress={onRefreshLobby} hitSlop={8}>
+        <Pressable accessibilityRole="button" accessibilityLabel={t('entry.refreshRooms')} accessibilityState={{ disabled: !onlineHydrated }} disabled={!onlineHydrated} onPress={refreshRooms} hitSlop={8}>
           <Text style={styles.refreshText}>{t('entry.refresh')}</Text>
         </Pressable>
       </View>
       {openRooms.length === 0 ? (
-        <Text style={styles.emptyRooms}>{t('entry.emptyRooms')}</Text>
+        <Text style={styles.emptyRooms}>{onlineEnabled ? t('entry.emptyRooms') : t('entry.onlineSignIn')}</Text>
       ) : (
         <View style={styles.roomList}>
           {openRooms.map(room => {
@@ -164,7 +207,7 @@ export function RoomEntry({
                   accessibilityRole="button"
                   accessibilityLabel={t('entry.requestJoin', { roomCode: room.roomCode })}
                   disabled={roomActionsBusy || Boolean(applyingRoomCode)}
-                  onPress={() => { setShowValidationError(false); onJoin(room.roomCode); }}
+                  onPress={() => { setShowValidationError(false); requestJoin(room.roomCode); }}
                   style={({ pressed }) => [styles.requestButton, pressed && styles.pressed, (roomActionsBusy || Boolean(applyingRoomCode)) && styles.disabled]}
                 >
                   <Text style={styles.requestText}>{isApplying ? t('entry.sending') : t('entry.join')}</Text>
@@ -231,6 +274,10 @@ const styles = StyleSheet.create({
   eyebrow: { marginTop: 24, color: gameColors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
   title: { marginTop: 4, color: gameColors.plum, fontSize: 38, fontWeight: '900', letterSpacing: -1, textAlign: 'center' },
   description: { maxWidth: 300, alignSelf: 'center', marginTop: 8, marginBottom: 28, color: gameColors.muted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  authRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 9, marginTop: -15, marginBottom: 14 },
+  authHint: { flex: 1, color: gameColors.muted, fontSize: 10, lineHeight: 15 },
+  authButton: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: gameColors.border, borderRadius: 12, backgroundColor: gameColors.surface },
+  authButtonText: { color: gameColors.purple, fontSize: 10, fontWeight: '900' },
   profilePanel: { marginBottom: 18, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14, borderWidth: 1, borderColor: gameColors.border, borderRadius: 18, backgroundColor: gameColors.surface },
   profileLabel: { marginBottom: 8, color: gameColors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1.3 },
   nicknameInput: { minHeight: 42, marginBottom: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: gameColors.border, borderRadius: 12, color: gameColors.plum, fontSize: 14, fontWeight: '700' },

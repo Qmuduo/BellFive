@@ -1,7 +1,7 @@
 import { waitFor } from '@testing-library/react-native';
 import type { StateStorage } from 'zustand/middleware';
 import { sanitizePlayerProfile } from '../../profile';
-import { createProfileStore } from '../profileStore';
+import { createProfileStore } from '../createProfileStore';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),

@@ -1,6 +1,6 @@
 import { waitFor } from '@testing-library/react-native';
 import type { StateStorage } from 'zustand/middleware';
-import { createSettingsStore } from '../settingsStore';
+import { createSettingsStore } from '../createSettingsStore';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),

@@ -51,6 +51,27 @@ test('stops using the existing authenticated transport when the provider loses i
   expect(store.getState()).toMatchObject({ client: null, error: { code: 'AUTH_REQUIRED' } });
 });
 
+test('disposes the online client and clears its room state when the account changes', () => {
+  const client = {
+    createRoom: jest.fn(() => 'create-request'),
+    disconnect: jest.fn(),
+  };
+  const store = createGameStore(() => client as never, () => 'signed-in');
+  store.getState().createRoom();
+  store.setState({ sessionMode: 'online', roomCode: 'ABCD23', localPlayerId: 'A' });
+
+  store.getState().resetClient();
+
+  expect(client.disconnect).toHaveBeenCalledTimes(1);
+  expect(store.getState()).toMatchObject({
+    client: null,
+    sessionMode: 'none',
+    roomCode: null,
+    localPlayerId: null,
+    connectionStatus: 'disconnected',
+  });
+});
+
 test('closing an unused online lobby preserves a single player game without an account', () => {
   jest.useFakeTimers();
   const store = createGameStore(() => { throw new Error('must not construct'); }, () => null);

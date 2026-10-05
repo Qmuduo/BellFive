@@ -2,6 +2,7 @@ import { act, render, screen, userEvent, within } from '@testing-library/react-n
 import { Share } from 'react-native';
 import GameScreen from '../GameScreen';
 import { useGameStore } from '../../store/gameStore';
+import { useAuthStore } from '../../auth/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import {
   playBellSound,
@@ -99,6 +100,13 @@ describe('GameScreen friend-room flow', () => {
       leaveRoom: jest.fn(),
       clearError: jest.fn(),
     });
+    useAuthStore.setState({
+      user: { userId: 'test-user', username: 'mira', profile: { nickname: 'Mira', avatarId: 'peach' }, wechatLinked: false },
+      sessionToken: 'test-session-token',
+      hydrated: true,
+      pending: false,
+      errorCode: null,
+    });
   });
 
   it('configures audio for short game sounds when the screen mounts', async () => {
@@ -148,7 +156,7 @@ describe('GameScreen friend-room flow', () => {
     });
     await render(<GameScreen />);
     await user.press(screen.getByRole('button', { name: 'Request to join ABCD23' }));
-    expect(useGameStore.getState().joinRoom).toHaveBeenCalledWith('ABCD23', { nickname: 'Mira', avatarId: 'peach' });
+    expect(useGameStore.getState().joinRoom).toHaveBeenCalledWith('ABCD23');
   });
 
   it('keeps create and join disabled while a room leave is waiting for confirmation', async () => {
@@ -177,7 +185,7 @@ describe('GameScreen friend-room flow', () => {
     await render(<GameScreen />);
     await user.type(screen.getByLabelText('Room code'), 'ab cd23');
     await user.press(screen.getByRole('button', { name: 'Join Room' }));
-    expect(useGameStore.getState().joinRoom).toHaveBeenCalledWith('ABCD23', { nickname: 'Mira', avatarId: 'peach' });
+    expect(useGameStore.getState().joinRoom).toHaveBeenCalledWith('ABCD23');
   });
 
   it('shows the private room code and invites a friend while waiting', async () => {

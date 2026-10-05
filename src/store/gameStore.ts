@@ -15,6 +15,7 @@ import type { PlayerId } from '../game/types';
 import type { PlayerProfileInput } from '../profile';
 import { SinglePlayerController } from '../game/singlePlayerController';
 import type { SinglePlayerDifficulty } from '../game/singlePlayerController';
+import { useAuthStore } from '../auth/authStore';
 
 export type GameSessionMode = 'none' | 'online' | 'single-player';
 
@@ -53,6 +54,7 @@ type GameStore = {
   localApplicationId: string | null;
   localApplicationStatus: Extract<ServerMessage, { type: 'room.application.status' }> | null;
   client: GameClientPort | null;
+  resetClient: () => void;
   startSinglePlayer: (profile: PlayerProfileInput, difficulty: SinglePlayerDifficulty) => void;
   createRoom: () => string;
   joinRoom: (code: string) => string;
@@ -81,6 +83,8 @@ export function createGameStore(
 
     const clearAuthentication = (error: GameClientError) => {
       const client = get().client;
+      const rejectedToken = clientToken;
+      const shouldClearAuth = Boolean(rejectedToken && useAuthStore.getState().sessionToken === rejectedToken);
       clientToken = null;
       set({ client: null, sessionMode: 'none', connectionStatus: 'error', roomSnapshot: null,
         roomCode: null, localPlayerId: null, leavingRoom: false, lastActionResult: null,
@@ -88,6 +92,7 @@ export function createGameStore(
         localApplicationId: null, localApplicationStatus: null, error });
       client?.disconnect();
       set({ connectionStatus: 'error' });
+      if (shouldClearAuth) void useAuthStore.getState().logout();
     };
 
     const applyServerMessage = (message: ServerMessage) => {
@@ -244,6 +249,30 @@ export function createGameStore(
       localApplicationId: null,
       localApplicationStatus: null,
       client: null,
+      resetClient: () => {
+        const client = get().client;
+        const isSinglePlayer = get().sessionMode === 'single-player';
+        clientToken = null;
+        set({
+          client: null,
+          ...(isSinglePlayer ? {} : {
+            sessionMode: 'none' as const,
+            roomSnapshot: null,
+            roomCode: null,
+            localPlayerId: null,
+            leavingRoom: false,
+            lastActionResult: null,
+            error: null,
+          }),
+          pendingApplications: [],
+          openRooms: [],
+          applyingRoomCode: null,
+          localApplicationId: null,
+          localApplicationStatus: null,
+        });
+        client?.disconnect();
+        set({ connectionStatus: isSinglePlayer ? 'idle' : 'disconnected' });
+      },
       startSinglePlayer: (profile, difficulty) => {
         singlePlayerController?.stop();
         const controller = new SinglePlayerController({
@@ -404,4 +433,8 @@ function createDefaultClient(handlers: GameClientHandlers, authToken: string): G
   });
 }
 
-export const useGameStore = createGameStore(createDefaultClient, () => null);
+export const useGameStore = createGameStore(createDefaultClient, () => useAuthStore.getState().sessionToken);
+
+useAuthStore.subscribe((state, previousState) => {
+  if (state.sessionToken !== previousState.sessionToken) useGameStore.getState().resetClient();
+});

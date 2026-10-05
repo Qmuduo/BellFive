@@ -158,6 +158,90 @@ describe('RoomEntry', () => {
     expect(screen.getByRole('button', { name: 'Join Room' })).toBeDisabled();
     expect(screen.getByLabelText('Room code')).toBeDisabled();
   });
+
+  it('routes guest online actions to auth while keeping solo play available', async () => {
+    const user = userEvent.setup();
+    const onAuthenticate = jest.fn();
+    const onCreate = jest.fn();
+    const onJoin = jest.fn();
+    const onStartSinglePlayer = jest.fn();
+    const onRefreshLobby = jest.fn();
+    await render(
+      <RoomEntry
+        onCreate={onCreate}
+        onJoin={onJoin}
+        error={null}
+        busy={false}
+        profile={{ nickname: 'Mira', avatarId: 'pear' }}
+        profileHydrated
+        onProfileChange={jest.fn()}
+        onlineEnabled={false}
+        onAuthenticate={onAuthenticate}
+        onStartSinglePlayer={onStartSinglePlayer}
+        onRefreshLobby={onRefreshLobby}
+      />,
+    );
+
+    await user.press(screen.getByRole('button', { name: 'Create Room' }));
+    await user.type(screen.getByLabelText('Room code'), 'ABCD23');
+    await user.press(screen.getByRole('button', { name: 'Join Room' }));
+    await user.press(screen.getByRole('button', { name: 'Refresh rooms' }));
+    await user.press(screen.getByRole('button', { name: 'PLAY SOLO VS COMPUTER' }));
+    await user.press(screen.getByRole('button', { name: 'EASY' }));
+
+    expect(onAuthenticate).toHaveBeenNthCalledWith(1, 'create');
+    expect(onAuthenticate).toHaveBeenNthCalledWith(2, 'join', 'ABCD23');
+    expect(onAuthenticate).toHaveBeenNthCalledWith(3, 'lobby');
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(onJoin).not.toHaveBeenCalled();
+    expect(onRefreshLobby).not.toHaveBeenCalled();
+    expect(onStartSinglePlayer).toHaveBeenCalledWith('easy');
+  });
+
+  it('prefills a room code returned from account login', async () => {
+    await render(
+      <RoomEntry
+        onCreate={jest.fn()}
+        onJoin={jest.fn()}
+        error={null}
+        busy={false}
+        profile={{ nickname: '', avatarId: 'strawberry' }}
+        profileHydrated
+        onProfileChange={jest.fn()}
+        initialRoomCode="ABCD23"
+      />,
+    );
+    expect(screen.getByLabelText('Room code')).toHaveDisplayValue('ABCD23');
+  });
+
+  it('keeps online actions disabled until the saved account finishes hydrating but leaves solo available', async () => {
+    const user = userEvent.setup();
+    const onStartSinglePlayer = jest.fn();
+    const onAuthenticate = jest.fn();
+    await render(
+      <RoomEntry
+        onCreate={jest.fn()}
+        onJoin={jest.fn()}
+        error={null}
+        busy={false}
+        profile={{ nickname: '', avatarId: 'strawberry' }}
+        profileHydrated
+        onlineHydrated={false}
+        onlineEnabled={false}
+        onProfileChange={jest.fn()}
+        onAuthenticate={onAuthenticate}
+        onStartSinglePlayer={onStartSinglePlayer}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Create Room' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sign in / Register' })).toBeDisabled();
+    expect(screen.getByLabelText('Room code')).toBeDisabled();
+    await user.press(screen.getByRole('button', { name: 'PLAY SOLO VS COMPUTER' }));
+    await user.press(screen.getByRole('button', { name: 'EASY' }));
+    expect(onStartSinglePlayer).toHaveBeenCalledWith('easy');
+    expect(onAuthenticate).not.toHaveBeenCalled();
+  });
 });
 
 function ControlledRoomEntry({

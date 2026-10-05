@@ -16,6 +16,7 @@ import { LanguageSettings } from './LanguageSettings';
 import { MusicToggle } from './MusicToggle';
 import { useBackgroundMusic } from '../hooks/useBackgroundMusic';
 import { useGameStore } from '../store/gameStore';
+import { useAuthStore } from '../auth/authStore';
 import { usePlayerProfileStore } from '../store/profileStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { getPlayerDisplayName } from '../profile';
@@ -32,6 +33,12 @@ import {
 import type { RingFeedbackEvent } from '../network/protocol';
 
 const DANMAKU_LANE_COUNT = 4;
+
+export type GameScreenProps = Readonly<{
+  initialRoomCode?: string;
+  onAuthenticate?: (action: 'create' | 'join' | 'lobby', roomCode?: string) => void;
+  onAccount?: () => void;
+}>;
 
 type ActiveRingDanmaku = Readonly<{
   event: RingFeedbackEvent;
@@ -84,7 +91,7 @@ function finishRingDanmakuEvent(state: RingDanmakuState, version: number): RingD
     : { active, queued, nextLane: state.nextLane };
 }
 
-export default function GameScreen() {
+export default function GameScreen({ initialRoomCode, onAuthenticate, onAccount }: GameScreenProps = {}) {
   const { language, t } = useTranslation();
   const { height: windowHeight } = useWindowDimensions();
   const compactMatch = windowHeight < 700;
@@ -107,9 +114,13 @@ export default function GameScreen() {
   const pendingApplications = useGameStore(state => state.pendingApplications);
   const applyingRoomCode = useGameStore(state => state.applyingRoomCode);
   const localApplicationStatus = useGameStore(state => state.localApplicationStatus);
-  const playerProfile = usePlayerProfileStore(state => state.profile);
-  const profileHydrated = usePlayerProfileStore(state => state.hydrated);
+  const localPlayerProfile = usePlayerProfileStore(state => state.profile);
+  const localProfileHydrated = usePlayerProfileStore(state => state.hydrated);
   const setPlayerProfile = usePlayerProfileStore(state => state.setProfile);
+  const authUser = useAuthStore(state => state.user);
+  const authHydrated = useAuthStore(state => state.hydrated);
+  const playerProfile = authUser?.profile ?? localPlayerProfile;
+  const profileHydrated = localProfileHydrated;
   const createRoom = useGameStore(state => state.createRoom);
   const joinRoom = useGameStore(state => state.joinRoom);
   const startSinglePlayer = useGameStore(state => state.startSinglePlayer);
@@ -195,10 +206,14 @@ export default function GameScreen() {
   }, []);
 
   useEffect(() => {
-    if (roomSnapshot || leavingRoom || isSinglePlayer) return;
+    if (roomSnapshot || leavingRoom || isSinglePlayer || !authUser) return;
     openLobby();
     return () => closeLobby();
-  }, [roomSnapshot === null, leavingRoom, isSinglePlayer, openLobby, closeLobby]);
+  }, [roomSnapshot === null, leavingRoom, isSinglePlayer, authUser?.userId, openLobby, closeLobby]);
+
+  useEffect(() => {
+    if (authUser) setPlayerProfile(authUser.profile);
+  }, [authUser?.userId, authUser?.profile.nickname, authUser?.profile.avatarId, setPlayerProfile]);
 
   useEffect(() => {
     if (!ringCue) return;
@@ -300,6 +315,12 @@ export default function GameScreen() {
         <RoomEntry
           onCreate={createRoom}
           onJoin={joinRoom}
+          initialRoomCode={initialRoomCode}
+          onlineEnabled={Boolean(authUser)}
+          onlineHydrated={authHydrated}
+          profileEditable={authHydrated && !authUser}
+          onAuthenticate={onAuthenticate}
+          onAccount={onAccount}
           onStartSinglePlayer={difficulty => startSinglePlayer(playerProfile, difficulty)}
           error={error}
           busy={leavingRoom || connectionStatus === 'connecting' || connectionStatus === 'reconnecting'}
