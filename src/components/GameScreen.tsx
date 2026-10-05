@@ -8,7 +8,8 @@ import { CardTransferFly } from './CardTransferFly';
 import type { TransferAnchors } from './CardTransferFly';
 import { DebugPanel } from './DebugPanel';
 import { GameCard } from './GameCard';
-import { RingActivityLog } from './RingActivityLog';
+import { formatRingActivity, RingActivityLog } from './RingActivityLog';
+import { RingDanmaku } from './RingDanmaku';
 import { RoomEntry } from './RoomEntry';
 import { WaitingRoom } from './WaitingRoom';
 import { LanguageSettings } from './LanguageSettings';
@@ -18,6 +19,7 @@ import { useGameStore } from '../store/gameStore';
 import { usePlayerProfileStore } from '../store/profileStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { getPlayerDisplayName } from '../profile';
+import { gameColors } from '../theme/gameColors';
 import { formatGameError, playerSeatLabel } from '../i18n/translations';
 import { useTranslation } from '../i18n/useTranslation';
 import {
@@ -28,6 +30,59 @@ import {
   triggerGameFeedback,
 } from '../services/gameFeedback';
 import type { RingFeedbackEvent } from '../network/protocol';
+
+const DANMAKU_LANE_COUNT = 4;
+
+type ActiveRingDanmaku = Readonly<{
+  event: RingFeedbackEvent;
+  lane: number;
+}>;
+
+type RingDanmakuState = Readonly<{
+  active: readonly ActiveRingDanmaku[];
+  queued: readonly RingFeedbackEvent[];
+  nextLane: number;
+}>;
+
+const EMPTY_RING_DANMAKU_STATE: RingDanmakuState = { active: [], queued: [], nextLane: 0 };
+
+function enqueueRingDanmakuEvents(state: RingDanmakuState, events: readonly RingFeedbackEvent[]): RingDanmakuState {
+  const knownVersions = new Set([
+    ...state.active.map(item => item.event.version),
+    ...state.queued.map(event => event.version),
+  ]);
+  const queued = [...state.queued];
+  for (const event of events) {
+    if (knownVersions.has(event.version)) continue;
+    knownVersions.add(event.version);
+    queued.push(event);
+  }
+  const active = [...state.active];
+  let nextLane = state.nextLane;
+
+  while (active.length < DANMAKU_LANE_COUNT && queued.length > 0) {
+    const lane = Array.from({ length: DANMAKU_LANE_COUNT }, (_, offset) => (
+      (nextLane + offset) % DANMAKU_LANE_COUNT
+    )).find(index => !active.some(item => item.lane === index));
+    const event = queued.shift();
+    if (lane === undefined || !event) break;
+    active.push({ event, lane });
+    nextLane = (lane + 1) % DANMAKU_LANE_COUNT;
+  }
+
+  return { active, queued, nextLane };
+}
+
+function finishRingDanmakuEvent(state: RingDanmakuState, version: number): RingDanmakuState {
+  const finished = state.active.find(item => item.event.version === version);
+  if (!finished) return state;
+
+  const active = state.active.filter(item => item.event.version !== version);
+  const [nextEvent, ...queued] = state.queued;
+  return nextEvent
+    ? { active: [...active, { event: nextEvent, lane: finished.lane }], queued, nextLane: state.nextLane }
+    : { active, queued, nextLane: state.nextLane };
+}
 
 export default function GameScreen() {
   const { language, t } = useTranslation();
@@ -70,6 +125,8 @@ export default function GameScreen() {
   const music = useBackgroundMusic(Boolean(roomSnapshot?.phase === 'playing' && (isSinglePlayer || connectionStatus === 'connected') && !leavingRoom));
   const [ringCue, setRingCue] = useState<RingFeedbackEvent | null>(null);
   const [showMatchDetails, setShowMatchDetails] = useState(false);
+  const [completedRingEvents, setCompletedRingEvents] = useState<readonly RingFeedbackEvent[]>([]);
+  const [ringDanmakuState, setRingDanmakuState] = useState<RingDanmakuState>(EMPTY_RING_DANMAKU_STATE);
   const screenRef = useRef<View | null>(null);
   const transferAnchorRefs = useRef<{
     deck: Record<PlayerId, View | null>;
@@ -80,9 +137,18 @@ export default function GameScreen() {
   ringCueVersionRef.current = ringCue?.version ?? null;
   const lastProcessedAction = useRef<string | null>(null);
   const lastProcessedRingVersion = useRef<number | null>(null);
+  const lastEnqueuedRingVersion = useRef<number | null>(null);
   const lastProcessedFlipVersion = useRef<number | null>(null);
   const lastObservedRoomSessionVersion = useRef<number | null>(null);
   const lastObservedPhase = useRef<string | null>(null);
+
+  const completeRingDanmaku = useCallback((event: RingFeedbackEvent) => {
+    setCompletedRingEvents(current => [
+      ...current.filter(item => item.version !== event.version),
+      event,
+    ].sort((left, right) => left.version - right.version).slice(-12));
+    setRingDanmakuState(current => finishRingDanmakuEvent(current, event.version));
+  }, []);
 
   const measureTransferAnchors = useCallback(async () => {
     const version = ringCueVersionRef.current;
@@ -160,9 +226,30 @@ export default function GameScreen() {
     if (lastObservedRoomSessionVersion.current !== roomSessionVersion) {
       lastObservedRoomSessionVersion.current = roomSessionVersion;
       lastProcessedRingVersion.current = roomSnapshot.lastRingEvent?.version ?? roomSnapshot.ringVersion ?? 0;
+      const initialRingHistory = roomSnapshot.ringHistory.slice(-12);
+      setCompletedRingEvents(initialRingHistory);
+      setRingDanmakuState(EMPTY_RING_DANMAKU_STATE);
+      lastEnqueuedRingVersion.current = Math.max(
+        roomSnapshot.ringVersion ?? 0,
+        roomSnapshot.lastRingEvent?.version ?? 0,
+        ...roomSnapshot.ringHistory.map(event => event.version),
+      );
       lastProcessedFlipVersion.current = roomSnapshot.lastFlipEvent?.version ?? 0;
       lastObservedPhase.current = roomSnapshot.phase;
       return;
+    }
+
+    const lastEnqueuedVersion = lastEnqueuedRingVersion.current ?? 0;
+    const unseenRingEvents = [...roomSnapshot.ringHistory]
+      .concat(roomSnapshot.lastRingEvent ? [roomSnapshot.lastRingEvent] : [])
+      .filter((event, index, events) => (
+        event.version > lastEnqueuedVersion &&
+        events.findIndex(candidate => candidate.version === event.version) === index
+      ))
+      .sort((left, right) => left.version - right.version);
+    if (unseenRingEvents.length > 0) {
+      lastEnqueuedRingVersion.current = unseenRingEvents[unseenRingEvents.length - 1].version;
+      setRingDanmakuState(current => enqueueRingDanmakuEvents(current, unseenRingEvents));
     }
 
     const ringEvent = roomSnapshot.lastRingEvent;
@@ -209,7 +296,7 @@ export default function GameScreen() {
   if (!roomSnapshot) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F6F5F1" />
+        <StatusBar barStyle="dark-content" backgroundColor={gameColors.canvas} />
         <RoomEntry
           onCreate={createRoom}
           onJoin={joinRoom}
@@ -233,7 +320,7 @@ export default function GameScreen() {
   if (roomSnapshot.phase === 'waiting' && roomCode && localPlayerId) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F6F5F1" />
+        <StatusBar barStyle="dark-content" backgroundColor={gameColors.canvas} />
         <WaitingRoom
           roomCode={roomCode}
           localPlayerId={localPlayerId}
@@ -296,10 +383,9 @@ export default function GameScreen() {
     triggerGameFeedback('press');
     ring();
   };
-
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F6F5F1" />
+      <StatusBar barStyle="dark-content" backgroundColor={gameColors.canvas} />
       <View ref={screenRef} style={styles.screen}>
         <View style={styles.header}>
           <Text style={styles.title}>BellFive</Text>
@@ -319,42 +405,59 @@ export default function GameScreen() {
           ) : null}
           {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{formatGameError(language, error.code)}</Text></View> : null}
 
-          <View style={styles.tablePanel}>
-            <View style={styles.tableHeading}>
-              <Text style={styles.tableTitle}>{t('game.table')}</Text>
-              <Text style={styles.tableHint}>{isSinglePlayer ? t('game.singlePlayer') : roomCode}</Text>
-            </View>
-            <View testID="play-mat" style={styles.playMat}>
-              {([localDeckPlayer, opponentPlayerId] as const).map(player => (
-                <View
-                  key={player}
-                  ref={node => { transferAnchorRefs.current.table[player] = node; }}
-                  onLayout={requestTransferAnchorMeasure}
-                  style={styles.cardAnchor}
-                >
-                  <GameCard
-                    playerId={player}
-                    playerLabel={getPlayerLabel(player)}
-                    card={roomSnapshot.players[player].topCard ?? undefined}
-                    active={isPlaying && roomSnapshot.turn === player}
-                    isLocalPlayer={player === localPlayerId}
-                    drawCount={roomSnapshot.players[player].drawCount ?? 0}
-                    playedCount={roomSnapshot.players[player].playedCount ?? 0}
-                    showDrawCount={isFinished}
-                    canFlip={canFlip && localPlayerId === player}
-                    compact={compactMatch}
-                    onPress={() => handleDeckFlip(player)}
+          <View style={styles.playStage}>
+            <View style={styles.tablePanel}>
+              <View style={styles.tableHeading}>
+                <Text style={styles.tableTitle}>{t('game.table')}</Text>
+                <Text style={styles.tableHint}>{isSinglePlayer ? t('game.singlePlayer') : roomCode}</Text>
+              </View>
+              <View testID="play-mat" style={styles.playMat}>
+                {([localDeckPlayer, opponentPlayerId] as const).map(player => (
+                  <View
+                    key={player}
+                    ref={node => { transferAnchorRefs.current.table[player] = node; }}
+                    onLayout={requestTransferAnchorMeasure}
+                    style={styles.cardAnchor}
+                  >
+                    <GameCard
+                      playerId={player}
+                      playerLabel={getPlayerLabel(player)}
+                      card={roomSnapshot.players[player].topCard ?? undefined}
+                      active={isPlaying && roomSnapshot.turn === player}
+                      isLocalPlayer={player === localPlayerId}
+                      drawCount={roomSnapshot.players[player].drawCount ?? 0}
+                      playedCount={roomSnapshot.players[player].playedCount ?? 0}
+                      showDrawCount={isFinished}
+                      canFlip={canFlip && localPlayerId === player}
+                      compact={compactMatch}
+                      onPress={() => handleDeckFlip(player)}
+                    />
+                  </View>
+                ))}
+                {ringDanmakuState.active.map(({ event, lane }) => (
+                  <RingDanmaku
+                    key={event.version}
+                    event={event}
+                    message={formatRingActivity(
+                      event,
+                      localDeckPlayer,
+                      language,
+                      isSinglePlayer ? t('solo.opponent') : undefined,
+                    )}
+                    lane={lane}
+                    laneCount={DANMAKU_LANE_COUNT}
+                    onComplete={completeRingDanmaku}
                   />
-                </View>
-              ))}
+                ))}
+              </View>
             </View>
-          </View>
 
-          <View style={styles.turnStrip}>
-            <View style={[styles.turnDot, isFinished && styles.turnDotFinished]} />
-            <View style={styles.turnCopy}>
-              <Text style={styles.turnLabel}>{isFinished ? t('game.over') : connectionPaused ? t('game.connectionPaused') : canFlip ? t('game.yourTurnFlip') : t('game.playerFlipsNext', { playerLabel: nextPlayerLabel })}</Text>
-              <Text style={styles.turnHint}>{isFinished ? t('game.roundComplete') : canRing ? t('bell.anytime') : localPlayerId && roomSnapshot.ringBlockedUntilFlip[localPlayerId] ? t('match.ringLocked') : t('game.waitReconnect')}</Text>
+            <View style={styles.turnStrip}>
+              <View style={[styles.turnDot, isFinished && styles.turnDotFinished]} />
+              <View style={styles.turnCopy}>
+                <Text style={styles.turnLabel}>{isFinished ? t('game.over') : connectionPaused ? t('game.connectionPaused') : canFlip ? t('game.yourTurnFlip') : t('game.playerFlipsNext', { playerLabel: nextPlayerLabel })}</Text>
+                <Text style={styles.turnHint}>{isFinished ? t('game.roundComplete') : canRing ? t('bell.anytime') : localPlayerId && roomSnapshot.ringBlockedUntilFlip[localPlayerId] ? t('match.ringLocked') : t('game.waitReconnect')}</Text>
+              </View>
             </View>
           </View>
 
@@ -375,7 +478,7 @@ export default function GameScreen() {
           <Pressable role="button" accessibilityState={{ expanded: showMatchDetails }} accessibilityLabel={t('match.details')} onPress={() => setShowMatchDetails(value => !value)} style={styles.detailsButton}>
             <Text style={styles.detailsText}>{t('match.details')} {showMatchDetails ? '−' : '+'}</Text>
           </Pressable>
-          {showMatchDetails ? <View style={styles.detailsPanel}>{localPlayerId ? <RingActivityLog events={roomSnapshot.ringHistory} localPlayerId={localPlayerId} opponentName={isSinglePlayer ? t('solo.opponent') : undefined} /> : null}<DebugPanel snapshot={roomSnapshot} connectionStatus={connectionStatus} sessionMode={sessionMode} /></View> : null}
+          {showMatchDetails ? <View style={styles.detailsPanel}>{localPlayerId ? <RingActivityLog events={completedRingEvents} localPlayerId={localPlayerId} opponentName={isSinglePlayer ? t('solo.opponent') : undefined} /> : null}<DebugPanel snapshot={roomSnapshot} connectionStatus={connectionStatus} sessionMode={sessionMode} /></View> : null}
         </ScrollView>
 
         {isFinished ? (
@@ -414,10 +517,10 @@ export default function GameScreen() {
                         onLayout={requestTransferAnchorMeasure}
                         accessible
                         accessibilityLabel={t('match.count.accessibility', { playerLabel, count: drawCount })}
-                        style={styles.drawCount}
+                        style={[styles.drawCount, player === localDeckPlayer && styles.ownDrawCount]}
                       >
-                        <Text style={styles.drawStatCaption}>{t(player === localDeckPlayer ? 'match.count.you' : 'match.count.opponent')}</Text>
-                        <Text style={styles.drawValue}>{drawCount}</Text>
+                        <Text style={[styles.drawStatCaption, player === localDeckPlayer && styles.ownDrawStatCaption]}>{t(player === localDeckPlayer ? 'match.count.you' : 'match.count.opponent')}</Text>
+                        <Text style={[styles.drawValue, player === localDeckPlayer ? styles.ownDrawValue : styles.opponentDrawValue]}>{drawCount}</Text>
                       </View>
                     );
                   })}
@@ -436,7 +539,6 @@ export default function GameScreen() {
               style={({ pressed }) => [styles.flipButton, compactMatch && styles.compactActionButton, !canFlip && styles.disabledButton, pressed && canFlip && styles.pressed]}
             >
               <Text style={styles.flipText}>{t('game.flip')}</Text>
-              <Text style={styles.flipHint}>{t('match.leftHand')}</Text>
             </Pressable>
             </View>
             <BellButton
@@ -494,65 +596,69 @@ function centerRelativeTo(root: WindowRect, target: WindowRect) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F5F0FF' },
-  screen: { flex: 1, position: 'relative', paddingHorizontal: 12, backgroundColor: '#F5F0FF' },
+  safeArea: { flex: 1, backgroundColor: gameColors.canvas },
+  screen: { flex: 1, position: 'relative', paddingHorizontal: 12, backgroundColor: gameColors.canvas },
   header: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  title: { color: '#2F194C', fontSize: 21, fontWeight: '900', letterSpacing: -0.8 },
+  title: { color: gameColors.ink, fontSize: 21, fontWeight: '900', letterSpacing: -0.8 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  timerPill: { minWidth: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 7, borderRadius: 12, backgroundColor: '#E3FB88' },
-  timerText: { color: '#2F194C', fontSize: 14, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  headerButton: { minWidth: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 8, borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D7C9E8' },
-  headerButtonText: { color: '#2F194C', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
+  timerPill: { minWidth: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 7, borderRadius: 12, backgroundColor: gameColors.lime },
+  timerText: { color: gameColors.ink, fontSize: 14, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  headerButton: { minWidth: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 8, borderRadius: 12, backgroundColor: gameColors.surface, borderWidth: 1, borderColor: gameColors.border },
+  headerButtonText: { color: gameColors.ink, fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
   scroll: { flex: 1 },
-  scrollContent: { paddingTop: 2, paddingBottom: 8 },
-  turnStrip: { minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, marginBottom: 4, borderRadius: 12, backgroundColor: '#E2D5FF' },
-  turnDot: { width: 8, height: 8, marginRight: 7, borderRadius: 4, backgroundColor: '#7040C4' },
-  turnDotFinished: { backgroundColor: '#E3FB88' },
+  scrollContent: { flexGrow: 1, paddingTop: 2, paddingBottom: 8 },
+  playStage: { flexGrow: 1, justifyContent: 'center' },
+  turnStrip: { minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, marginBottom: 4, borderRadius: 12, backgroundColor: gameColors.lavenderSurface },
+  turnDot: { width: 8, height: 8, marginRight: 7, borderRadius: 4, backgroundColor: gameColors.purple },
+  turnDotFinished: { backgroundColor: gameColors.lime },
   turnCopy: { flex: 1 },
-  turnLabel: { color: '#2F194C', fontSize: 10, fontWeight: '900' },
-  turnHint: { marginTop: 1, color: '#796887', fontSize: 9, fontWeight: '600' },
+  turnLabel: { color: gameColors.ink, fontSize: 10, fontWeight: '900' },
+  turnHint: { marginTop: 1, color: gameColors.muted, fontSize: 9, fontWeight: '600' },
   pausedBanner: { alignItems: 'center', marginBottom: 10, paddingVertical: 8, borderRadius: 12, backgroundColor: '#FFF1D7' },
   pausedText: { color: '#946B22', fontSize: 11, fontWeight: '800' },
   errorBanner: { marginBottom: 10, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: '#FBE6E3' },
   errorText: { color: '#9D453F', fontSize: 11, fontWeight: '700', textAlign: 'center' },
-  tablePanel: { padding: 0, marginBottom: 2 },
+  tablePanel: { padding: 0, marginBottom: 10 },
   tableHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5, paddingHorizontal: 2 },
-  tableTitle: { color: '#796887', fontSize: 9, fontWeight: '800' },
-  tableHint: { color: '#796887', fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  tableTitle: { color: gameColors.muted, fontSize: 9, fontWeight: '800' },
+  tableHint: { color: gameColors.muted, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   playMat: { position: 'relative', flexDirection: 'row', alignItems: 'stretch', gap: 8 },
   cardAnchor: { flex: 1, minWidth: 0 },
   gameOver: { alignItems: 'center', paddingVertical: 12 },
   winnerLabel: { color: '#3D6078', fontSize: 19, fontWeight: '900', letterSpacing: 0.8 },
   youWin: { marginTop: 1, color: '#D46D69', fontSize: 13, fontWeight: '900', letterSpacing: 1 },
-  console: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4, borderTopLeftRadius: 18, borderTopRightRadius: 18, backgroundColor: '#34214F' },
+  console: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4, borderTopLeftRadius: 18, borderTopRightRadius: 18, backgroundColor: gameColors.plum },
   consoleIdentity: { minHeight: 46, flexDirection: 'row', alignItems: 'center' },
-  initial: { width: 37, height: 39, alignItems: 'center', justifyContent: 'center', marginRight: 8, borderRadius: 10, backgroundColor: '#E3FB88' },
-  initialText: { color: '#34214F', fontSize: 20, fontWeight: '900' },
+  initial: { width: 37, height: 39, alignItems: 'center', justifyContent: 'center', marginRight: 8, borderRadius: 10, backgroundColor: gameColors.lime },
+  initialText: { color: gameColors.plum, fontSize: 20, fontWeight: '900' },
   identityCopy: { flex: 1, minWidth: 0 },
-  identityCaption: { color: '#C6B5DF', fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
-  identityName: { color: '#F9F5FF', fontSize: 20, fontWeight: '900' },
-  drawCountGroup: { minWidth: 96, alignItems: 'center', marginLeft: 6 },
-  drawGroupCaption: { color: '#C6B5DF', fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
-  drawCountPair: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  drawCount: { minWidth: 38, alignItems: 'center' },
-  drawStatCaption: { color: '#C6B5DF', fontSize: 7, fontWeight: '800', letterSpacing: 0.4 },
-  drawValue: { color: '#F9F5FF', fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  consolePrompt: { minHeight: 28, paddingTop: 5, color: '#E3FB88', fontSize: 12, fontWeight: '700' },
+  identityCaption: { color: gameColors.mutedOnDark, fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
+  identityName: { color: gameColors.onDark, fontSize: 20, fontWeight: '900' },
+  drawCountGroup: { minWidth: 104, alignItems: 'center', marginLeft: 6 },
+  drawGroupCaption: { color: gameColors.mutedOnDark, fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
+  drawCountPair: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  drawCount: { minWidth: 34, alignItems: 'center' },
+  ownDrawCount: { minWidth: 52, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 9, backgroundColor: gameColors.lime },
+  drawStatCaption: { color: gameColors.subtleOnDark, fontSize: 7, fontWeight: '800', letterSpacing: 0.35 },
+  ownDrawStatCaption: { color: gameColors.onLimeMuted },
+  drawValue: { color: gameColors.onDark, fontSize: 16, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  ownDrawValue: { color: gameColors.plum, fontSize: 23 },
+  opponentDrawValue: { color: gameColors.opponentCount, fontSize: 14 },
+  consolePrompt: { minHeight: 28, paddingTop: 5, color: gameColors.lime, fontSize: 12, fontWeight: '700' },
   actionDock: { flexDirection: 'row', alignItems: 'stretch', gap: 14, paddingTop: 2, paddingBottom: 0 },
   actionButtonSlot: { flex: 1, minWidth: 0 },
-  flipButton: { flex: 1, minWidth: 0, minHeight: 116, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 2, borderColor: '#C6A3F7', backgroundColor: '#9165D2', shadowColor: '#583780', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 0, elevation: 4 },
+  flipButton: { flex: 1, minWidth: 0, minHeight: 116, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 2, borderColor: gameColors.purpleActionBorder, backgroundColor: gameColors.purpleAction, shadowColor: gameColors.purpleShadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 0, elevation: 4 },
   compactActionButton: { minHeight: 88 },
   disabledButton: { opacity: 0.58 },
-  flipText: { color: '#FFF9FF', fontSize: 24, fontWeight: '900', letterSpacing: 1.5 },
-  flipHint: { marginTop: 4, color: '#F0E8FF', fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
-  consoleFoot: { minHeight: 22, paddingTop: 5, color: '#C6B5DF', fontSize: 9, fontWeight: '800', textAlign: 'center' },
+  flipText: { color: gameColors.onAction, fontSize: 24, fontWeight: '900', letterSpacing: 1.5 },
+  consoleFoot: { minHeight: 22, paddingTop: 5, color: gameColors.mutedOnDark, fontSize: 9, fontWeight: '800', textAlign: 'center' },
   correctFeedback: { color: '#B9F4C8' },
   wrongFeedback: { color: '#FFB6B6' },
   detailsButton: { alignSelf: 'flex-start', marginTop: 8, paddingVertical: 6, paddingHorizontal: 3 },
-  detailsText: { color: '#796887', fontSize: 10, fontWeight: '800' },
+  detailsText: { color: gameColors.muted, fontSize: 10, fontWeight: '800' },
   detailsPanel: { paddingBottom: 8 },
-  finishedDock: { alignItems: 'center', justifyContent: 'center', minHeight: 68, borderTopWidth: 1, borderTopColor: '#E6E5E1' },
-  playAgain: { width: '100%', minHeight: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: '#9165D2' },
+  finishedDock: { alignItems: 'center', justifyContent: 'center', minHeight: 68, borderTopWidth: 1, borderTopColor: gameColors.border },
+  playAgain: { width: '100%', minHeight: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: gameColors.purpleAction },
   readyAgain: { backgroundColor: '#E3F1E7' },
   readyAgainText: { color: '#35744F' },
   pressed: { opacity: 0.84, transform: [{ scale: 0.98 }] },

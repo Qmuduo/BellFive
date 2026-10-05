@@ -3,6 +3,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Language } from '../i18n/types';
 import { useTranslation } from '../i18n/useTranslation';
 import { useSettingsStore } from '../store/settingsStore';
+import { gameColors } from '../theme/gameColors';
 
 const OPTIONS: readonly Language[] = ['zh-CN', 'en'];
 
@@ -64,18 +65,18 @@ export function LanguageSettings({ compact = false }: Readonly<{ compact?: boole
 }
 
 const styles = StyleSheet.create({
-  trigger: { minWidth: 62, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, paddingVertical: 8, borderWidth: 1, borderColor: '#E1E3E7', borderRadius: 14, backgroundColor: '#FFFFFF' },
+  trigger: { minWidth: 62, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, paddingVertical: 8, borderWidth: 1, borderColor: gameColors.border, borderRadius: 14, backgroundColor: gameColors.surface },
   compactTrigger: { minWidth: 42, paddingHorizontal: 5 },
-  triggerText: { color: '#596674', fontSize: 10, fontWeight: '900', letterSpacing: 0.4 },
+  triggerText: { color: gameColors.ink, fontSize: 10, fontWeight: '900', letterSpacing: 0.4 },
   pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
-  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(23, 31, 39, 0.38)' },
-  dialog: { width: '100%', maxWidth: 340, padding: 19, borderRadius: 24, backgroundColor: '#FFFFFF', shadowColor: '#283444', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 18, elevation: 8 },
-  title: { marginBottom: 13, color: '#263340', fontSize: 18, fontWeight: '900' },
-  option: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7, paddingHorizontal: 14, borderWidth: 1, borderColor: '#E7E9EB', borderRadius: 15, backgroundColor: '#FAFAF8' },
-  selected: { borderColor: '#D7B744', backgroundColor: '#FFF8DE' },
-  optionText: { color: '#4C5965', fontSize: 14, fontWeight: '700' },
-  selectedText: { color: '#6C5717', fontWeight: '900' },
-  check: { color: '#8C7020', fontSize: 17, fontWeight: '900' },
-  close: { alignItems: 'center', justifyContent: 'center', minHeight: 45, marginTop: 12, borderRadius: 14, backgroundColor: '#F2C4CC' },
-  closeText: { color: '#633E45', fontSize: 13, fontWeight: '900' },
+  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(52, 33, 79, 0.38)' },
+  dialog: { width: '100%', maxWidth: 340, padding: 19, borderRadius: 24, backgroundColor: gameColors.surface, shadowColor: gameColors.plum, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 18, elevation: 8 },
+  title: { marginBottom: 13, color: gameColors.plum, fontSize: 18, fontWeight: '900' },
+  option: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7, paddingHorizontal: 14, borderWidth: 1, borderColor: gameColors.border, borderRadius: 15, backgroundColor: gameColors.lavenderSurface },
+  selected: { borderColor: gameColors.purple, backgroundColor: gameColors.lime },
+  optionText: { color: gameColors.ink, fontSize: 14, fontWeight: '700' },
+  selectedText: { color: gameColors.plum, fontWeight: '900' },
+  check: { color: gameColors.purple, fontSize: 17, fontWeight: '900' },
+  close: { alignItems: 'center', justifyContent: 'center', minHeight: 45, marginTop: 12, borderRadius: 14, backgroundColor: gameColors.purple },
+  closeText: { color: gameColors.onDark, fontSize: 13, fontWeight: '900' },
 });

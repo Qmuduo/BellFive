@@ -67,7 +67,6 @@ export function BellButton({
         >
           <Text pointerEvents="none" style={styles.bellIcon}>🔔</Text>
           <Text pointerEvents="none" style={styles.ringLabel}>{t('bell.ring')}</Text>
-          <Text pointerEvents="none" style={styles.ringHint}>{t('match.rightHand')}</Text>
         </Pressable>
       </Animated.View>
       {showFeedback ? (
@@ -101,7 +100,6 @@ const styles = StyleSheet.create({
   compactRingButton: { minHeight: 88 },
   bellIcon: { fontSize: 24, lineHeight: 29 },
   ringLabel: { color: '#34214F', fontSize: 24, fontWeight: '900', letterSpacing: 1.5 },
-  ringHint: { marginTop: 4, color: '#57466F', fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
   disabledButton: { backgroundColor: '#675977', borderColor: '#675977' },
   pressed: { opacity: 0.72 },
   feedback: { minHeight: 14, marginTop: 5, color: '#C6B5DF', fontSize: 9, fontWeight: '800', textAlign: 'center' },

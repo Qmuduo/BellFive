@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AVATAR_EMOJI, AVATAR_OPTIONS } from '../profile';
 import type { AvatarId } from '../profile';
 import { useTranslation } from '../i18n/useTranslation';
+import { gameColors } from '../theme/gameColors';
 
 type AvatarPickerProps = Readonly<{
   selected: AvatarId;
@@ -35,8 +36,8 @@ export function AvatarPicker({ selected, onSelect, disabled = false }: AvatarPic
 
 const styles = StyleSheet.create({
   options: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  option: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 15, borderWidth: 1.5, borderColor: '#E5E4E0', backgroundColor: '#FFFFFF' },
-  selected: { borderColor: '#D6B533', backgroundColor: '#FFF5CC' },
+  option: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 15, borderWidth: 1.5, borderColor: gameColors.border, backgroundColor: gameColors.surface },
+  selected: { borderColor: gameColors.purple, backgroundColor: gameColors.lime },
   pressed: { transform: [{ scale: 0.94 }] },
   disabled: { opacity: 0.55 },
   emoji: { fontSize: 22 },

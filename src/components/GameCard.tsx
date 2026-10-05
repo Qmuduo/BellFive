@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     minWidth: 0,
-    minHeight: 180,
+    minHeight: 214,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 7,
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   count: { color: '#2F194C', fontSize: 11, fontWeight: '800', flexShrink: 1 },
   played: { color: '#796887', fontSize: 10, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
   pressed: { opacity: 0.8 },
-  compactCard: { minHeight: 152, paddingVertical: 5 },
+  compactCard: { minHeight: 180, paddingVertical: 5 },
   symbols: {
     flex: 1,
     width: '100%',
@@ -151,11 +151,11 @@ const styles = StyleSheet.create({
   },
   symbol: {
     position: 'absolute',
-    width: 38,
-    marginLeft: -19,
-    marginTop: -20,
-    fontSize: 28,
-    lineHeight: 34,
+    width: 42,
+    marginLeft: -21,
+    marginTop: -22,
+    fontSize: 32,
+    lineHeight: 38,
     textAlign: 'center',
   },
   emptyArea: {

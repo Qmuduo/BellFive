@@ -10,6 +10,7 @@ import { LanguageSettings } from './LanguageSettings';
 import { formatApplicationStatus, formatGameError } from '../i18n/translations';
 import type { TranslationKey } from '../i18n/translations';
 import { useTranslation } from '../i18n/useTranslation';
+import { gameColors } from '../theme/gameColors';
 
 const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/;
 const SINGLE_PLAYER_DIFFICULTIES: readonly SinglePlayerDifficulty[] = ['easy', 'normal', 'hard'];
@@ -87,7 +88,7 @@ export function RoomEntry({
           editable={!roomActionsBusy}
           onChangeText={nickname => onProfileChange({ ...profile, nickname })}
           placeholder={t('entry.nicknamePlaceholder')}
-          placeholderTextColor="#9BA3AB"
+          placeholderTextColor={gameColors.muted}
           style={styles.nicknameInput}
           value={profile.nickname}
         />
@@ -198,7 +199,7 @@ export function RoomEntry({
           setShowValidationError(false);
         }}
         placeholder={t('entry.roomCodePlaceholder')}
-        placeholderTextColor="#9BA3AB"
+        placeholderTextColor={gameColors.muted}
         style={styles.input}
         value={code}
       />
@@ -223,49 +224,49 @@ export function RoomEntry({
 }
 
 const styles = StyleSheet.create({
-  screen: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 25, paddingVertical: 20, backgroundColor: '#F6F5F1' },
+  screen: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 25, paddingVertical: 20, backgroundColor: gameColors.canvas },
   settingsRow: { alignItems: 'flex-end', marginBottom: 4 },
-  brandMark: { alignSelf: 'center', width: 74, height: 74, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: '#F4CA42' },
+  brandMark: { alignSelf: 'center', width: 74, height: 74, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: gameColors.lime },
   bell: { fontSize: 37 },
-  eyebrow: { marginTop: 24, color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
-  title: { marginTop: 4, color: '#202B37', fontSize: 38, fontWeight: '900', letterSpacing: -1, textAlign: 'center' },
-  description: { maxWidth: 300, alignSelf: 'center', marginTop: 8, marginBottom: 28, color: '#75808B', fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  profilePanel: { marginBottom: 18, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14, borderWidth: 1, borderColor: '#E7E3D9', borderRadius: 18, backgroundColor: '#FFFFFF' },
-  profileLabel: { marginBottom: 8, color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 1.3 },
-  nicknameInput: { minHeight: 42, marginBottom: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E4E6E8', borderRadius: 12, color: '#263340', fontSize: 14, fontWeight: '700' },
-  createButton: { minHeight: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#F2C4CC' },
-  createText: { color: '#633E45', fontSize: 16, fontWeight: '900' },
+  eyebrow: { marginTop: 24, color: gameColors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
+  title: { marginTop: 4, color: gameColors.plum, fontSize: 38, fontWeight: '900', letterSpacing: -1, textAlign: 'center' },
+  description: { maxWidth: 300, alignSelf: 'center', marginTop: 8, marginBottom: 28, color: gameColors.muted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  profilePanel: { marginBottom: 18, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14, borderWidth: 1, borderColor: gameColors.border, borderRadius: 18, backgroundColor: gameColors.surface },
+  profileLabel: { marginBottom: 8, color: gameColors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1.3 },
+  nicknameInput: { minHeight: 42, marginBottom: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: gameColors.border, borderRadius: 12, color: gameColors.plum, fontSize: 14, fontWeight: '700' },
+  createButton: { minHeight: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: gameColors.purple },
+  createText: { color: gameColors.onDark, fontSize: 16, fontWeight: '900' },
   soloPanel: { marginTop: 10 },
-  soloButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#D7C78D', borderRadius: 16, backgroundColor: '#FFF5CF' },
-  soloText: { color: '#69591F', fontSize: 14, fontWeight: '900' },
-  difficultyPanel: { marginTop: 9, padding: 11, borderRadius: 14, backgroundColor: '#FFFFFF' },
-  difficultyHeading: { marginBottom: 9, color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 1.1, textAlign: 'center' },
+  soloButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: gameColors.lime, borderRadius: 16, backgroundColor: gameColors.lime },
+  soloText: { color: gameColors.plum, fontSize: 14, fontWeight: '900' },
+  difficultyPanel: { marginTop: 9, padding: 11, borderRadius: 14, backgroundColor: gameColors.surface },
+  difficultyHeading: { marginBottom: 9, color: gameColors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1.1, textAlign: 'center' },
   difficultyRow: { flexDirection: 'row', gap: 8 },
-  difficultyButton: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#E8EEFA' },
-  difficultyText: { color: '#405776', fontSize: 11, fontWeight: '900' },
+  difficultyButton: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: gameColors.lavenderSurface },
+  difficultyText: { color: gameColors.ink, fontSize: 11, fontWeight: '900' },
   roomsHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 21, marginBottom: 8 },
-  roomsTitle: { color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 1.3 },
-  refreshText: { color: '#647B9B', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
-  emptyRooms: { padding: 13, borderRadius: 13, backgroundColor: '#FFFFFF', color: '#8A939B', fontSize: 11, textAlign: 'center' },
+  roomsTitle: { color: gameColors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1.3 },
+  refreshText: { color: gameColors.purple, fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
+  emptyRooms: { padding: 13, borderRadius: 13, backgroundColor: gameColors.surface, color: gameColors.muted, fontSize: 11, textAlign: 'center' },
   roomList: { gap: 7 },
-  roomRow: { minHeight: 53, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 11, paddingVertical: 7, borderRadius: 14, backgroundColor: '#FFFFFF' },
+  roomRow: { minHeight: 53, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 11, paddingVertical: 7, borderRadius: 14, backgroundColor: gameColors.surface },
   roomAvatar: { width: 30, fontSize: 22, textAlign: 'center' },
   roomCopy: { flex: 1, marginLeft: 8 },
-  roomName: { color: '#364451', fontSize: 11, fontWeight: '800' },
-  roomHint: { marginTop: 2, color: '#929AA2', fontSize: 9 },
-  requestButton: { minWidth: 51, alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: '#E8EEFA' },
-  requestText: { color: '#405776', fontSize: 9, fontWeight: '900' },
+  roomName: { color: gameColors.plum, fontSize: 11, fontWeight: '800' },
+  roomHint: { marginTop: 2, color: gameColors.muted, fontSize: 9 },
+  requestButton: { minWidth: 51, alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: gameColors.lavenderSurface },
+  requestText: { color: gameColors.ink, fontSize: 9, fontWeight: '900' },
   applicationPanel: { alignItems: 'center', marginTop: 9, padding: 11, borderRadius: 13, backgroundColor: '#FBE6E3' },
   pendingPanel: { backgroundColor: '#FFF4D5' },
   applicationText: { color: '#78623C', fontSize: 11, fontWeight: '700', textAlign: 'center' },
   cancelRequest: { paddingHorizontal: 10, paddingVertical: 8 },
   cancelRequestText: { color: '#8D6A2A', fontSize: 10, fontWeight: '900' },
   divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 23 },
-  rule: { flex: 1, height: 1, backgroundColor: '#E1E3E5' },
-  or: { marginHorizontal: 12, color: '#929AA2', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  input: { minHeight: 56, paddingHorizontal: 16, borderWidth: 1.5, borderColor: '#DDE1E5', borderRadius: 16, backgroundColor: '#FFFFFF', color: '#263340', fontSize: 17, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
-  joinButton: { minHeight: 55, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderWidth: 1, borderColor: '#CCD5E4', borderRadius: 17, backgroundColor: '#E8EEFA' },
-  joinText: { color: '#405776', fontSize: 15, fontWeight: '900' },
+  rule: { flex: 1, height: 1, backgroundColor: gameColors.border },
+  or: { marginHorizontal: 12, color: gameColors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  input: { minHeight: 56, paddingHorizontal: 16, borderWidth: 1.5, borderColor: gameColors.border, borderRadius: 16, backgroundColor: gameColors.surface, color: gameColors.plum, fontSize: 17, fontWeight: '900', letterSpacing: 2, textAlign: 'center' },
+  joinButton: { minHeight: 55, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderWidth: 1, borderColor: gameColors.border, borderRadius: 17, backgroundColor: gameColors.lavenderSurface },
+  joinText: { color: gameColors.ink, fontSize: 15, fontWeight: '900' },
   pressed: { opacity: 0.8, transform: [{ scale: 0.99 }] },
   disabled: { opacity: 0.55 },
   error: { marginTop: 14, color: '#B23A32', fontSize: 12, fontWeight: '700', textAlign: 'center' },
