@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import { WebSocket } from 'ws';
+import { request } from 'node:http';
 import { openAuthDatabase } from '../auth/database';
 import { AuthRepository } from '../auth/repository';
 import { AuthService } from '../auth/service';
@@ -30,6 +31,93 @@ async function connect() {
 }
 function closed(socket: WebSocket) { return new Promise<number>(resolve => socket.once('close', code => resolve(code))); }
 function message(socket: WebSocket) { return new Promise<any>(resolve => socket.once('message', raw => resolve(JSON.parse(raw.toString())))); }
+
+async function authenticate(socket: WebSocket) {
+  const acknowledgement = message(socket);
+  socket.send(JSON.stringify({ type: 'session.authenticate', token }));
+  expect(await acknowledgement).toEqual({ type: 'session.authenticated', userId });
+}
+
+async function editProfile() {
+  const response = await new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
+    const outgoing = request(`${new URL(server.httpUrl).origin}/auth/me/profile`, {
+      method: 'PATCH', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    }, incoming => {
+      let body = ''; incoming.setEncoding('utf8');
+      incoming.on('data', chunk => { body += chunk; });
+      incoming.on('end', () => resolve({ status: incoming.statusCode, body }));
+    });
+    outgoing.on('error', reject);
+    outgoing.end(JSON.stringify({ profile: { nickname: 'Updated', avatarId: 'bell' } }));
+  });
+  expect(response.status).toBe(200);
+  expect(JSON.parse(response.body)).toMatchObject({ profile: { nickname: 'Updated', avatarId: 'bell' } });
+}
+
+test('uses an HTTP profile edit on the same authenticated socket when creating a room', async () => {
+  const socket = await connect(); await authenticate(socket);
+  await editProfile();
+  const session = message(socket);
+  socket.send(JSON.stringify({ type: 'room.create', requestId: 'create-updated', profile: { nickname: 'Spoofed', avatarId: 'banana' } }));
+  expect(await session).toMatchObject({ type: 'room.session', snapshot: { players: { A: { profile: { nickname: 'Updated', avatarId: 'bell' } } } } });
+});
+
+test('refreshes an existing seat from an HTTP profile edit on the same authenticated socket', async () => {
+  const socket = await connect(); await authenticate(socket);
+  const created = message(socket);
+  socket.send('{"type":"room.create","requestId":"create"}');
+  await created;
+  await editProfile();
+  const updated = new Promise<any>(resolve => socket.on('message', raw => {
+    const value = JSON.parse(raw.toString());
+    if (value.type === 'room.snapshot') resolve(value);
+  }));
+  socket.send(JSON.stringify({ type: 'room.ready', actionId: 'ready', ready: true, profile: { nickname: 'Spoofed', avatarId: 'banana' } }));
+  expect(await updated).toMatchObject({ snapshot: { players: { A: { profile: { nickname: 'Updated', avatarId: 'bell' } } } } });
+});
+
+test('refreshes the recovered seat with the newly authenticated server profile', async () => {
+  const socket = await connect(); await authenticate(socket);
+  const created = message(socket);
+  socket.send('{"type":"room.create","requestId":"create"}');
+  const session = await created;
+  const closing = closed(socket); socket.close(); await closing;
+  await editProfile();
+  const replacement = await connect(); await authenticate(replacement);
+  const recovered = message(replacement);
+  replacement.send(JSON.stringify({ type: 'room.reconnect', requestId: 'resume', roomCode: session.roomCode, seatToken: session.seatToken, profile: { nickname: 'Spoofed', avatarId: 'banana' } }));
+  expect(await recovered).toMatchObject({ type: 'room.session', snapshot: { players: { A: { profile: { nickname: 'Updated', avatarId: 'bell' } } } } });
+});
+
+test('serializes room actions while refreshing the authenticated principal asynchronously', async () => {
+  const socket = await connect(); await authenticate(socket);
+  const principal = await service.authenticateToken(token);
+  let release!: (value: typeof principal) => void;
+  const pending = new Promise<typeof principal>(resolve => { release = resolve; });
+  jest.spyOn(service, 'authenticateToken').mockImplementationOnce(() => pending);
+  const received: any[] = [];
+  const completed = new Promise<void>(resolve => socket.on('message', raw => {
+    const value = JSON.parse(raw.toString()); received.push(value);
+    if (value.type === 'room.left') resolve();
+  }));
+  socket.send('{"type":"room.create","requestId":"ordered-create"}');
+  socket.send('{"type":"room.leave","requestId":"ordered-leave"}');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  expect(received).toEqual([]);
+  release(principal); await completed;
+  expect(received.map(item => item.type)).toEqual(['room.session', 'room.left']);
+});
+
+test('closes a session that expired after authentication before accepting the next room action', async () => {
+  const socket = await connect(); await authenticate(socket);
+  db.prepare('UPDATE sessions SET expires_at = 0').run();
+  const result = new Promise<unknown>(resolve => {
+    socket.once('close', code => resolve({ closeCode: code }));
+    socket.once('message', raw => resolve(JSON.parse(raw.toString())));
+  });
+  socket.send('{"type":"room.create","requestId":"expired-session"}');
+  expect(await result).toEqual({ closeCode: 4401 });
+});
 
 test('closes room commands before authentication with 4401 without creating a seat', async () => {
   const socket = await connect();

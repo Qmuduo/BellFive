@@ -51,7 +51,8 @@ type RoomRecord = {
   actionResults: Record<PlayerId, Map<string, Extract<ServerMessage, { type: 'action.result' }>>>;
 };
 
-type PendingApplication = JoinApplication & {
+type PendingApplication = Omit<JoinApplication, 'profile'> & {
+  profile: PlayerProfile;
   userId: string;
   requestId: string;
   connectionId: string;
@@ -93,6 +94,7 @@ export class RoomManager {
 
   handleMessage(connectionId: string, message: ClientMessage, principal: AuthPrincipal): RoomManagerEvent[] {
     const maintenance = this.expireRooms(this.now());
+    const refreshed = this.refreshConnectionProfile(connectionId, principal);
     let events: RoomManagerEvent[];
 
     switch (message.type) {
@@ -141,9 +143,42 @@ export class RoomManager {
         events = this.handleGameAction(connectionId, message);
     }
 
-    const maintenanceEvents = [...maintenance.events, ...events];
+    const refreshedEvents = refreshed.events.filter(event =>
+      event.message.type !== 'room.application.pending' || this.applications.has(event.message.application.applicationId),
+    );
+    const maintenanceEvents = [...maintenance.events, ...events, ...refreshedEvents];
+    if (refreshed.room && this.rooms.has(refreshed.room.roomCode)) {
+      maintenanceEvents.push(...this.snapshotEvents(refreshed.room), ...this.lobbySnapshotEvents());
+    }
     if (maintenance.roomCodes.length > 0) maintenanceEvents.push(...this.lobbySnapshotEvents());
     return maintenanceEvents;
+  }
+
+  private refreshConnectionProfile(
+    connectionId: string,
+    principal: AuthPrincipal,
+  ): { room: RoomRecord | null; events: RoomManagerEvent[] } {
+    const connection = this.connectionToSeat.get(connectionId);
+    const room = connection ? this.rooms.get(connection.roomCode) : undefined;
+    const seat = connection ? room?.seats[connection.playerId] : undefined;
+    let refreshedRoom: RoomRecord | null = null;
+    if (seat?.connectionId === connectionId && seat.userId === principal.userId && (
+      seat.profile.nickname !== principal.profile.nickname || seat.profile.avatarId !== principal.profile.avatarId
+    )) {
+      seat.profile = { ...principal.profile };
+      refreshedRoom = room!;
+    }
+    const events: RoomManagerEvent[] = [];
+    for (const application of this.applications.values()) {
+      if (application.connectionId !== connectionId || application.userId !== principal.userId) continue;
+      if (application.profile.nickname === principal.profile.nickname && application.profile.avatarId === principal.profile.avatarId) continue;
+      application.profile = { ...principal.profile };
+      const hostConnectionId = this.rooms.get(application.roomCode)?.seats.A?.connectionId;
+      if (hostConnectionId) events.push(this.event(hostConnectionId, {
+        type: 'room.application.pending', application: this.publicApplication(application),
+      }));
+    }
+    return { room: refreshedRoom, events };
   }
 
   disconnect(connectionId: string): RoomManagerEvent[] {
@@ -452,6 +487,7 @@ export class RoomManager {
 
     if (seat.connectionId) this.connectionToSeat.delete(seat.connectionId);
     seat.connectionId = connectionId;
+    seat.profile = { ...principal.profile };
     this.connectionToSeat.set(connectionId, { roomCode, playerId });
     const now = this.now();
     room.lastActivityAt = now;

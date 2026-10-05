@@ -31,6 +31,8 @@ export type RunningRoomServer = Readonly<{
 type Connection = {
   socket: WebSocket;
   principal: AuthPrincipal | null;
+  token: string | null;
+  messageQueue: Promise<void>;
   authTimer: ReturnType<typeof setTimeout>;
   authenticating: boolean;
 };
@@ -71,7 +73,7 @@ export async function createWebSocketServer(
   webSocketServer.on('connection', socket => {
     const connectionId = randomUUID();
     const connection: Connection = {
-      socket, principal: null, authenticating: false,
+      socket, principal: null, token: null, messageQueue: Promise.resolve(), authenticating: false,
       authTimer: setTimeout(() => socket.close(4401, 'Authentication required'), 5_000),
     };
     connections.set(connectionId, connection);
@@ -93,6 +95,7 @@ export async function createWebSocketServer(
             return;
           }
           connection.principal = principal;
+          connection.token = message.token;
           clearTimeout(connection.authTimer);
           sendMessage(socket, { type: 'session.authenticated', userId: principal.userId });
         } catch {
@@ -113,24 +116,40 @@ export async function createWebSocketServer(
         return;
       }
 
-      try {
-        const events = roomManager.handleMessage(connectionId, message, connection.principal);
-        sendEvents(events);
-        const invalidSeatToken = message.type === 'room.reconnect' && events.some(event =>
-          event.connectionId === connectionId &&
-          event.message.type === 'error' &&
-          event.message.code === 'INVALID_SEAT_TOKEN'
-        );
-        if (invalidSeatToken) socket.close(4401, 'Invalid seat token');
-      } catch {
-        sendMessage(socket, {
-          type: 'error',
-          requestId: 'requestId' in message ? message.requestId : undefined,
-          actionId: 'actionId' in message ? message.actionId : undefined,
-          code: 'SERVER_ERROR',
-          message: 'The room service could not process that action.',
-        });
-      }
+      connection.messageQueue = connection.messageQueue.then(async () => {
+        if (socket.readyState !== WebSocket.OPEN) return;
+        let principal: AuthPrincipal | null | undefined;
+        try {
+          principal = await options.authService?.authenticateToken(connection.token!);
+        } catch {
+          socket.close(4401, 'Authentication required');
+          return;
+        }
+        if (connections.get(connectionId) !== connection || socket.readyState !== WebSocket.OPEN) return;
+        if (!principal || principal.userId !== connection.principal?.userId) {
+          socket.close(4401, 'Authentication required');
+          return;
+        }
+        connection.principal = principal;
+        try {
+          const events = roomManager.handleMessage(connectionId, message, principal);
+          sendEvents(events);
+          const invalidSeatToken = message.type === 'room.reconnect' && events.some(event =>
+            event.connectionId === connectionId &&
+            event.message.type === 'error' &&
+            event.message.code === 'INVALID_SEAT_TOKEN'
+          );
+          if (invalidSeatToken) socket.close(4401, 'Invalid seat token');
+        } catch {
+          sendMessage(socket, {
+            type: 'error',
+            requestId: 'requestId' in message ? message.requestId : undefined,
+            actionId: 'actionId' in message ? message.actionId : undefined,
+            code: 'SERVER_ERROR',
+            message: 'The room service could not process that action.',
+          });
+        }
+      }).catch(() => socket.close(4401, 'Authentication required'));
     });
 
     socket.on('close', () => {

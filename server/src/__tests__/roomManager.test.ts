@@ -312,7 +312,7 @@ describe('RoomManager room lifecycle', () => {
       requestId: 'profile-reconnect',
       roomCode: aSession.roomCode,
       seatToken: aSession.seatToken,
-    }, principalFor('socket-a-reconnected'));
+    }, { ...principalFor('socket-a-reconnected'), profile: { nickname: '🍐ABCDEFGHIJK', avatarId: 'strawberry' } });
     expect(messageOf(reconnected, 'socket-a-reconnected', 'room.session').snapshot.players.A.profile)
       .toEqual({ nickname: '🍐ABCDEFGHIJK', avatarId: 'strawberry' });
   });
