@@ -11,6 +11,41 @@ const user: AuthUser = {
 describe('AccountSettings', () => {
   beforeEach(() => useSettingsStore.setState({ language: 'en', hydrated: true }));
 
+  it('waits for the saved guest profile before enabling profile edits or sign-in', async () => {
+    await render(
+      <AccountSettings
+        user={null}
+        profile={{ nickname: '', avatarId: 'strawberry' }}
+        profileHydrated={false}
+        onSaveProfile={jest.fn()}
+        onLogin={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Nickname')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save profile' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sign in or create an account' })).toBeDisabled();
+  });
+  it('disables an unverified cached profile and offers a refresh retry', async () => {
+    const userEventApi = userEvent.setup();
+    const onRefreshProfile = jest.fn().mockResolvedValue(undefined);
+    await render(
+      <AccountSettings
+        user={user}
+        profile={user.profile}
+        authHydrated
+        profileVerified={false}
+        onSaveProfile={jest.fn()}
+        onRefreshProfile={onRefreshProfile}
+      />,
+    );
+
+    expect(screen.getByLabelText('Nickname')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save profile' })).toBeDisabled();
+    expect(screen.getByText('Refresh your account profile before editing.')).toBeOnTheScreen();
+    await userEventApi.press(screen.getByRole('button', { name: 'Refresh profile' }));
+    expect(onRefreshProfile).toHaveBeenCalledTimes(1);
+  });
   it('saves canonical profile changes and signs out', async () => {
     const onSaveProfile = jest.fn().mockResolvedValue(undefined);
     const onLogout = jest.fn().mockResolvedValue(undefined);

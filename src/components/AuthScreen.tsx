@@ -10,6 +10,7 @@ type AuthMode = 'login' | 'register';
 
 export type AuthScreenProps = Readonly<{
   initialProfile?: PlayerProfileInput;
+  canRegister?: boolean;
   pending?: boolean;
   errorCode?: string | null;
   onLogin: (username: string, password: string) => Promise<void>;
@@ -20,6 +21,7 @@ export type AuthScreenProps = Readonly<{
 
 export function AuthScreen({
   initialProfile,
+  canRegister = true,
   pending = false,
   errorCode = null,
   onLogin,
@@ -145,7 +147,7 @@ export function AuthScreen({
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          disabled={pending}
+          disabled={pending || (!canRegister && !isRegistering)}
           onPress={() => {
             setMode(isRegistering ? 'login' : 'register');
             setValidationKey(null);
@@ -154,6 +156,7 @@ export function AuthScreen({
         >
           <Text style={styles.switchText}>{t(isRegistering ? 'auth.switchToLogin' : 'auth.switchToRegister')}</Text>
         </Pressable>
+        {!canRegister ? <Text style={styles.profileHint}>{t('entry.loadingProfile')}</Text> : null}
       </View>
       {initialProfile?.nickname ? <Text style={styles.profileHint}>{initialProfile.nickname}</Text> : null}
     </ScrollView>

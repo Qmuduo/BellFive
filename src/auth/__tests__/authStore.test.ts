@@ -60,6 +60,56 @@ describe('auth store', () => {
     expect(store.getState()).toMatchObject({ user: null, sessionToken: null });
   });
 
+  it('refreshes a persisted session from the canonical server profile before marking auth hydrated', async () => {
+    const storage = createMemoryStorage();
+    storage.values.set('bellfive-auth', JSON.stringify({
+      state: { user, sessionToken: 'saved-token', sessionExpiresAt: Date.now() + 60_000 }, version: 0,
+    }));
+    const canonicalUser: AuthUser = { ...user, profile: { nickname: 'Server Mira', avatarId: 'peach' } };
+    const requests: Parameters<ConstructorParameters<typeof AuthClient>[0]>[0][] = [];
+    const store = createAuthStore(storage, new AuthClient(async request => {
+      requests.push(request);
+      return canonicalUser;
+    }));
+
+    await waitFor(() => expect(store.getState().hydrated).toBe(true));
+
+    expect(requests).toEqual([{ method: 'GET', path: '/auth/me', token: 'saved-token' }]);
+    expect(store.getState()).toMatchObject({ user: canonicalUser, sessionToken: 'saved-token', profileVerified: true });
+  });
+
+  it('clears a persisted session when canonical session refresh is unauthorized', async () => {
+    const storage = createMemoryStorage();
+    storage.values.set('bellfive-auth', JSON.stringify({
+      state: { user, sessionToken: 'saved-token', sessionExpiresAt: Date.now() + 60_000 }, version: 0,
+    }));
+    const store = createAuthStore(storage, new AuthClient(async () => {
+      throw new AuthClientError('UNAUTHORIZED', 'Expired.');
+    }));
+
+    await waitFor(() => expect(store.getState().hydrated).toBe(true));
+
+    expect(store.getState()).toMatchObject({ user: null, sessionToken: null, errorCode: 'UNAUTHORIZED', profileVerified: false });
+  });
+
+  it('blocks profile writes when canonical refresh failed due to network failure', async () => {
+    const storage = createMemoryStorage();
+    storage.values.set('bellfive-auth', JSON.stringify({
+      state: { user, sessionToken: 'saved-token', sessionExpiresAt: Date.now() + 60_000 }, version: 0,
+    }));
+    const requests: Parameters<ConstructorParameters<typeof AuthClient>[0]>[0][] = [];
+    const store = createAuthStore(storage, new AuthClient(async request => {
+      requests.push(request);
+      throw new AuthClientError('NETWORK_ERROR', 'Offline.');
+    }));
+
+    await waitFor(() => expect(store.getState().hydrated).toBe(true));
+
+    expect(store.getState()).toMatchObject({ user, sessionToken: 'saved-token', profileVerified: false });
+    await expect(store.getState().updateProfile({ nickname: 'Stale edit', avatarId: 'banana' }))
+      .rejects.toMatchObject({ code: 'PROFILE_REFRESH_REQUIRED' });
+    expect(requests).toEqual([{ method: 'GET', path: '/auth/me', token: 'saved-token' }]);
+  });
   it('does not restore a session that expired while the app was closed', async () => {
     const storage = createMemoryStorage();
     storage.values.set('bellfive-auth', JSON.stringify({
@@ -84,6 +134,27 @@ describe('auth store', () => {
     expect(store.getState()).toMatchObject({ user: null, sessionToken: null, errorCode: 'UNAUTHORIZED' });
   });
 
+  it('does not clear a newer session when an older protected request returns unauthorized', async () => {
+    let rejectProfileRequest: (error: AuthClientError) => void = () => undefined;
+    const staleRequest = new Promise<never>((_, reject) => { rejectProfileRequest = reject; });
+    const secondUser: AuthUser = { ...user, userId: 'user-2', username: 'mira' };
+    const secondSession: AuthSession = { ...session, token: 'session-token-2', user: secondUser };
+    const store = createAuthStore(createMemoryStorage(), new AuthClient(async request => {
+      if (request.path === '/auth/me/profile') return staleRequest;
+      if (request.path === '/auth/login' && request.body && (request.body as { username?: string }).username === 'mira') {
+        return secondSession;
+      }
+      return session;
+    }));
+    await store.getState().login('kai', 'long-password');
+
+    const oldRequest = store.getState().updateProfile(user.profile);
+    await store.getState().login('mira', 'long-password');
+    rejectProfileRequest(new AuthClientError('UNAUTHORIZED', 'Old session expired.'));
+    await expect(oldRequest).rejects.toThrow('Old session expired.');
+
+    expect(store.getState()).toMatchObject({ user: secondUser, sessionToken: 'session-token-2', errorCode: null });
+  });
   it('shares the persisted session flow for Mini Program WeChat login and account linking', async () => {
     const wechatUser: AuthUser = { ...user, userId: 'wechat-user', username: null, wechatLinked: true };
     const requests: Parameters<ConstructorParameters<typeof AuthClient>[0]>[0][] = [];

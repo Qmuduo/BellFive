@@ -12,6 +12,7 @@ export default function AuthRoute() {
   const errorCode = useAuthStore(state => state.errorCode);
   const clearError = useAuthStore(state => state.clearError);
   const initialProfile = usePlayerProfileStore(state => state.profile);
+  const profileHydrated = usePlayerProfileStore(state => state.hydrated);
   const roomCode = typeof params.roomCode === 'string' ? params.roomCode : undefined;
 
   const finishAuth = () => {
@@ -25,6 +26,7 @@ export default function AuthRoute() {
   return (
     <AuthScreen
       initialProfile={initialProfile}
+      canRegister={profileHydrated}
       pending={pending}
       errorCode={errorCode}
       onClearError={clearError}

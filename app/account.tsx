@@ -9,11 +9,15 @@ export default function AccountRoute() {
   const router = useRouter();
   const user = useAuthStore(state => state.user);
   const pending = useAuthStore(state => state.pending);
+  const authHydrated = useAuthStore(state => state.hydrated);
+  const profileVerified = useAuthStore(state => state.profileVerified);
+  const refreshSession = useAuthStore(state => state.refreshSession);
   const errorCode = useAuthStore(state => state.errorCode);
   const updateProfile = useAuthStore(state => state.updateProfile);
   const addCredentials = useAuthStore(state => state.addCredentials);
   const logout = useAuthStore(state => state.logout);
   const profile = usePlayerProfileStore(state => state.profile);
+  const profileHydrated = usePlayerProfileStore(state => state.hydrated);
   const setLocalProfile = usePlayerProfileStore(state => state.setProfile);
 
   const saveProfile = async (nextProfile: PlayerProfileInput) => {
@@ -36,11 +40,15 @@ export default function AccountRoute() {
     <AccountSettings
       user={user}
       profile={user?.profile ?? profile}
+      profileHydrated={profileHydrated}
+      authHydrated={authHydrated}
+      profileVerified={profileVerified}
       pending={pending}
       errorCode={errorCode}
       onSaveProfile={saveProfile}
       onAddCredentials={addCredentials}
       onLogin={() => router.push({ pathname: '/auth', params: { returnTo: 'account' } })}
+      onRefreshProfile={user ? refreshSession : undefined}
       onLogout={user ? signOut : undefined}
       onBack={() => router.back()}
     />

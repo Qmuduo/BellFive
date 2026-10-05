@@ -72,6 +72,7 @@ export function RoomEntry({
   const [showDifficulties, setShowDifficulties] = useState(false);
   const applicationPending = Boolean(applyingRoomCode) || applicationStatus?.status === 'pending';
   const roomActionsBusy = busy || !profileHydrated || !onlineHydrated || applicationPending;
+  const authEntryDisabled = !onlineHydrated || (!onlineEnabled && !profileHydrated);
 
   useEffect(() => {
     if (initialRoomCode) setCode(initialRoomCode.trim().toUpperCase().slice(0, 6));
@@ -113,8 +114,8 @@ export function RoomEntry({
         {!onlineEnabled ? <Text style={styles.authHint}>{t('entry.onlineSignIn')}</Text> : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: !onlineHydrated }}
-          disabled={!onlineHydrated}
+          accessibilityState={{ disabled: authEntryDisabled }}
+          disabled={authEntryDisabled}
           onPress={onlineEnabled ? onAccount : () => onAuthenticate?.('lobby')}
           style={({ pressed }) => [styles.authButton, pressed && styles.pressed]}
         >

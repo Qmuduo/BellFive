@@ -198,6 +198,29 @@ describe('RoomEntry', () => {
     expect(onStartSinglePlayer).toHaveBeenCalledWith('easy');
   });
 
+  it('keeps guest sign-in disabled until the saved local profile has hydrated', async () => {
+    const onAuthenticate = jest.fn();
+    const user = userEvent.setup();
+    await render(
+      <RoomEntry
+        onCreate={jest.fn()}
+        onJoin={jest.fn()}
+        error={null}
+        busy={false}
+        profile={{ nickname: '', avatarId: 'strawberry' }}
+        profileHydrated={false}
+        onlineHydrated
+        onlineEnabled={false}
+        onProfileChange={jest.fn()}
+        onAuthenticate={onAuthenticate}
+      />,
+    );
+
+    const signIn = screen.getByRole('button', { name: 'Sign in / Register' });
+    expect(signIn).toBeDisabled();
+    await user.press(signIn);
+    expect(onAuthenticate).not.toHaveBeenCalled();
+  });
   it('prefills a room code returned from account login', async () => {
     await render(
       <RoomEntry

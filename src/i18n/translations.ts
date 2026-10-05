@@ -32,6 +32,7 @@ const en = {
   'auth.error.network': 'Could not reach the account service. Check your connection and try again.',
   'auth.error.generic': 'The account request failed. Please try again.',
   'auth.error.unauthorized': 'Your session expired. Sign in again.',
+  'auth.error.profileRefreshRequired': 'Reconnect to refresh your account before saving profile changes.',
   'account.title': 'Account settings',
   'account.guest': 'Guest profile',
   'account.usernameLabel': 'USERNAME',
@@ -43,6 +44,9 @@ const en = {
   'account.avatar': 'Avatar',
   'account.saveProfile': 'Save profile',
   'account.profileSaved': 'Profile saved.',
+  'account.profileRefreshing': 'Refreshing account profile…',
+  'account.profileRefreshRequired': 'Refresh your account profile before editing.',
+  'account.refreshProfile': 'Refresh profile',
   'account.credentials': 'Add a username and password',
   'account.credentialsDescription': 'Use these credentials to sign in on Web and Expo.',
   'account.addCredentials': 'Set username and password',
@@ -267,6 +271,7 @@ const zhCN = {
   'auth.error.network': '无法连接账号服务，请检查网络后重试。',
   'auth.error.generic': '账号请求失败，请重试。',
   'auth.error.unauthorized': '登录状态已过期，请重新登录。',
+  'auth.error.profileRefreshRequired': '请先重新连接并刷新账号资料，再保存修改。',
   'account.title': '账号设置',
   'account.guest': '游客资料',
   'account.usernameLabel': '用户名',
@@ -278,6 +283,9 @@ const zhCN = {
   'account.avatar': '头像',
   'account.saveProfile': '保存资料',
   'account.profileSaved': '资料已保存。',
+  'account.profileRefreshing': '正在刷新账号资料…',
+  'account.profileRefreshRequired': '请先刷新账号资料，再进行修改。',
+  'account.refreshProfile': '刷新资料',
   'account.credentials': '添加用户名和密码',
   'account.credentialsDescription': '设置后可在 Web 和 Expo 使用此账号登录。',
   'account.addCredentials': '设置用户名和密码',
@@ -523,6 +531,7 @@ const authErrorKeyByCode: Readonly<Record<string, TranslationKey>> = {
   WECHAT_IDENTITY_CONFLICT: 'auth.error.wechatIdentityConflict',
   NETWORK_ERROR: 'auth.error.network',
   UNAUTHORIZED: 'auth.error.unauthorized',
+  PROFILE_REFRESH_REQUIRED: 'auth.error.profileRefreshRequired',
 };
 
 export function formatAuthError(language: Language, code: string): string {

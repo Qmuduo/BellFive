@@ -57,5 +57,3 @@ export function createProfileStore(storage: StateStorage) {
     },
   ));
 }
-
-\n

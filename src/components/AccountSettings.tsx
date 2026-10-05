@@ -11,11 +11,15 @@ import { gameColors } from '../theme/gameColors';
 export type AccountSettingsProps = Readonly<{
   user: AuthUser | null;
   profile: PlayerProfileInput;
+  profileHydrated?: boolean;
+  authHydrated?: boolean;
+  profileVerified?: boolean;
   pending?: boolean;
   errorCode?: string | null;
   onSaveProfile: (profile: PlayerProfileInput) => Promise<void> | void;
   onAddCredentials?: (username: string, password: string) => Promise<void>;
   onLogin?: () => void;
+  onRefreshProfile?: () => Promise<void> | void;
   onLogout?: () => Promise<void> | void;
   onBack?: () => void;
 }>;
@@ -23,16 +27,21 @@ export type AccountSettingsProps = Readonly<{
 export function AccountSettings({
   user,
   profile,
+  profileHydrated = true,
+  authHydrated = true,
+  profileVerified = true,
   pending = false,
   errorCode = null,
   onSaveProfile,
   onAddCredentials,
   onLogin,
+  onRefreshProfile,
   onLogout,
   onBack,
 }: AccountSettingsProps) {
   const { language, t } = useTranslation();
   const displayedProfile = user?.profile ?? sanitizePlayerProfile(profile, 'A');
+  const profileActionsDisabled = pending || (!user && !profileHydrated) || (Boolean(user) && !profileVerified);
   const [nickname, setNickname] = useState(displayedProfile.nickname);
   const [avatarId, setAvatarId] = useState(displayedProfile.avatarId);
   const [username, setUsername] = useState('');
@@ -41,6 +50,7 @@ export function AccountSettings({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [credentialsAdded, setCredentialsAdded] = useState(false);
+  const [refreshingProfile, setRefreshingProfile] = useState(false);
 
   useEffect(() => {
     setNickname(displayedProfile.nickname);
@@ -54,6 +64,15 @@ export function AccountSettings({
       setSaved(true);
     } catch {
       // The parent auth store exposes the localized error code.
+    }
+  };
+
+  const refreshProfile = async () => {
+    setRefreshingProfile(true);
+    try {
+      await onRefreshProfile?.();
+    } finally {
+      setRefreshingProfile(false);
     }
   };
 
@@ -99,6 +118,21 @@ export function AccountSettings({
       ) : (
         <Text style={styles.guestDescription}>{t('account.guestDescription')}</Text>
       )}
+      {user && !profileVerified ? (
+        <View style={styles.recoveryPanel}>
+          <Text style={styles.helper}>{t(authHydrated ? 'account.profileRefreshRequired' : 'account.profileRefreshing')}</Text>
+          {authHydrated && onRefreshProfile ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={refreshingProfile}
+              onPress={() => void refreshProfile()}
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, refreshingProfile && styles.disabled]}
+            >
+              <Text style={styles.secondaryText}>{t(refreshingProfile ? 'account.profileRefreshing' : 'account.refreshProfile')}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.panel}>
         <Text style={styles.sectionTitle}>{t('account.profile')}</Text>
@@ -106,19 +140,19 @@ export function AccountSettings({
         <TextInput
           accessibilityLabel={t('account.nickname')}
           autoCapitalize="words"
-          editable={!pending}
+          editable={!profileActionsDisabled}
           maxLength={12}
           onChangeText={setNickname}
           style={styles.input}
           value={nickname}
         />
         <Text style={styles.label}>{t('account.avatar')}</Text>
-        <AvatarPicker selected={avatarId} disabled={pending} onSelect={setAvatarId} />
+        <AvatarPicker selected={avatarId} disabled={profileActionsDisabled} onSelect={setAvatarId} />
         <Pressable
           accessibilityRole="button"
-          disabled={pending}
+          disabled={profileActionsDisabled}
           onPress={() => void saveProfile()}
-          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, pending && styles.disabled]}
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, profileActionsDisabled && styles.disabled]}
         >
           <Text style={styles.primaryText}>{pending ? '…' : t('account.saveProfile')}</Text>
         </Pressable>
@@ -181,8 +215,9 @@ export function AccountSettings({
       ) : null}
 
       {errorCode ? <Text accessibilityLiveRegion="polite" style={styles.error}>{formatAuthError(language, errorCode)}</Text> : null}
+      {!user && !profileHydrated ? <Text style={styles.helper}>{t('entry.loadingProfile')}</Text> : null}
       {!user && onLogin ? (
-        <Pressable accessibilityRole="button" onPress={onLogin} style={styles.secondaryButton}>
+        <Pressable accessibilityRole="button" disabled={!profileHydrated} onPress={onLogin} style={styles.secondaryButton}>
           <Text style={styles.secondaryText}>{t('account.signIn')}</Text>
         </Pressable>
       ) : null}

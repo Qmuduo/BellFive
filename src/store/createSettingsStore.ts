@@ -56,5 +56,3 @@ export function createSettingsStore(storage: StateStorage) {
     },
   ));
 }
-
-\n
