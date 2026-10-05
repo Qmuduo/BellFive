@@ -1,0 +1,36 @@
+.waiting-screen { height: 100vh; background: #f7f5f0; }
+.waiting-shell { display: flex; flex-direction: column; padding: 24px 22px 40px; }
+.waiting-top-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+.waiting-eyebrow { color: #898290; font-size: 9px; font-weight: 900; letter-spacing: 1.6px; }
+.waiting-title { margin-top: 10px; color: #493450; font-size: 29px; font-weight: 900; text-align: center; }
+.waiting-subtitle { margin: 6px 0 19px; color: #77717d; font-size: 11px; line-height: 16px; text-align: center; }
+.code-card { display: flex; flex-direction: column; align-items: center; padding: 19px 12px; border: 1px solid #e3d8eb; border-radius: 20px; background: #eee5f5; }
+.code-label { color: #898290; font-size: 9px; font-weight: 900; letter-spacing: 1.4px; }
+.room-code { margin-top: 7px; color: #493450; font-size: 34px; font-weight: 900; letter-spacing: 6px; }
+.players-card, .requests-card { margin-top: 14px; padding: 6px 14px; border: 1px solid #e7e0e9; border-radius: 17px; background: #fffefa; }
+.player-row { display: flex; flex-direction: row; align-items: center; min-height: 57px; border-top: 1px solid #f0edf0; }
+.player-row-first { border-top: 0; }
+.connection-dot { width: 9px; height: 9px; margin-right: 9px; border-radius: 5px; background: #d7dbde; }
+.connection-online { background: #48a878; }
+.player-avatar, .request-avatar { margin-right: 9px; font-size: 22px; }
+.player-copy { flex: 1; display: flex; flex-direction: column; }
+.player-name { color: #493450; font-size: 12px; font-weight: 800; }
+.player-role { margin-top: 3px; color: #898290; font-size: 9px; }
+.player-status { color: #898290; font-size: 9px; font-weight: 800; }
+.player-status-online { color: #38845e; }
+.section-heading { display: block; margin: 7px 0; color: #898290; font-size: 10px; font-weight: 900; letter-spacing: 1px; }
+.request-row { padding: 8px 0; border-top: 1px solid #f0edf0; }
+.request-profile { display: flex; flex-direction: row; align-items: center; }
+.request-name { color: #493450; font-size: 11px; font-weight: 800; }
+.request-actions { display: flex; flex-direction: row; gap: 8px; margin-top: 7px; }
+.approve-button, .reject-button { flex: 1; min-height: 36px; border-radius: 10px; font-size: 10px; font-weight: 900; line-height: 36px; }
+.approve-button { background: #e4f3e9; color: #35744f; }
+.reject-button { background: #fbe6e3; color: #a6534d; }
+.connection-panel { margin: 15px 3px 0; text-align: center; }
+.connection-message { display: block; color: #77717d; font-size: 11px; line-height: 16px; }
+.small-button, .secondary-button { min-height: 34px; padding: 0 10px; border-radius: 10px; background: #e9e0f2; color: #493450; font-size: 10px; font-weight: 900; line-height: 34px; }
+.ready-button, .share-button { min-height: 50px; margin-top: 12px; border-radius: 15px; background: #71528e; color: #fff; font-size: 13px; font-weight: 900; line-height: 50px; }
+.ready-button-on { background: #d5ef84; color: #493450; }
+.share-button { margin-top: 16px; background: #eee5f5; color: #493450; }
+.leave-button { min-height: 44px; margin-top: 5px; background: transparent; color: #898290; font-size: 11px; line-height: 44px; }
+.waiting-copy { display: block; padding: 40px 20px; color: #77717d; font-size: 12px; text-align: center; }

@@ -4,6 +4,18 @@ import { createGameStore } from '../gameStore';
 import type { GameClientPort } from '../gameStore';
 
 describe('friend room game store', () => {
+  it('distinguishes a confirmed empty lobby from a lobby that is still loading', () => {
+    const fixture = makeStore();
+    expect(fixture.store.getState().lobbySnapshotReceived).toBe(false);
+
+    fixture.store.getState().openLobby();
+    fixture.handlers.onLobbySnapshot?.([]);
+    expect(fixture.store.getState().lobbySnapshotReceived).toBe(true);
+
+    fixture.store.getState().refreshLobby();
+    expect(fixture.store.getState().lobbySnapshotReceived).toBe(false);
+  });
+
   it('routes lobby listings and applicant status into visible store state', () => {
     const fixture = makeStore();
     fixture.store.getState().openLobby();
@@ -43,6 +55,13 @@ describe('friend room game store', () => {
     fixture.store.getState().decideApplication('app-host', true);
     expect(fixture.client.decisionCalls).toEqual([{ applicationId: 'app-host', approved: true }]);
     expect(fixture.store.getState().pendingApplications).toEqual([]);
+
+    fixture.handlers.onPendingApplication?.({ ...application, applicationId: 'app-reject' });
+    fixture.store.getState().decideApplication('app-reject', false);
+    expect(fixture.client.decisionCalls).toEqual([
+      { applicationId: 'app-host', approved: true },
+      { applicationId: 'app-reject', approved: false },
+    ]);
 
     fixture.store.getState().applyToRoom('ABCD23');
     fixture.handlers.onApplicationStatus?.({

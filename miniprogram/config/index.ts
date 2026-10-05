@@ -18,6 +18,10 @@ const baseConfig: UserConfigExport<'webpack5'> = {
   framework: 'react',
   compiler: 'webpack5',
   cache: { enable: false },
+  defineConstants: {
+    BELLFIVE_MINI_AUTH_URL: JSON.stringify(process.env.BELLFIVE_MINI_AUTH_URL ?? ''),
+    BELLFIVE_MINI_WS_URL: JSON.stringify(process.env.BELLFIVE_MINI_WS_URL ?? ''),
+  },
   mini: {
     compile: {
       include: [path.resolve(__dirname, '../../src')],

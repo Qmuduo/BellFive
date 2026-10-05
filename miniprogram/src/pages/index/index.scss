@@ -1,19 +1,47 @@
-.starter-page {
-  display: flex;
-  min-height: 100vh;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-
-.starter-title {
-  color: #145a47;
-  font-size: 30px;
-  font-weight: 700;
-}
-
-.starter-caption {
-  color: #606761;
-  font-size: 15px;
-}
+.entry-screen { height: 100vh; background: #f7f5f0; }
+.entry-shell { display: flex; flex-direction: column; padding: 28px 22px 42px; }
+.top-actions { display: flex; flex-direction: row; justify-content: flex-end; gap: 6px; margin-bottom: 12px; }
+.brand-mark { align-self: center; display: flex; width: 72px; height: 72px; align-items: center; justify-content: center; border-radius: 23px; background: #d5ef84; }
+.brand-bell { font-size: 36px; }
+.entry-eyebrow { margin-top: 18px; color: #8a8490; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-align: center; }
+.entry-title { margin-top: 3px; color: #493450; font-size: 38px; font-weight: 900; letter-spacing: -1px; text-align: center; }
+.entry-description { margin: 7px 0 20px; color: #77717d; font-size: 13px; line-height: 19px; text-align: center; }
+.profile-card, .lobby-card, .solo-card { margin-bottom: 12px; padding: 14px; border: 1px solid #e7e0e9; border-radius: 18px; background: #fffefa; }
+.section-caption { display: block; margin-bottom: 8px; color: #898290; font-size: 10px; font-weight: 900; letter-spacing: 1.2px; }
+.nickname-input, .room-code-input { height: 43px; margin: 7px 0; padding: 0 12px; border: 1px solid #e5dfea; border-radius: 12px; background: #fff; color: #493450; font-size: 14px; }
+.avatar-row, .difficulty-row { display: flex; flex-direction: row; gap: 7px; }
+.avatar-choice { flex: 1; height: 42px; padding: 0; border: 1px solid #ece5ee; border-radius: 12px; background: #f7f2f9; font-size: 20px; line-height: 42px; }
+.avatar-choice-active { border-color: #7b55a1; background: #eee5f5; }
+.signed-in-row { display: flex; flex-direction: row; align-items: center; }
+.avatar-large { margin-right: 10px; font-size: 26px; }
+.signed-in-copy { flex: 1; display: flex; flex-direction: column; }
+.profile-name { color: #493450; font-size: 14px; font-weight: 800; }
+.profile-subtitle { margin-top: 3px; color: #898290; font-size: 11px; }
+.linked-badge { padding: 6px 8px; border-radius: 10px; background: #e8f3dc; color: #446f47; font-size: 9px; font-weight: 800; }
+.create-room-button, .wechat-login-button { height: 54px; margin-bottom: 12px; border-radius: 16px; background: #71528e; color: #fff; font-size: 15px; font-weight: 900; line-height: 54px; }
+.solo-card { text-align: center; }
+.solo-heading { display: block; margin-bottom: 8px; color: #898290; font-size: 10px; font-weight: 900; letter-spacing: 1px; }
+.difficulty-button { flex: 1; min-height: 42px; border-radius: 11px; background: #edf4d9; color: #493450; font-size: 11px; font-weight: 900; line-height: 42px; }
+.success-copy { display: block; margin-top: 9px; color: #35744f; font-size: 11px; }
+.text-button { align-self: center; margin: 4px 0 12px; padding: 0 12px; background: transparent; color: #71528e; font-size: 12px; }
+.small-button { min-height: 30px; padding: 0 9px; border: 1px solid #e7e0e9; border-radius: 10px; background: #fffefa; color: #71528e; font-size: 9px; line-height: 30px; }
+.lobby-card { margin-top: 10px; }
+.lobby-heading-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; }
+.lobby-heading-row .section-caption { margin: 0; }
+.helper-copy, .empty-copy { display: block; padding: 13px 10px; border-radius: 12px; background: #f7f5f0; color: #77717d; font-size: 11px; line-height: 16px; text-align: center; }
+.lobby-status { display: flex; flex-direction: column; gap: 6px; }
+.room-row { display: flex; flex-direction: row; align-items: center; min-height: 55px; margin-top: 7px; padding: 7px 8px; border-radius: 13px; background: #f7f5f0; }
+.room-avatar { width: 34px; font-size: 21px; text-align: center; }
+.room-description { flex: 1; display: flex; flex-direction: column; margin: 0 7px; }
+.room-name { color: #493450; font-size: 12px; font-weight: 800; }
+.room-subtitle { margin-top: 3px; color: #898290; font-size: 9px; }
+.request-button { min-width: 52px; padding: 0 10px; border-radius: 9px; background: #e9e0f2; color: #493450; font-size: 10px; line-height: 33px; }
+.application-status { margin-top: 9px; padding: 10px; border-radius: 12px; background: #fff4d5; color: #78623c; font-size: 11px; text-align: center; }
+.cancel-request { margin-top: 5px; background: transparent; color: #8d6a2a; font-size: 10px; }
+.join-by-code { margin-top: 17px; padding-top: 14px; border-top: 1px solid #eee9ee; }
+.room-code-input { text-align: center; font-size: 16px; font-weight: 900; letter-spacing: 2px; }
+.secondary-button { min-height: 44px; border-radius: 12px; background: #e9e0f2; color: #493450; font-size: 12px; font-weight: 900; line-height: 44px; }
+.error-copy { display: block; margin: 7px 0; color: #a5423c; font-size: 11px; line-height: 16px; text-align: center; }
+.wechat-login-prompt { margin-bottom: 12px; padding: 13px; border-radius: 14px; background: #fff4d5; text-align: center; }
+.wechat-login-description { display: block; margin-bottom: 8px; color: #78623c; font-size: 11px; line-height: 16px; }
+.wechat-login-error { display: block; margin-top: 8px; color: #a5423c; font-size: 11px; line-height: 16px; }

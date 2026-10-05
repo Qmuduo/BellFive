@@ -47,6 +47,7 @@ export type GameStore = {
   lastActionResult: Extract<ServerMessage, { type: 'action.result' }> | null;
   roomSessionVersion: number;
   openRooms: readonly OpenRoomSummary[];
+  lobbySnapshotReceived: boolean;
   pendingApplications: readonly JoinApplication[];
   applyingRoomCode: string | null;
   localApplicationId: string | null;
@@ -87,6 +88,7 @@ export function createGameStore(
       set({ client: null, sessionMode: 'none', connectionStatus: 'error', roomSnapshot: null,
         roomCode: null, localPlayerId: null, leavingRoom: false, lastActionResult: null,
         openRooms: [], pendingApplications: [], applyingRoomCode: null,
+        lobbySnapshotReceived: false,
         localApplicationId: null, localApplicationStatus: null, error });
       client?.disconnect();
       set({ connectionStatus: 'error' });
@@ -123,7 +125,7 @@ export function createGameStore(
           set({ lastActionResult: message, error: null });
           return;
         case 'room.lobby.snapshot':
-          set({ openRooms: message.rooms });
+          set({ openRooms: message.rooms, lobbySnapshotReceived: true });
           return;
         case 'room.application.pending':
           set(state => ({
@@ -242,6 +244,7 @@ export function createGameStore(
       lastActionResult: null,
       roomSessionVersion: 0,
       openRooms: [],
+      lobbySnapshotReceived: false,
       pendingApplications: [],
       applyingRoomCode: null,
       localApplicationId: null,
@@ -264,6 +267,7 @@ export function createGameStore(
           }),
           pendingApplications: [],
           openRooms: [],
+          lobbySnapshotReceived: false,
           applyingRoomCode: null,
           localApplicationId: null,
           localApplicationStatus: null,
@@ -315,8 +319,14 @@ export function createGameStore(
         set({ sessionMode: 'none', roomSnapshot: null, roomCode: null, localPlayerId: null, lastActionResult: null });
         return get().applyToRoom(code);
       },
-      openLobby: () => { getClient()?.subscribeLobby(); },
-      refreshLobby: () => { getClient()?.refreshLobby(); },
+      openLobby: () => {
+        set({ lobbySnapshotReceived: false });
+        getClient()?.subscribeLobby();
+      },
+      refreshLobby: () => {
+        set({ lobbySnapshotReceived: false });
+        getClient()?.refreshLobby();
+      },
       closeLobby: () => {
         if (get().client) getActiveClient()?.unsubscribeLobby();
       },
