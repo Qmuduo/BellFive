@@ -8,6 +8,10 @@ node_modules/
 dist/
 web-build/
 expo-env.d.ts
+/miniprogram/dist/
+/miniprogram/node_modules/
+/miniprogram/.swc/
+/miniprogram/project.private.config.json
 
 # Native
 .kotlin/

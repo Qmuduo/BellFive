@@ -16,6 +16,7 @@
     "expo-env.d.ts"
   ],
   "exclude": [
-    "server"
+    "server",
+    "miniprogram"
   ]
 }

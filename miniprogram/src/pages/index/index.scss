@@ -1,0 +1,19 @@
+.starter-page {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.starter-title {
+  color: #145a47;
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.starter-caption {
+  color: #606761;
+  font-size: 15px;
+}

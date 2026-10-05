@@ -42,6 +42,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "miniprogram:dev": "npm --prefix miniprogram run dev:weapp",
+    "miniprogram:build": "npm --prefix miniprogram run build:weapp",
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "server:dev": "tsx server/src/index.ts",
