@@ -1,6 +1,6 @@
 import type { RoomSnapshot } from '../../../../src/network/protocol';
 import { normalizeMiniRoomCode } from '../roomCode';
-import { canChangeMiniReady } from '../waitingRoomRules';
+import { canChangeMiniApplication, canChangeMiniReady } from '../waitingRoomRules';
 import { getMiniLobbyViewState } from '../lobbyViewState';
 
 test('normalizes a six-character room code and rejects malformed input', () => {
@@ -30,6 +30,14 @@ test('enables ready only while waiting and both players are connected on a conne
   expect(canChangeMiniReady('connected', makeWaitingSnapshot(false, true))).toBe(false);
   expect(canChangeMiniReady('connected', { ...snapshot, phase: 'playing' })).toBe(false);
   expect(canChangeMiniReady('connected', null)).toBe(false);
+});
+
+test('enables host application decisions only while connected to the room', () => {
+  expect(canChangeMiniApplication('connected')).toBe(true);
+  expect(canChangeMiniApplication('connecting')).toBe(false);
+  expect(canChangeMiniApplication('reconnecting')).toBe(false);
+  expect(canChangeMiniApplication('disconnected')).toBe(false);
+  expect(canChangeMiniApplication('error')).toBe(false);
 });
 
 function makeWaitingSnapshot(aConnected: boolean, bConnected: boolean): RoomSnapshot {

@@ -17,6 +17,14 @@ export type PendingOnlineIntentFlow = Readonly<{
   clear: () => void;
 }>;
 
+export function startMiniSoloGame(
+  onlineIntentFlow: Pick<PendingOnlineIntentFlow, 'clear'>,
+  start: () => void,
+): void {
+  onlineIntentFlow.clear();
+  start();
+}
+
 function getErrorCode(error: unknown): string {
   return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
     ? error.code

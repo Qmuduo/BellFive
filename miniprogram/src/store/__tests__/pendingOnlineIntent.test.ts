@@ -1,4 +1,4 @@
-import { createPendingOnlineIntent } from '../pendingOnlineIntent';
+import { createPendingOnlineIntent, startMiniSoloGame } from '../pendingOnlineIntent';
 
 test('retains a room-code intent after WeChat login fails and retries that same action', async () => {
   const authorize = jest.fn<Promise<void>, []>()
@@ -39,4 +39,24 @@ test('does not resume an online action until authorization has succeeded', async
   await running;
 
   expect(resume).toHaveBeenCalledWith({ type: 'open-lobby' });
+});
+
+test('starting solo cancels an in-flight online authorization before the online action can resume', async () => {
+  let finishAuthorization!: () => void;
+  const authorize = () => new Promise<void>(resolve => { finishAuthorization = resolve; });
+  const resume = jest.fn();
+  const flow = createPendingOnlineIntent(authorize, resume);
+  const soloStarted = jest.fn();
+
+  const onlineRun = flow.begin({ type: 'create-room' });
+  expect(flow.getState().pending).toBe(true);
+
+  startMiniSoloGame(flow, soloStarted);
+  expect(flow.getState().pendingIntent).toBeNull();
+  expect(soloStarted).toHaveBeenCalledTimes(1);
+
+  finishAuthorization();
+  await onlineRun;
+
+  expect(resume).not.toHaveBeenCalled();
 });

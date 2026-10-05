@@ -7,3 +7,7 @@ export function canChangeMiniReady(connectionStatus: GameClientStatus, snapshot:
     && snapshot.players.A.connected
     && snapshot.players.B.connected;
 }
+
+export function canChangeMiniApplication(connectionStatus: GameClientStatus): boolean {
+  return connectionStatus === 'connected';
+}

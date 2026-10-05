@@ -4,7 +4,7 @@ import { Button, Input, ScrollView, Text, View } from '@tarojs/components';
 import { AVATAR_EMOJI, AVATAR_OPTIONS } from '../../../../src/profile';
 import type { AvatarId } from '../../../../src/profile';
 import { formatApplicationStatus, formatGameError, translate } from '../../../../src/i18n/translations';
-import { createPendingOnlineIntent } from '../../store/pendingOnlineIntent';
+import { createPendingOnlineIntent, startMiniSoloGame } from '../../store/pendingOnlineIntent';
 import type { PendingOnlineIntent } from '../../store/pendingOnlineIntent';
 import { useMiniAuthStore } from '../../store/authStore';
 import { useMiniGameStore } from '../../store/gameStore';
@@ -119,8 +119,10 @@ export default function IndexPage(): JSX.Element {
   };
 
   const startSolo = (difficulty: Difficulty) => {
-    setSoloStarted(true);
-    useMiniGameStore.getState().startSinglePlayer(profile, difficulty);
+    startMiniSoloGame(intentFlow, () => {
+      setSoloStarted(true);
+      useMiniGameStore.getState().startSinglePlayer(profile, difficulty);
+    });
   };
 
   const navigate = (url: string) => { void Taro.navigateTo({ url }); };

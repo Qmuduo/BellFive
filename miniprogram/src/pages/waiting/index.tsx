@@ -5,7 +5,7 @@ import { AVATAR_EMOJI, getPlayerDisplayName } from '../../../../src/profile';
 import { formatGameError, translate } from '../../../../src/i18n/translations';
 import { useMiniGameStore } from '../../store/gameStore';
 import { useMiniSettingsStore } from '../../store/settingsStore';
-import { canChangeMiniReady } from '../../store/waitingRoomRules';
+import { canChangeMiniApplication, canChangeMiniReady } from '../../store/waitingRoomRules';
 import { miniText } from '../../uiText';
 import './index.scss';
 
@@ -39,6 +39,7 @@ export default function WaitingPage(): JSX.Element {
   }
 
   const readyEnabled = canChangeMiniReady(game.connectionStatus, snapshot);
+  const applicationActionsEnabled = canChangeMiniApplication(game.connectionStatus);
   const localReady = snapshot.ready[localPlayerId];
 
   const playerLabel = (playerId: 'A' | 'B') => getPlayerDisplayName(snapshot.players[playerId].profile, playerId, language);
@@ -96,10 +97,10 @@ export default function WaitingPage(): JSX.Element {
                   <Text className="request-name">{application.profile.nickname || miniText(language, 'guest')} {miniText(language, 'wantsToJoin')}</Text>
                 </View>
                 <View className="request-actions">
-                  <Button className="approve-button" onClick={() => game.decideApplication(application.applicationId, true)}>
+                  <Button className="approve-button" disabled={!applicationActionsEnabled} onClick={() => game.decideApplication(application.applicationId, true)}>
                     {miniText(language, 'approve')}
                   </Button>
-                  <Button className="reject-button" onClick={() => game.decideApplication(application.applicationId, false)}>
+                  <Button className="reject-button" disabled={!applicationActionsEnabled} onClick={() => game.decideApplication(application.applicationId, false)}>
                     {miniText(language, 'reject')}
                   </Button>
                 </View>
@@ -110,17 +111,14 @@ export default function WaitingPage(): JSX.Element {
 
         <View className="connection-panel">
           <Text className="connection-message">
-            {game.error
-              ? formatGameError(language, game.error.code)
-              : game.connectionStatus === 'reconnecting'
-                ? t('waiting.reconnecting')
+            {game.connectionStatus === 'reconnecting'
+              ? t('waiting.reconnecting')
+              : game.error
+                ? formatGameError(language, game.error.code)
                 : game.connectionStatus === 'connected'
                   ? miniText(language, 'bothReady')
                   : miniText(language, 'lobbyLoading')}
           </Text>
-          {game.connectionStatus === 'reconnecting' || game.connectionStatus === 'error' ? (
-            <Button className="secondary-button" onClick={() => game.refreshLobby()}>{miniText(language, 'reconnect')}</Button>
-          ) : null}
         </View>
 
         <Button
