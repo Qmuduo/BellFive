@@ -18,6 +18,7 @@ type BellButtonProps = Readonly<{
   onRing: () => void;
   compact?: boolean;
   locked?: boolean;
+  showFeedback?: boolean;
 }>;
 
 export function BellButton({
@@ -28,6 +29,7 @@ export function BellButton({
   onRing,
   compact = false,
   locked = false,
+  showFeedback = true,
 }: BellButtonProps) {
   const { t } = useTranslation();
   const scale = useSharedValue(1);
@@ -65,18 +67,21 @@ export function BellButton({
         >
           <Text pointerEvents="none" style={styles.bellIcon}>🔔</Text>
           <Text pointerEvents="none" style={styles.ringLabel}>{t('bell.ring')}</Text>
+          <Text pointerEvents="none" style={styles.ringHint}>{t('match.rightHand')}</Text>
         </Pressable>
       </Animated.View>
-      <Text
-        accessibilityLiveRegion="polite"
-        style={[
-          styles.feedback,
-          outcome === 'correct' && styles.correctFeedback,
-          outcome === 'wrong' && styles.wrongFeedback,
-        ]}
-      >
-        {locked ? t('match.ringLocked') : outcome === 'correct' ? t('bell.correct') : outcome === 'wrong' ? t('bell.wrong') : t('bell.anytime')}
-      </Text>
+      {showFeedback ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={[
+            styles.feedback,
+            outcome === 'correct' && styles.correctFeedback,
+            outcome === 'wrong' && styles.wrongFeedback,
+          ]}
+        >
+          {locked ? t('match.ringLocked') : outcome === 'correct' ? t('bell.correct') : outcome === 'wrong' ? t('bell.wrong') : t('bell.anytime')}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -85,17 +90,18 @@ const styles = StyleSheet.create({
   container: { flex: 1, minWidth: 0, alignItems: 'stretch' },
   bell: {
     flex: 1,
-    minHeight: 88,
+    minHeight: 116,
     alignItems: 'stretch',
     justifyContent: 'center',
     borderRadius: 16,
     overflow: 'hidden',
   },
-  ringButton: { flex: 1, minHeight: 88, width: '100%', alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 2, borderColor: '#34214F', backgroundColor: '#E3FB88', shadowColor: '#8FA546', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 0, elevation: 4 },
-  compactBell: { minHeight: 0 },
+  ringButton: { flex: 1, minHeight: 116, width: '100%', alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 2, borderColor: '#34214F', backgroundColor: '#E3FB88', shadowColor: '#8FA546', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 0, elevation: 4 },
+  compactBell: { minHeight: 88 },
   compactRingButton: { minHeight: 88 },
   bellIcon: { fontSize: 24, lineHeight: 29 },
-  ringLabel: { color: '#34214F', fontSize: 17, fontWeight: '900', letterSpacing: 1.5 },
+  ringLabel: { color: '#34214F', fontSize: 24, fontWeight: '900', letterSpacing: 1.5 },
+  ringHint: { marginTop: 4, color: '#57466F', fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
   disabledButton: { backgroundColor: '#675977', borderColor: '#675977' },
   pressed: { opacity: 0.72 },
   feedback: { minHeight: 14, marginTop: 5, color: '#C6B5DF', fontSize: 9, fontWeight: '800', textAlign: 'center' },

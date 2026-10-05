@@ -6,7 +6,7 @@ import { useSettingsStore } from '../store/settingsStore';
 
 const OPTIONS: readonly Language[] = ['zh-CN', 'en'];
 
-export function LanguageSettings() {
+export function LanguageSettings({ compact = false }: Readonly<{ compact?: boolean }>) {
   const [visible, setVisible] = useState(false);
   const { language, t } = useTranslation();
   const setLanguage = useSettingsStore(state => state.setLanguage);
@@ -17,7 +17,7 @@ export function LanguageSettings() {
         accessibilityRole="button"
         accessibilityLabel={t('settings.open')}
         onPress={() => setVisible(true)}
-        style={({ pressed }) => [styles.trigger, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.trigger, compact && styles.compactTrigger, pressed && styles.pressed]}
       >
         <Text style={styles.triggerText}>{language === 'zh-CN' ? '中 / EN' : 'EN / 中'}</Text>
       </Pressable>
@@ -65,6 +65,7 @@ export function LanguageSettings() {
 
 const styles = StyleSheet.create({
   trigger: { minWidth: 62, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, paddingVertical: 8, borderWidth: 1, borderColor: '#E1E3E7', borderRadius: 14, backgroundColor: '#FFFFFF' },
+  compactTrigger: { minWidth: 42, paddingHorizontal: 5 },
   triggerText: { color: '#596674', fontSize: 10, fontWeight: '900', letterSpacing: 0.4 },
   pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
   backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(23, 31, 39, 0.38)' },

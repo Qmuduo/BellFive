@@ -20,9 +20,48 @@ describe('local language settings store', () => {
 
     expect(store.getState().language).toBe('en');
     expect(JSON.parse(storage.values.get('bellfive-settings') ?? 'null')).toEqual({
-      state: { language: 'en' },
+      state: { language: 'en', musicEnabled: true },
       version: 0,
     });
+  });
+
+  it('persists the background music choice', () => {
+    const storage = createMemoryStorage();
+    const store = createSettingsStore(storage);
+
+    store.getState().setMusicEnabled(false);
+
+    expect(JSON.parse(storage.values.get('bellfive-settings') ?? 'null')).toEqual({
+      state: { language: 'zh-CN', musicEnabled: false },
+      version: 0,
+    });
+  });
+
+  it('restores the music choice and migrates language-only settings with music enabled', async () => {
+    const disabled = createSettingsStore(createAsyncMemoryStorage(JSON.stringify({
+      state: { language: 'en', musicEnabled: false }, version: 0,
+    })));
+    const legacy = createSettingsStore(createAsyncMemoryStorage(JSON.stringify({
+      state: { language: 'zh-CN' }, version: 0,
+    })));
+
+    await waitFor(() => expect(disabled.getState()).toMatchObject({ musicEnabled: false, hydrated: true }));
+    await waitFor(() => expect(legacy.getState()).toMatchObject({ musicEnabled: true, hydrated: true }));
+  });
+
+  it('keeps a music choice made while stored settings are still loading', async () => {
+    let resolveStoredValue!: (value: string | null) => void;
+    const storage: StateStorage = {
+      getItem: async () => new Promise(resolve => { resolveStoredValue = resolve; }),
+      setItem: async () => undefined,
+      removeItem: async () => undefined,
+    };
+    const store = createSettingsStore(storage);
+
+    store.getState().setMusicEnabled(false);
+    resolveStoredValue(JSON.stringify({ state: { language: 'en', musicEnabled: true }, version: 0 }));
+
+    await waitFor(() => expect(store.getState()).toMatchObject({ musicEnabled: false, hydrated: true }));
   });
 
   it('restores the chosen language after asynchronous hydration', async () => {

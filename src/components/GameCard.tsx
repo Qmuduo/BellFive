@@ -9,7 +9,6 @@ import Animated, {
 import type { CardDefinition, GameElement, PlayerId } from '../game/types';
 import { getCardSymbolPositions } from '../game/cardLayout';
 import { useTranslation } from '../i18n/useTranslation';
-import { playerSeatLabel } from '../i18n/translations';
 
 const ELEMENT_EMOJI: Record<GameElement, string> = {
   banana: '🍌',
@@ -34,7 +33,7 @@ type GameCardProps = {
 };
 
 export function GameCard({ playerId, playerLabel, card, active = false, drawCount = 0, playedCount = 0, isLocalPlayer = false, canFlip = false, onPress, compact = false }: GameCardProps) {
-  const { language, t } = useTranslation();
+  const { t } = useTranslation();
   const rotation = useSharedValue(0);
   const slide = useSharedValue(0);
   const opacity = useSharedValue(1);
@@ -64,7 +63,7 @@ export function GameCard({ playerId, playerLabel, card, active = false, drawCoun
     : [];
 
   return (
-    <Pressable role="button" accessibilityLabel={t('game.playerDeck', { playerLabel: playerSeatLabel(playerId, language) })} accessibilityState={{ disabled: !canFlip }} disabled={!canFlip} onPress={onPress} style={({ pressed }) => [styles.card, compact && styles.compactCard, active && activeStyle, pressed && canFlip && styles.pressed]}>
+    <Pressable role="button" accessibilityLabel={t('game.playerDeck', { playerLabel })} accessibilityState={{ disabled: !canFlip }} disabled={!canFlip} onPress={onPress} style={({ pressed }) => [styles.card, compact && styles.compactCard, active && activeStyle, pressed && canFlip && styles.pressed]}>
       <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.label, isLocalPlayer && styles.localLabel]}>{playerLabel}</Text>
       {card ? (
         <Animated.View style={[styles.symbols, revealStyle]}>

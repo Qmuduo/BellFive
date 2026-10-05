@@ -1,7 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { StateStorage } from 'zustand/middleware';
+import { getDefaultStorage } from './defaultStorage';
 import {
   DEFAULT_PLAYER_PROFILE,
   normalizeNickname,
@@ -18,7 +18,7 @@ export type PlayerProfileStore = Readonly<{
 
 type PersistedProfileState = Pick<PlayerProfileStore, 'profile'>;
 
-export function createProfileStore(storage: StateStorage = AsyncStorage) {
+export function createProfileStore(storage: StateStorage = getDefaultStorage()) {
   return create<PlayerProfileStore>()(persist(
     set => ({
       profile: DEFAULT_PLAYER_PROFILE,

@@ -53,4 +53,15 @@ describe('BellButton', () => {
     expect(mockWithTiming.mock.calls.length).toBeGreaterThan(firstFeedbackCount);
     expect(screen.getByText('Wrong Ring')).toBeOnTheScreen();
   });
+
+  it.each([
+    { height: 116, compact: false },
+    { height: 88, compact: true },
+  ])('keeps the visible ring target at $height px in compact=$compact mode', async ({ height, compact }) => {
+    await render(<BellButton disabled={false} outcome={null} compact={compact} onRing={jest.fn()} showFeedback={false} />);
+
+    expect(screen.getByRole('button', { name: 'Ring Bell' })).toHaveStyle({ minHeight: height });
+    expect(screen.getByText('RIGHT HAND')).toBeOnTheScreen();
+    expect(screen.getByText('RING')).toHaveStyle({ fontSize: 24 });
+  });
 });

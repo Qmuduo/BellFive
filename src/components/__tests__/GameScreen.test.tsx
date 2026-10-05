@@ -26,10 +26,21 @@ const mockAudioPlayer = {
   play: jest.fn(),
   pause: jest.fn(),
 };
+const mockMusicPlayer = {
+  isLoaded: true,
+  loop: false,
+  volume: 1,
+  play: jest.fn(),
+  pause: jest.fn(),
+  seekTo: jest.fn(async () => undefined),
+};
+const mockAudioStatus = { isLoaded: true, playing: false, error: null };
+let mockAudioPlayerCall = 0;
 const mockSetAudioModeAsync = jest.fn(async (_mode: unknown) => undefined);
 
 jest.mock('expo-audio', () => ({
-  useAudioPlayer: () => mockAudioPlayer,
+  useAudioPlayer: () => (++mockAudioPlayerCall % 5 === 0 ? mockMusicPlayer : mockAudioPlayer),
+  useAudioPlayerStatus: () => mockAudioStatus,
   setAudioModeAsync: (mode: unknown) => mockSetAudioModeAsync(mode),
 }));
 
@@ -48,11 +59,16 @@ jest.mock('../../store/profileStore', () => ({
 describe('GameScreen friend-room flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    useSettingsStore.setState({ language: 'en', hydrated: true });
+    mockAudioPlayerCall = 0;
+    useSettingsStore.setState({ language: 'en', musicEnabled: true, hydrated: true });
     mockAudioPlayer.play.mockClear();
     mockAudioPlayer.pause.mockClear();
     mockAudioPlayer.seekTo.mockClear();
     mockAudioPlayer.volume = 1;
+    mockMusicPlayer.play.mockClear();
+    mockMusicPlayer.pause.mockClear();
+    mockMusicPlayer.seekTo.mockClear();
+    mockMusicPlayer.volume = 1;
     useGameStore.setState({
       connectionStatus: 'idle',
       roomSnapshot: null,
@@ -98,6 +114,24 @@ describe('GameScreen friend-room flow', () => {
       playsInSilentMode: true,
       interruptionMode: 'mixWithOthers',
     });
+    expect(screen.getByRole('button', { name: 'Turn background music off' })).toBeOnTheScreen();
+  });
+
+  it('keeps the soundtrack toggle separate from the short sound players', async () => {
+    const user = userEvent.setup();
+    useGameStore.setState({
+      connectionStatus: 'connected',
+      roomCode: 'ABCD23',
+      localPlayerId: 'A',
+      roomSnapshot: makeSnapshot('playing', 'A', { turn: 'A' }),
+    });
+    await render(<GameScreen />);
+
+    await user.press(screen.getByRole('button', { name: 'Turn background music off' }));
+
+    expect(screen.getByRole('button', { name: 'Turn background music on' })).toBeOnTheScreen();
+    expect(mockMusicPlayer.pause).toHaveBeenCalled();
+    expect(mockAudioPlayer.pause).not.toHaveBeenCalled();
   });
 
   it('starts at the create/join entry', async () => {
@@ -217,11 +251,11 @@ describe('GameScreen friend-room flow', () => {
 
     expect(screen.getByRole('button', { name: 'FLIP' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Language settings' })).toBeOnTheScreen();
-    expect(screen.getByRole('button', { name: 'Player A deck' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Player B deck' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'You · Player A deck' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Opponent · Player B deck' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeEnabled();
     await user.press(screen.getByRole('button', { name: 'FLIP' }));
-    await user.press(screen.getByRole('button', { name: 'Player A deck' }));
+    await user.press(screen.getByRole('button', { name: 'You · Player A deck' }));
     await user.press(screen.getByRole('button', { name: 'Ring Bell' }));
     expect(useGameStore.getState().flip).toHaveBeenCalledTimes(2);
     expect(useGameStore.getState().ring).toHaveBeenCalledTimes(1);
@@ -238,7 +272,7 @@ describe('GameScreen friend-room flow', () => {
     await render(<GameScreen />);
 
     expect(screen.getByRole('button', { name: 'FLIP' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Player B deck' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'You · Player B deck' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ring Bell' })).toBeEnabled();
     await user.press(screen.getByRole('button', { name: 'Ring Bell' }));
     expect(useGameStore.getState().ring).toHaveBeenCalledTimes(1);

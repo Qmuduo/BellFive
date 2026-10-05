@@ -11,8 +11,11 @@ import { RingActivityLog } from './RingActivityLog';
 import { RoomEntry } from './RoomEntry';
 import { WaitingRoom } from './WaitingRoom';
 import { LanguageSettings } from './LanguageSettings';
+import { MusicToggle } from './MusicToggle';
+import { useBackgroundMusic } from '../hooks/useBackgroundMusic';
 import { useGameStore } from '../store/gameStore';
 import { usePlayerProfileStore } from '../store/profileStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { getPlayerDisplayName } from '../profile';
 import { formatGameError, playerSeatLabel } from '../i18n/translations';
 import { useTranslation } from '../i18n/useTranslation';
@@ -38,6 +41,7 @@ export default function GameScreen() {
   const roomCode = useGameStore(state => state.roomCode);
   const localPlayerId = useGameStore(state => state.localPlayerId);
   const leavingRoom = useGameStore(state => state.leavingRoom);
+  const settingsHydrated = useSettingsStore(state => state.hydrated);
   const error = useGameStore(state => state.error);
   const lastActionResult = useGameStore(state => state.lastActionResult);
   const roomSessionVersion = useGameStore(state => state.roomSessionVersion);
@@ -59,6 +63,7 @@ export default function GameScreen() {
   const flip = useGameStore(state => state.flip);
   const ring = useGameStore(state => state.ring);
   const leaveRoom = useGameStore(state => state.leaveRoom);
+  const music = useBackgroundMusic(Boolean(roomSnapshot?.phase === 'playing' && connectionStatus === 'connected' && !leavingRoom));
   const [ringCue, setRingCue] = useState<RingFeedbackEvent | null>(null);
   const [showMatchDetails, setShowMatchDetails] = useState(false);
   const lastProcessedAction = useRef<string | null>(null);
@@ -203,6 +208,7 @@ export default function GameScreen() {
   const formattedTime = formatRemainingTime(roomSnapshot.remainingSeconds);
   const handleFlip = () => {
     if (!canFlip) return;
+    music.startFromGesture();
     playCardFlipSound(flipAudioPlayer);
     flip();
     triggerGameFeedback('flip');
@@ -212,6 +218,7 @@ export default function GameScreen() {
   };
   const handleRing = () => {
     if (!canRing) return;
+    music.startFromGesture();
     playBellSound(bellAudioPlayer);
     triggerGameFeedback('press');
     ring();
@@ -224,7 +231,8 @@ export default function GameScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>BellFive</Text>
           <View style={styles.headerActions}>
-            <LanguageSettings />
+            <MusicToggle enabled={music.enabled} disabled={!settingsHydrated} onToggle={music.toggle} />
+            <LanguageSettings compact />
             {formattedTime ? <View style={styles.timerPill}><Text style={styles.timerText}>{formattedTime}</Text></View> : null}
             <Pressable role="button" accessibilityLabel={t('game.leaveRoom')} onPress={leaveRoom} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
               <Text style={styles.headerButtonText}>{t('game.leave')}</Text>
@@ -316,6 +324,7 @@ export default function GameScreen() {
             </View>
             <Text style={styles.consolePrompt}>{isFinished ? t('game.roundComplete') : canFlip ? t('game.yourTurnFlip') : roomSnapshot.phase === 'connection-paused' || connectionStatus !== 'connected' ? t('game.connectionPaused') : t('game.playerFlipsNext', { playerLabel: roomSnapshot.turn === localPlayerId ? t('match.youLabel') : roomSnapshot.turn ? roomSnapshot.players[roomSnapshot.turn].profile.nickname || playerSeatLabel(roomSnapshot.turn, language) : t('debug.noTurn') })}</Text>
             <View style={styles.actionDock}>
+            <View style={styles.actionButtonSlot}>
             <Pressable
               role="button"
               accessibilityLabel={t('game.flip')}
@@ -327,6 +336,7 @@ export default function GameScreen() {
               <Text style={styles.flipText}>{t('game.flip')}</Text>
               <Text style={styles.flipHint}>{t('match.leftHand')}</Text>
             </Pressable>
+            </View>
             <BellButton
               disabled={!canRing}
               outcome={roomSnapshot.lastRingOutcome}
@@ -334,10 +344,13 @@ export default function GameScreen() {
               feedbackKey={roomSnapshot.ringVersion ?? roomSnapshot.tableVersion}
               compact={compactMatch}
               locked={Boolean(localPlayerId && roomSnapshot.ringBlockedUntilFlip[localPlayerId])}
+              showFeedback={false}
               onRing={handleRing}
             />
             </View>
-            <Text style={styles.consoleFoot}>{t('match.rightHand')}</Text>
+            <Text accessibilityLiveRegion="polite" style={[styles.consoleFoot, roomSnapshot.lastRingOutcome === 'correct' && styles.correctFeedback, roomSnapshot.lastRingOutcome === 'wrong' && styles.wrongFeedback]}>
+              {localPlayerId && roomSnapshot.ringBlockedUntilFlip[localPlayerId] ? t('match.ringLocked') : roomSnapshot.lastRingOutcome === 'correct' ? t('bell.correct') : roomSnapshot.lastRingOutcome === 'wrong' ? t('bell.wrong') : t('bell.anytime')}
+            </Text>
           </View>
         )}
       </View>
@@ -357,10 +370,10 @@ const styles = StyleSheet.create({
   screen: { flex: 1, paddingHorizontal: 12, backgroundColor: '#F5F0FF' },
   header: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   title: { color: '#2F194C', fontSize: 21, fontWeight: '900', letterSpacing: -0.8 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  timerPill: { minWidth: 58, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 7, borderRadius: 12, backgroundColor: '#E3FB88' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  timerPill: { minWidth: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 7, borderRadius: 12, backgroundColor: '#E3FB88' },
   timerText: { color: '#2F194C', fontSize: 14, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  headerButton: { minWidth: 56, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 8, borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D7C9E8' },
+  headerButton: { minWidth: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 8, borderRadius: 12, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D7C9E8' },
   headerButtonText: { color: '#2F194C', fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
   scroll: { flex: 1 },
   scrollContent: { paddingTop: 2, paddingBottom: 8 },
@@ -394,12 +407,15 @@ const styles = StyleSheet.create({
   drawValue: { color: '#F9F5FF', fontSize: 22, fontWeight: '900' },
   consolePrompt: { minHeight: 28, paddingTop: 5, color: '#E3FB88', fontSize: 12, fontWeight: '700' },
   actionDock: { flexDirection: 'row', alignItems: 'stretch', gap: 14, paddingTop: 2, paddingBottom: 0 },
+  actionButtonSlot: { flex: 1, minWidth: 0 },
   flipButton: { flex: 1, minWidth: 0, minHeight: 116, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 2, borderColor: '#C6A3F7', backgroundColor: '#9165D2', shadowColor: '#583780', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 0, elevation: 4 },
   compactActionButton: { minHeight: 88 },
   disabledButton: { opacity: 0.58 },
   flipText: { color: '#FFF9FF', fontSize: 24, fontWeight: '900', letterSpacing: 1.5 },
-  flipHint: { marginTop: 4, color: '#F0E8FF', fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
-  consoleFoot: { paddingTop: 8, color: '#C6B5DF', fontSize: 11, textAlign: 'center' },
+  flipHint: { marginTop: 4, color: '#F0E8FF', fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
+  consoleFoot: { minHeight: 22, paddingTop: 5, color: '#C6B5DF', fontSize: 9, fontWeight: '800', textAlign: 'center' },
+  correctFeedback: { color: '#B9F4C8' },
+  wrongFeedback: { color: '#FFB6B6' },
   detailsButton: { alignSelf: 'flex-start', marginTop: 8, paddingVertical: 6, paddingHorizontal: 3 },
   detailsText: { color: '#796887', fontSize: 10, fontWeight: '800' },
   detailsPanel: { paddingBottom: 8 },
