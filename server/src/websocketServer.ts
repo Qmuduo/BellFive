@@ -46,6 +46,10 @@ export async function createWebSocketServer(
     });
   });
   const webSocketServer = new WebSocketServer({ server: httpServer, maxPayload: 64 * 1024 });
+  webSocketServer.on('error', () => {
+    // ws forwards HTTP errors here before listen() can reject the startup promise.
+    // Consume that forwarded event so the HTTP error reaches its handled path.
+  });
 
   const sendEvents = (events: readonly RoomManagerEvent[]) => {
     for (const event of events) {
@@ -101,7 +105,12 @@ export async function createWebSocketServer(
     });
   });
 
-  await listen(httpServer, options.port, options.host);
+  try {
+    await listen(httpServer, options.port, options.host);
+  } catch (error) {
+    await closeServers(httpServer, webSocketServer, connections);
+    throw error;
+  }
   const ticker = setInterval(
     () => sendEvents(roomManager.tick()),
     options.tickIntervalMs ?? 1_000,
