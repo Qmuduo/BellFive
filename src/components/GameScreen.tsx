@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { PlayerId } from '../game/types';
 import { BellButton } from './BellButton';
 import { CardTransferFly } from './CardTransferFly';
+import type { TransferAnchors } from './CardTransferFly';
 import { DebugPanel } from './DebugPanel';
 import { GameCard } from './GameCard';
 import { RingActivityLog } from './RingActivityLog';
@@ -36,6 +37,8 @@ export default function GameScreen() {
   const flipAudioPlayer = useAudioPlayer(require('../../assets/audio/card-flip.wav'));
   const victoryAudioPlayer = useAudioPlayer(require('../../assets/audio/victory.wav'));
   const defeatAudioPlayer = useAudioPlayer(require('../../assets/audio/defeat.wav'));
+  const sessionMode = useGameStore(state => state.sessionMode);
+  const isSinglePlayer = sessionMode === 'single-player';
   const connectionStatus = useGameStore(state => state.connectionStatus);
   const roomSnapshot = useGameStore(state => state.roomSnapshot);
   const roomCode = useGameStore(state => state.roomCode);
@@ -54,6 +57,7 @@ export default function GameScreen() {
   const setPlayerProfile = usePlayerProfileStore(state => state.setProfile);
   const createRoom = useGameStore(state => state.createRoom);
   const joinRoom = useGameStore(state => state.joinRoom);
+  const startSinglePlayer = useGameStore(state => state.startSinglePlayer);
   const openLobby = useGameStore(state => state.openLobby);
   const refreshLobby = useGameStore(state => state.refreshLobby);
   const closeLobby = useGameStore(state => state.closeLobby);
@@ -63,14 +67,59 @@ export default function GameScreen() {
   const flip = useGameStore(state => state.flip);
   const ring = useGameStore(state => state.ring);
   const leaveRoom = useGameStore(state => state.leaveRoom);
-  const music = useBackgroundMusic(Boolean(roomSnapshot?.phase === 'playing' && connectionStatus === 'connected' && !leavingRoom));
+  const music = useBackgroundMusic(Boolean(roomSnapshot?.phase === 'playing' && (isSinglePlayer || connectionStatus === 'connected') && !leavingRoom));
   const [ringCue, setRingCue] = useState<RingFeedbackEvent | null>(null);
   const [showMatchDetails, setShowMatchDetails] = useState(false);
+  const screenRef = useRef<View | null>(null);
+  const transferAnchorRefs = useRef<{
+    deck: Record<PlayerId, View | null>;
+    table: Record<PlayerId, View | null>;
+  }>({ deck: { A: null, B: null }, table: { A: null, B: null } });
+  const [measuredTransfer, setMeasuredTransfer] = useState<Readonly<{ version: number; anchors: TransferAnchors }> | null>(null);
+  const ringCueVersionRef = useRef<number | null>(null);
+  ringCueVersionRef.current = ringCue?.version ?? null;
   const lastProcessedAction = useRef<string | null>(null);
   const lastProcessedRingVersion = useRef<number | null>(null);
   const lastProcessedFlipVersion = useRef<number | null>(null);
   const lastObservedRoomSessionVersion = useRef<number | null>(null);
   const lastObservedPhase = useRef<string | null>(null);
+
+  const measureTransferAnchors = useCallback(async () => {
+    const version = ringCueVersionRef.current;
+    const [root, deckA, deckB, tableA, tableB] = await Promise.all([
+      measureViewInWindow(screenRef.current),
+      measureViewInWindow(transferAnchorRefs.current.deck.A),
+      measureViewInWindow(transferAnchorRefs.current.deck.B),
+      measureViewInWindow(transferAnchorRefs.current.table.A),
+      measureViewInWindow(transferAnchorRefs.current.table.B),
+    ]);
+    if (version === null || !root || !deckA || !deckB || !tableA || !tableB) return;
+
+    const next: TransferAnchors = {
+      deck: {
+        A: centerRelativeTo(root, deckA),
+        B: centerRelativeTo(root, deckB),
+      },
+      table: {
+        A: centerRelativeTo(root, tableA),
+        B: centerRelativeTo(root, tableB),
+      },
+    };
+    if (ringCueVersionRef.current === version) setMeasuredTransfer({ version, anchors: next });
+  }, []);
+
+  const requestTransferAnchorMeasure = useCallback(() => {
+    if (ringCueVersionRef.current !== null) void measureTransferAnchors();
+  }, [measureTransferAnchors]);
+
+  useEffect(() => {
+    if (!ringCue) {
+      setMeasuredTransfer(null);
+      return;
+    }
+    const frame = requestAnimationFrame(() => void measureTransferAnchors());
+    return () => cancelAnimationFrame(frame);
+  }, [measureTransferAnchors, ringCue]);
 
   useEffect(() => {
     void setAudioModeAsync({
@@ -80,10 +129,10 @@ export default function GameScreen() {
   }, []);
 
   useEffect(() => {
-    if (roomSnapshot || leavingRoom) return;
+    if (roomSnapshot || leavingRoom || isSinglePlayer) return;
     openLobby();
     return () => closeLobby();
-  }, [roomSnapshot === null, leavingRoom, openLobby, closeLobby]);
+  }, [roomSnapshot === null, leavingRoom, isSinglePlayer, openLobby, closeLobby]);
 
   useEffect(() => {
     if (!ringCue) return;
@@ -164,6 +213,7 @@ export default function GameScreen() {
         <RoomEntry
           onCreate={createRoom}
           onJoin={joinRoom}
+          onStartSinglePlayer={difficulty => startSinglePlayer(playerProfile, difficulty)}
           error={error}
           busy={leavingRoom || connectionStatus === 'connecting' || connectionStatus === 'reconnecting'}
           profile={playerProfile}
@@ -199,13 +249,36 @@ export default function GameScreen() {
     );
   }
 
+  const localDeckPlayer = localPlayerId ?? 'A';
+  const opponentPlayerId: PlayerId = localDeckPlayer === 'A' ? 'B' : 'A';
   const isPlaying = roomSnapshot.phase === 'playing';
   const isFinished = roomSnapshot.phase === 'finished';
-  const canInteract = isPlaying && connectionStatus === 'connected';
+  const canInteract = isPlaying && (isSinglePlayer || connectionStatus === 'connected');
   const canFlip = canInteract && Boolean(localPlayerId && localPlayerId === roomSnapshot.turn);
   const canRing = canInteract && Boolean(localPlayerId && !roomSnapshot.ringBlockedUntilFlip[localPlayerId]);
   const localWinner = roomSnapshot.winner === localPlayerId;
   const formattedTime = formatRemainingTime(roomSnapshot.remainingSeconds);
+  const connectionPaused = !isSinglePlayer && (
+    roomSnapshot.phase === 'connection-paused' ||
+    connectionStatus === 'reconnecting' ||
+    connectionStatus === 'disconnected'
+  );
+  const connectionUnavailable = !isSinglePlayer && connectionStatus !== 'connected';
+  const getPlayerName = (player: PlayerId) => (
+    isSinglePlayer && player === 'B'
+      ? t('solo.opponent')
+      : roomSnapshot.players[player].profile.nickname || playerSeatLabel(player, language)
+  );
+  const getPlayerLabel = (player: PlayerId) => t(
+    player === localDeckPlayer ? 'match.you' : 'match.opponent',
+    { nickname: getPlayerName(player) },
+  );
+  const nextPlayerLabel = roomSnapshot.turn === localPlayerId
+    ? t('match.youLabel')
+    : roomSnapshot.turn
+      ? getPlayerName(roomSnapshot.turn)
+      : t('debug.noTurn');
+  const canReplay = isSinglePlayer || connectionStatus === 'connected';
   const handleFlip = () => {
     if (!canFlip) return;
     music.startFromGesture();
@@ -227,7 +300,7 @@ export default function GameScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#F6F5F1" />
-      <View style={styles.screen}>
+      <View ref={screenRef} style={styles.screen}>
         <View style={styles.header}>
           <Text style={styles.title}>BellFive</Text>
           <View style={styles.headerActions}>
@@ -241,7 +314,7 @@ export default function GameScreen() {
         </View>
 
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' || connectionStatus === 'disconnected' ? (
+          {connectionPaused ? (
             <View style={styles.pausedBanner}><Text style={styles.pausedText}>{t('game.connectionPausedBanner')}</Text></View>
           ) : null}
           {error ? <View style={styles.errorBanner}><Text style={styles.errorText}>{formatGameError(language, error.code)}</Text></View> : null}
@@ -249,32 +322,38 @@ export default function GameScreen() {
           <View style={styles.tablePanel}>
             <View style={styles.tableHeading}>
               <Text style={styles.tableTitle}>{t('game.table')}</Text>
-              <Text style={styles.tableHint}>{roomCode}</Text>
+              <Text style={styles.tableHint}>{isSinglePlayer ? t('game.singlePlayer') : roomCode}</Text>
             </View>
             <View testID="play-mat" style={styles.playMat}>
-              {(localPlayerId ? [localPlayerId, localPlayerId === 'A' ? 'B' : 'A'] as const : ['A', 'B'] as const).map(player => (
-                <GameCard
+              {([localDeckPlayer, opponentPlayerId] as const).map(player => (
+                <View
                   key={player}
-                  playerId={player}
-                playerLabel={t(player === localPlayerId ? 'match.you' : 'match.opponent', { nickname: roomSnapshot.players[player].profile.nickname || playerSeatLabel(player, language) })}
-                  card={roomSnapshot.players[player].topCard ?? undefined}
-                  active={isPlaying && roomSnapshot.turn === player}
-                  isLocalPlayer={player === localPlayerId}
-                  drawCount={roomSnapshot.players[player].drawCount ?? 0}
-                  playedCount={roomSnapshot.players[player].playedCount ?? 0}
-                  canFlip={canFlip && localPlayerId === player}
-                  compact={compactMatch}
-                  onPress={() => handleDeckFlip(player)}
-                />
+                  ref={node => { transferAnchorRefs.current.table[player] = node; }}
+                  onLayout={requestTransferAnchorMeasure}
+                  style={styles.cardAnchor}
+                >
+                  <GameCard
+                    playerId={player}
+                    playerLabel={getPlayerLabel(player)}
+                    card={roomSnapshot.players[player].topCard ?? undefined}
+                    active={isPlaying && roomSnapshot.turn === player}
+                    isLocalPlayer={player === localPlayerId}
+                    drawCount={roomSnapshot.players[player].drawCount ?? 0}
+                    playedCount={roomSnapshot.players[player].playedCount ?? 0}
+                    showDrawCount={isFinished}
+                    canFlip={canFlip && localPlayerId === player}
+                    compact={compactMatch}
+                    onPress={() => handleDeckFlip(player)}
+                  />
+                </View>
               ))}
-              {ringCue ? <CardTransferFly key={ringCue.version} event={ringCue} localPlayerId={localPlayerId ?? 'A'} /> : null}
             </View>
           </View>
 
           <View style={styles.turnStrip}>
             <View style={[styles.turnDot, isFinished && styles.turnDotFinished]} />
             <View style={styles.turnCopy}>
-              <Text style={styles.turnLabel}>{isFinished ? t('game.over') : roomSnapshot.phase === 'connection-paused' || connectionStatus === 'reconnecting' ? t('game.connectionPaused') : canFlip ? t('game.yourTurnFlip') : t('game.playerFlipsNext', { playerLabel: roomSnapshot.turn === localPlayerId ? t('match.youLabel') : roomSnapshot.turn ? roomSnapshot.players[roomSnapshot.turn].profile.nickname || playerSeatLabel(roomSnapshot.turn, language) : t('debug.noTurn') })}</Text>
+              <Text style={styles.turnLabel}>{isFinished ? t('game.over') : connectionPaused ? t('game.connectionPaused') : canFlip ? t('game.yourTurnFlip') : t('game.playerFlipsNext', { playerLabel: nextPlayerLabel })}</Text>
               <Text style={styles.turnHint}>{isFinished ? t('game.roundComplete') : canRing ? t('bell.anytime') : localPlayerId && roomSnapshot.ringBlockedUntilFlip[localPlayerId] ? t('match.ringLocked') : t('game.waitReconnect')}</Text>
             </View>
           </View>
@@ -288,15 +367,15 @@ export default function GameScreen() {
                 {roomSnapshot.winner === null
                   ? roomSnapshot.remainingSeconds === 0 ? t('game.timeUpTied') : t('game.matchTied')
                   : roomSnapshot.remainingSeconds === 0
-                    ? t('game.timeUpWinner', { playerLabel: playerSeatLabel(roomSnapshot.winner, language) })
-                    : t('game.playerWins', { playerLabel: playerSeatLabel(roomSnapshot.winner, language) })}
+                    ? t('game.timeUpWinner', { playerLabel: getPlayerName(roomSnapshot.winner) })
+                    : t('game.playerWins', { playerLabel: getPlayerName(roomSnapshot.winner) })}
               </Text>
             </View>
           ) : null}
           <Pressable role="button" accessibilityState={{ expanded: showMatchDetails }} accessibilityLabel={t('match.details')} onPress={() => setShowMatchDetails(value => !value)} style={styles.detailsButton}>
             <Text style={styles.detailsText}>{t('match.details')} {showMatchDetails ? '−' : '+'}</Text>
           </Pressable>
-          {showMatchDetails ? <View style={styles.detailsPanel}>{localPlayerId ? <RingActivityLog events={roomSnapshot.ringHistory} localPlayerId={localPlayerId} /> : null}<DebugPanel snapshot={roomSnapshot} connectionStatus={connectionStatus} /></View> : null}
+          {showMatchDetails ? <View style={styles.detailsPanel}>{localPlayerId ? <RingActivityLog events={roomSnapshot.ringHistory} localPlayerId={localPlayerId} opponentName={isSinglePlayer ? t('solo.opponent') : undefined} /> : null}<DebugPanel snapshot={roomSnapshot} connectionStatus={connectionStatus} sessionMode={sessionMode} /></View> : null}
         </ScrollView>
 
         {isFinished ? (
@@ -304,10 +383,10 @@ export default function GameScreen() {
             {localPlayerId ? (
               <Pressable
                 role="button"
-                accessibilityState={{ disabled: connectionStatus !== 'connected' }}
-                disabled={connectionStatus !== 'connected'}
+                accessibilityState={{ disabled: !canReplay }}
+                disabled={!canReplay}
                 onPress={() => setReady(!roomSnapshot.ready[localPlayerId])}
-                style={({ pressed }) => [styles.playAgain, roomSnapshot.ready[localPlayerId] && styles.readyAgain, connectionStatus !== 'connected' && styles.disabledButton, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.playAgain, roomSnapshot.ready[localPlayerId] && styles.readyAgain, !canReplay && styles.disabledButton, pressed && styles.pressed]}
               >
                 <Text style={[styles.flipText, roomSnapshot.ready[localPlayerId] && styles.readyAgainText]}>
                   {roomSnapshot.ready[localPlayerId] ? t('waiting.cancelReady') : t('game.playAgain')}
@@ -319,10 +398,33 @@ export default function GameScreen() {
           <View style={styles.console}>
             <View style={styles.consoleIdentity}>
               <View style={styles.initial}><Text style={styles.initialText}>{localPlayerId ? (roomSnapshot.players[localPlayerId].profile.nickname.trim()[0] ?? getPlayerDisplayName(roomSnapshot.players[localPlayerId].profile, localPlayerId, language)[0] ?? '?').toLocaleUpperCase() : '?'}</Text></View>
-              <View style={styles.identityCopy}><Text numberOfLines={1} style={styles.identityCaption}>{t('match.console')}</Text><Text numberOfLines={1} style={styles.identityName}>{localPlayerId ? roomSnapshot.players[localPlayerId].profile.nickname || playerSeatLabel(localPlayerId, language) : '—'}</Text></View>
-              <View style={styles.drawCount}><Text style={styles.drawCaption}>{t('match.draw')}</Text><Text style={styles.drawValue}>{localPlayerId ? roomSnapshot.players[localPlayerId].drawCount ?? 0 : 0}</Text></View>
+              <View style={styles.identityCopy}><Text numberOfLines={1} style={styles.identityCaption}>{t('match.console')}</Text><Text numberOfLines={1} style={styles.identityName}>{localPlayerId ? getPlayerName(localPlayerId) : '—'}</Text></View>
+              <View style={styles.drawCountGroup}>
+                <Text style={styles.drawGroupCaption}>{t('match.drawPile')}</Text>
+                <View style={styles.drawCountPair}>
+                  {([localDeckPlayer, opponentPlayerId] as const).map(player => {
+                    const drawCount = roomSnapshot.players[player].drawCount ?? 0;
+                    const playerLabel = t(player === localDeckPlayer ? 'match.you' : 'match.opponent', {
+                      nickname: getPlayerName(player),
+                    });
+                    return (
+                      <View
+                        key={player}
+                        ref={node => { transferAnchorRefs.current.deck[player] = node; }}
+                        onLayout={requestTransferAnchorMeasure}
+                        accessible
+                        accessibilityLabel={t('match.count.accessibility', { playerLabel, count: drawCount })}
+                        style={styles.drawCount}
+                      >
+                        <Text style={styles.drawStatCaption}>{t(player === localDeckPlayer ? 'match.count.you' : 'match.count.opponent')}</Text>
+                        <Text style={styles.drawValue}>{drawCount}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
             </View>
-            <Text style={styles.consolePrompt}>{isFinished ? t('game.roundComplete') : canFlip ? t('game.yourTurnFlip') : roomSnapshot.phase === 'connection-paused' || connectionStatus !== 'connected' ? t('game.connectionPaused') : t('game.playerFlipsNext', { playerLabel: roomSnapshot.turn === localPlayerId ? t('match.youLabel') : roomSnapshot.turn ? roomSnapshot.players[roomSnapshot.turn].profile.nickname || playerSeatLabel(roomSnapshot.turn, language) : t('debug.noTurn') })}</Text>
+            <Text style={styles.consolePrompt}>{isFinished ? t('game.roundComplete') : canFlip ? t('game.yourTurnFlip') : connectionUnavailable ? t('game.connectionPaused') : t('game.playerFlipsNext', { playerLabel: nextPlayerLabel })}</Text>
             <View style={styles.actionDock}>
             <View style={styles.actionButtonSlot}>
             <Pressable
@@ -353,6 +455,14 @@ export default function GameScreen() {
             </Text>
           </View>
         )}
+        {ringCue && isPlaying ? (
+          <CardTransferFly
+            key={ringCue.version}
+            event={ringCue}
+            localPlayerId={localDeckPlayer}
+            anchors={measuredTransfer?.version === ringCue.version ? measuredTransfer.anchors : null}
+          />
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -365,9 +475,27 @@ function formatRemainingTime(remainingSeconds: number | null): string | null {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+type WindowRect = Readonly<{ x: number; y: number; width: number; height: number }>;
+
+function measureViewInWindow(view: View | null): Promise<WindowRect | null> {
+  if (!view) return Promise.resolve(null);
+  return new Promise(resolve => {
+    view.measureInWindow((x, y, width, height) => {
+      resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
+    });
+  });
+}
+
+function centerRelativeTo(root: WindowRect, target: WindowRect) {
+  return {
+    x: target.x + target.width / 2 - root.x,
+    y: target.y + target.height / 2 - root.y,
+  };
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F5F0FF' },
-  screen: { flex: 1, paddingHorizontal: 12, backgroundColor: '#F5F0FF' },
+  screen: { flex: 1, position: 'relative', paddingHorizontal: 12, backgroundColor: '#F5F0FF' },
   header: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   title: { color: '#2F194C', fontSize: 21, fontWeight: '900', letterSpacing: -0.8 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -392,6 +520,7 @@ const styles = StyleSheet.create({
   tableTitle: { color: '#796887', fontSize: 9, fontWeight: '800' },
   tableHint: { color: '#796887', fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   playMat: { position: 'relative', flexDirection: 'row', alignItems: 'stretch', gap: 8 },
+  cardAnchor: { flex: 1, minWidth: 0 },
   gameOver: { alignItems: 'center', paddingVertical: 12 },
   winnerLabel: { color: '#3D6078', fontSize: 19, fontWeight: '900', letterSpacing: 0.8 },
   youWin: { marginTop: 1, color: '#D46D69', fontSize: 13, fontWeight: '900', letterSpacing: 1 },
@@ -402,9 +531,12 @@ const styles = StyleSheet.create({
   identityCopy: { flex: 1, minWidth: 0 },
   identityCaption: { color: '#C6B5DF', fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
   identityName: { color: '#F9F5FF', fontSize: 20, fontWeight: '900' },
-  drawCount: { alignItems: 'flex-end', marginLeft: 8 },
-  drawCaption: { color: '#C6B5DF', fontSize: 12, fontWeight: '700' },
-  drawValue: { color: '#F9F5FF', fontSize: 22, fontWeight: '900' },
+  drawCountGroup: { minWidth: 96, alignItems: 'center', marginLeft: 6 },
+  drawGroupCaption: { color: '#C6B5DF', fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
+  drawCountPair: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  drawCount: { minWidth: 38, alignItems: 'center' },
+  drawStatCaption: { color: '#C6B5DF', fontSize: 7, fontWeight: '800', letterSpacing: 0.4 },
+  drawValue: { color: '#F9F5FF', fontSize: 18, fontWeight: '900', fontVariant: ['tabular-nums'] },
   consolePrompt: { minHeight: 28, paddingTop: 5, color: '#E3FB88', fontSize: 12, fontWeight: '700' },
   actionDock: { flexDirection: 'row', alignItems: 'stretch', gap: 14, paddingTop: 2, paddingBottom: 0 },
   actionButtonSlot: { flex: 1, minWidth: 0 },

@@ -26,13 +26,14 @@ type GameCardProps = {
   active?: boolean;
   drawCount?: number;
   playedCount?: number;
+  showDrawCount?: boolean;
   isLocalPlayer?: boolean;
   canFlip?: boolean;
   onPress?: () => void;
   compact?: boolean;
 };
 
-export function GameCard({ playerId, playerLabel, card, active = false, drawCount = 0, playedCount = 0, isLocalPlayer = false, canFlip = false, onPress, compact = false }: GameCardProps) {
+export function GameCard({ playerId, playerLabel, card, active = false, drawCount = 0, playedCount = 0, showDrawCount = true, isLocalPlayer = false, canFlip = false, onPress, compact = false }: GameCardProps) {
   const { t } = useTranslation();
   const rotation = useSharedValue(0);
   const slide = useSharedValue(0);
@@ -85,7 +86,10 @@ export function GameCard({ playerId, playerLabel, card, active = false, drawCoun
           <Text style={styles.emptyHint}>{t('card.ready')}</Text>
         </View>
       )}
-      <View style={styles.cardCounts}><Text style={styles.count}>{t('deck.cards', { count: drawCount, cardWord: t(drawCount === 1 ? 'deck.cardWord.one' : 'deck.cardWord.many') })}</Text><Text style={styles.played}>{t('deck.table', { count: playedCount })}</Text></View>
+      <View style={[styles.cardCounts, !showDrawCount && styles.cardCountsOnlyPlayed]}>
+        {showDrawCount ? <Text style={styles.count}>{t('deck.cards', { count: drawCount, cardWord: t(drawCount === 1 ? 'deck.cardWord.one' : 'deck.cardWord.many') })}</Text> : null}
+        <Text style={styles.played}>{t('deck.table', { count: playedCount })}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -135,6 +139,7 @@ const styles = StyleSheet.create({
   },
   localLabel: { backgroundColor: '#7040C4', color: '#F5F0FF' },
   cardCounts: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', gap: 2, paddingTop: 6 },
+  cardCountsOnlyPlayed: { justifyContent: 'flex-end' },
   count: { color: '#2F194C', fontSize: 11, fontWeight: '800', flexShrink: 1 },
   played: { color: '#796887', fontSize: 10, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
   pressed: { opacity: 0.8 },

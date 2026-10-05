@@ -4,12 +4,20 @@ import type { GameClientError } from '../network/GameClient';
 import type { OpenRoomSummary, ServerMessage } from '../network/protocol';
 import type { PlayerProfile, PlayerProfileInput } from '../profile';
 import { AVATAR_EMOJI, getPlayerDisplayName } from '../profile';
+import type { SinglePlayerDifficulty } from '../game/singlePlayerController';
 import { AvatarPicker } from './AvatarPicker';
 import { LanguageSettings } from './LanguageSettings';
 import { formatApplicationStatus, formatGameError } from '../i18n/translations';
+import type { TranslationKey } from '../i18n/translations';
 import { useTranslation } from '../i18n/useTranslation';
 
 const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/;
+const SINGLE_PLAYER_DIFFICULTIES: readonly SinglePlayerDifficulty[] = ['easy', 'normal', 'hard'];
+const DIFFICULTY_LABEL_KEYS: Readonly<Record<SinglePlayerDifficulty, TranslationKey>> = {
+  easy: 'difficulty.easy',
+  normal: 'difficulty.normal',
+  hard: 'difficulty.hard',
+};
 
 type RoomEntryProps = Readonly<{
   onCreate: (profile: PlayerProfileInput) => void;
@@ -25,6 +33,7 @@ type RoomEntryProps = Readonly<{
   applicationStatus?: Extract<ServerMessage, { type: 'room.application.status' }> | null;
   onRefreshLobby?: () => void;
   onCancelApplication?: () => void;
+  onStartSinglePlayer?: (difficulty: SinglePlayerDifficulty) => void;
 }>;
 
 export function RoomEntry({
@@ -41,11 +50,13 @@ export function RoomEntry({
   applicationStatus = null,
   onRefreshLobby = () => undefined,
   onCancelApplication = () => undefined,
+  onStartSinglePlayer,
 }: RoomEntryProps) {
   const { language, t } = useTranslation();
   const currentBusyLabel = busyLabel ?? t('entry.connecting');
   const [code, setCode] = useState('');
   const [showValidationError, setShowValidationError] = useState(false);
+  const [showDifficulties, setShowDifficulties] = useState(false);
   const applicationPending = Boolean(applyingRoomCode) || applicationStatus?.status === 'pending';
   const roomActionsBusy = busy || !profileHydrated || applicationPending;
 
@@ -96,6 +107,38 @@ export function RoomEntry({
       >
         <Text style={styles.createText}>{busy ? currentBusyLabel : profileHydrated ? t('entry.createRoom') : t('entry.loadingProfile')}</Text>
       </Pressable>
+
+      {onStartSinglePlayer ? (
+        <View style={styles.soloPanel}>
+          <Pressable
+            role="button"
+            accessibilityState={{ disabled: !profileHydrated, expanded: showDifficulties }}
+            disabled={!profileHydrated}
+            onPress={() => setShowDifficulties(value => !value)}
+            style={({ pressed }) => [styles.soloButton, pressed && styles.pressed, !profileHydrated && styles.disabled]}
+          >
+            <Text style={styles.soloText}>{t('entry.singlePlayer')}</Text>
+          </Pressable>
+          {showDifficulties ? (
+            <View style={styles.difficultyPanel}>
+              <Text style={styles.difficultyHeading}>{t('entry.chooseDifficulty')}</Text>
+              <View style={styles.difficultyRow}>
+                {SINGLE_PLAYER_DIFFICULTIES.map(difficulty => (
+                  <Pressable
+                    key={difficulty}
+                    role="button"
+                    disabled={!profileHydrated}
+                    onPress={() => onStartSinglePlayer?.(difficulty)}
+                    style={({ pressed }) => [styles.difficultyButton, pressed && styles.pressed, !profileHydrated && styles.disabled]}
+                  >
+                    <Text style={styles.difficultyText}>{t(DIFFICULTY_LABEL_KEYS[difficulty])}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.roomsHeading}>
         <Text style={styles.roomsTitle}>{t('entry.openRooms')}</Text>
@@ -192,6 +235,14 @@ const styles = StyleSheet.create({
   nicknameInput: { minHeight: 42, marginBottom: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E4E6E8', borderRadius: 12, color: '#263340', fontSize: 14, fontWeight: '700' },
   createButton: { minHeight: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#F2C4CC' },
   createText: { color: '#633E45', fontSize: 16, fontWeight: '900' },
+  soloPanel: { marginTop: 10 },
+  soloButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#D7C78D', borderRadius: 16, backgroundColor: '#FFF5CF' },
+  soloText: { color: '#69591F', fontSize: 14, fontWeight: '900' },
+  difficultyPanel: { marginTop: 9, padding: 11, borderRadius: 14, backgroundColor: '#FFFFFF' },
+  difficultyHeading: { marginBottom: 9, color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 1.1, textAlign: 'center' },
+  difficultyRow: { flexDirection: 'row', gap: 8 },
+  difficultyButton: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#E8EEFA' },
+  difficultyText: { color: '#405776', fontSize: 11, fontWeight: '900' },
   roomsHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 21, marginBottom: 8 },
   roomsTitle: { color: '#87909B', fontSize: 9, fontWeight: '900', letterSpacing: 1.3 },
   refreshText: { color: '#647B9B', fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },

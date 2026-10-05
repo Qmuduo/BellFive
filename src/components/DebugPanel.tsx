@@ -4,6 +4,7 @@ import type { RoomSnapshot } from '../network/protocol';
 import { playerSeatLabel } from '../i18n/translations';
 import type { TranslationKey } from '../i18n/translations';
 import { useTranslation } from '../i18n/useTranslation';
+import type { GameSessionMode } from '../store/gameStore';
 
 const CONNECTION_LABEL_KEYS: Readonly<Record<GameClientStatus, TranslationKey>> = {
   idle: 'status.connection.idle',
@@ -17,24 +18,27 @@ const CONNECTION_LABEL_KEYS: Readonly<Record<GameClientStatus, TranslationKey>> 
 type DebugPanelProps = Readonly<{
   snapshot: RoomSnapshot;
   connectionStatus: GameClientStatus;
+  sessionMode?: GameSessionMode;
 }>;
 
-export function DebugPanel({ snapshot, connectionStatus }: DebugPanelProps) {
+export function DebugPanel({ snapshot, connectionStatus, sessionMode = 'online' }: DebugPanelProps) {
   const { language, t } = useTranslation();
   const counts = snapshot.visibleCounts;
   const playerA = playerSeatLabel('A', language);
-  const playerB = playerSeatLabel('B', language);
-  const player = (id: 'A' | 'B' | null) => id ? playerSeatLabel(id, language) : t('debug.noTurn');
+  const playerB = sessionMode === 'single-player' ? t('solo.opponent') : playerSeatLabel('B', language);
+  const player = (id: 'A' | 'B' | null) => id
+    ? id === 'B' && sessionMode === 'single-player' ? t('solo.opponent') : playerSeatLabel(id, language)
+    : t('debug.noTurn');
   const boolean = (value: boolean) => t(value ? 'debug.true' : 'debug.false');
   return (
     <View style={styles.panel}>
       <View style={styles.headingRow}>
         <Text style={styles.heading}>{t('debug.heading')}</Text>
-        <Text style={styles.summary}>{t('debug.room', { roomCode: snapshot.roomCode })}</Text>
+        <Text style={styles.summary}>{sessionMode === 'single-player' ? t('debug.singlePlayer') : t('debug.room', { roomCode: snapshot.roomCode })}</Text>
         <Text style={styles.summary}>{t('debug.you', { player: player(snapshot.localPlayerId) })}</Text>
       </View>
       <View style={styles.headingRow}>
-        <Text style={styles.summary}>{t('debug.connection', { status: t(CONNECTION_LABEL_KEYS[connectionStatus]) })}</Text>
+        {sessionMode !== 'single-player' ? <Text style={styles.summary}>{t('debug.connection', { status: t(CONNECTION_LABEL_KEYS[connectionStatus]) })}</Text> : null}
         <Text style={styles.summary}>{t('debug.turn', { player: player(snapshot.turn) })}</Text>
         <Text style={styles.summary}>{t('debug.canRing', { value: boolean(snapshot.canRing) })}</Text>
       </View>

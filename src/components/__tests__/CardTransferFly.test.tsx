@@ -1,5 +1,11 @@
 import { render, screen } from '@testing-library/react-native';
 import { CardTransferFly } from '../CardTransferFly';
+import type { TransferAnchors } from '../CardTransferFly';
+
+const anchors: TransferAnchors = {
+  deck: { A: { x: 84, y: 330 }, B: { x: 236, y: 330 } },
+  table: { A: { x: 84, y: 116 }, B: { x: 236, y: 116 } },
+};
 
 jest.mock('react-native-reanimated', () => {
   const { View } = require('react-native') as typeof import('react-native');
@@ -26,6 +32,7 @@ describe('CardTransferFly', () => {
       <CardTransferFly
         event={{ version: 1, caller, outcome, movedCardCount }}
         localPlayerId="A"
+        anchors={anchors}
       />,
     );
 
@@ -42,6 +49,7 @@ describe('CardTransferFly', () => {
       <CardTransferFly
         event={{ version: 1, caller, outcome: 'wrong', movedCardCount: caller === 'A' ? 1 : 2 }}
         localPlayerId="A"
+        anchors={anchors}
       />,
     );
 
@@ -56,6 +64,7 @@ describe('CardTransferFly', () => {
       <CardTransferFly
         event={{ version: 1, caller: 'A', outcome: 'wrong', movedCardCount: 0 }}
         localPlayerId="A"
+        anchors={anchors}
       />,
     );
 
@@ -69,6 +78,7 @@ describe('CardTransferFly', () => {
       <CardTransferFly
         event={{ version: 2, caller: 'A', outcome: 'correct', movedCardCount: 12 }}
         localPlayerId="A"
+        anchors={anchors}
       />,
     );
 

@@ -9,9 +9,10 @@ import { useTranslation } from '../i18n/useTranslation';
 type RingActivityLogProps = Readonly<{
   events: readonly RingFeedbackEvent[];
   localPlayerId: PlayerId;
+  opponentName?: string;
 }>;
 
-export function RingActivityLog({ events, localPlayerId }: RingActivityLogProps) {
+export function RingActivityLog({ events, localPlayerId, opponentName }: RingActivityLogProps) {
   const { language, t } = useTranslation();
   const scrollRef = useRef<ScrollView>(null);
   return (
@@ -34,7 +35,7 @@ export function RingActivityLog({ events, localPlayerId }: RingActivityLogProps)
           {events.map(event => (
             <View key={event.version} style={styles.row}>
               <View style={[styles.dot, event.outcome === 'correct' ? styles.correctDot : styles.wrongDot]} />
-              <Text style={styles.message}>{formatRingActivity(event, localPlayerId, language)}</Text>
+              <Text style={styles.message}>{formatRingActivity(event, localPlayerId, language, opponentName)}</Text>
             </View>
           ))}
         </ScrollView>
@@ -43,9 +44,16 @@ export function RingActivityLog({ events, localPlayerId }: RingActivityLogProps)
   );
 }
 
-export function formatRingActivity(event: RingFeedbackEvent, localPlayerId: PlayerId, language: Language = 'zh-CN'): string {
+export function formatRingActivity(
+  event: RingFeedbackEvent,
+  localPlayerId: PlayerId,
+  language: Language = 'zh-CN',
+  opponentName?: string,
+): string {
   const isLocalCaller = event.caller === localPlayerId;
-  const callerName = translate(language, event.caller === 'A' ? 'ring.seatA' : 'ring.seatB');
+  const callerName = event.caller === 'B' && opponentName
+    ? opponentName
+    : translate(language, event.caller === 'A' ? 'ring.seatA' : 'ring.seatB');
   const count = event.movedCardCount;
   const cardWord = translate(language, count === 1 ? 'deck.cardWord.one' : 'deck.cardWord.many');
 
