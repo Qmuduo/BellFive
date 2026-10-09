@@ -128,7 +128,6 @@ function createPendingRoom(app: MiniGameApp, stores: MiniGameStores, generation:
     else if (!requestId || !game.client || game.connectionStatus === 'disconnected'
       || (game.error?.requestId === requestId)
       || game.error?.code === 'AUTH_REQUIRED' || game.error?.code === 'CONNECTION_CLOSED') finish('error');
-    else if (game.connectionStatus === 'error') finish('error');
     else if (game.error?.code === 'NETWORK_ERROR') finish('transport-error');
   };
   pendingCreates.set(app, pending);

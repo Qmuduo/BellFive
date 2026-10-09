@@ -346,7 +346,8 @@ test('an uncorrelated terminal transport error releases create for retry', async
   f.api.connectSocket.mockImplementationOnce(() => { throw new Error('offline'); });
   f.respond(session); await pending;
 
-  expect(f.stores.game.getState().connectionStatus).toBe('error');
+  expect(f.stores.game.getState().connectionStatus).toBe('disconnected');
+  expect(f.stores.game.getState().client).toBeNull();
   expect(getScreenSnapshot(f.app, f.stores).pendingCreate).toBe(false);
   expect(f.app.getState().pendingIntent).toEqual({ type: 'create-room' });
   expect(f.app.getState().onlineBusy).toBe(false);
@@ -358,6 +359,21 @@ test('an uncorrelated terminal transport error releases create for retry', async
   expect(f.api.connectSocket).toHaveBeenCalledTimes(2);
   f.connect();
   expect(f.sockets[0].sent.map((frame: any) => frame.type)).toEqual(['session.authenticate', 'room.create']);
+  f.dispose();
+});
+
+test('a failed create cannot replay its queued room request when the user opens the lobby', async () => {
+  const f = fixture(); await f.stores.ready;
+  const pending = dispatchScreenAction('home.create', f.app, f.stores); await flush();
+  f.loginCallbacks.shift().success({ code: 'fixture-code' }); await flush();
+  f.api.connectSocket.mockImplementationOnce(() => { throw new Error('offline'); });
+  f.respond(session); await pending;
+  expect(f.stores.game.getState().connectionStatus).toBe('disconnected');
+  expect(f.stores.game.getState().client).toBeNull();
+
+  await dispatchScreenAction('home.lobby', f.app, f.stores);
+  f.connect();
+  expect(f.sockets[0].sent.map((frame: any) => frame.type)).toEqual(['session.authenticate', 'room.lobby.subscribe']);
   f.dispose();
 });
 
