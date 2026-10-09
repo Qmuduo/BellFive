@@ -61,6 +61,8 @@ The account API accepts JSON bodies up to 16 KiB and returns `{ "error": { "code
 
 ## WeChat mini-program domains
 
+Native Mini Game networking uses authenticated `POST /auth/me/profile` as an alias for the existing `PATCH /auth/me/profile` route. Both accept `{ "profile": { ... } }`, apply the same sanitization and 16 KiB JSON limit, and return the updated `AuthUser`. Send the same single Bearer session header. Expo/Web continue using PATCH; the Mini Game adapter maps only profile PATCH to POST because wx.request's supported method set excludes PATCH.
+
 Deploy the account API behind HTTPS and the room connection behind WSS using a valid certificate. In the WeChat mini-program console, configure the API host in the **request legal domain** allowlist and the room host separately in the **WebSocket (socket) legal domain** allowlist. Adding one does not add the other. The mini-program obtains a fresh login code and sends it to `/auth/wechat/login`; the server exchanges it with WeChat using its AppSecret. Configure the registered Mini Program's AppID and AppSecret only in the server environment. Do not put the AppSecret in Mini project settings or the generated bundle.
 
 To import and build the Mini Program from the repository root:

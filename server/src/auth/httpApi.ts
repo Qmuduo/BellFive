@@ -59,7 +59,7 @@ export async function handleAuthHttpRequest(
       return true;
     }
     const publicRoutes = ['POST /auth/register', 'POST /auth/login', 'POST /auth/wechat/login', 'POST /auth/password/reset/wechat'];
-    const protectedRoutes = ['POST /auth/wechat/link', 'POST /auth/credentials', 'GET /auth/me', 'PATCH /auth/me/profile', 'POST /auth/logout'];
+    const protectedRoutes = ['POST /auth/wechat/link', 'POST /auth/credentials', 'GET /auth/me', 'PATCH /auth/me/profile', 'POST /auth/me/profile', 'POST /auth/logout'];
     if (!publicRoutes.includes(route) && !protectedRoutes.includes(route)) {
       throw new HttpError(404, 'NOT_FOUND', 'The account route was not found.');
     }
@@ -96,6 +96,7 @@ export async function handleAuthHttpRequest(
           sendJson(response, 200, await authService.addPasswordCredential(principal!.userId, stringField(body, 'username'), stringField(body, 'password')));
           break;
         case 'PATCH /auth/me/profile':
+        case 'POST /auth/me/profile':
           if (!('profile' in body)) throw new AuthServiceError('INVALID_INPUT');
           await authService.updateProfile(principal!.userId, body.profile);
           sendJson(response, 200, await authService.getUser(principal!.userId));

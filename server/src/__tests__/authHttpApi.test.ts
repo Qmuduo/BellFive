@@ -95,6 +95,19 @@ test('profile changes return AuthUser and logout revokes the bearer session', as
   expect(await call('/auth/me', 'GET', undefined, session.token)).toMatchObject({ status: 401, body: { error: { code: 'UNAUTHORIZED' } } });
 });
 
+test('native clients can update profile through authenticated POST using the same PATCH semantics', async () => {
+  const session = await service.register({ username: 'native_player', password }, {});
+  const payload = { profile: { nickname: ' Mini Game ', avatarId: 'bad' } };
+  expect(await call('/auth/me/profile', 'POST', payload)).toMatchObject({ status: 401, body: { error: { code: 'UNAUTHORIZED' } } });
+  const updated = await call('/auth/me/profile', 'POST', payload, session.token);
+  expect(updated).toMatchObject({ status: 200, body: {
+    userId: session.user.userId, username: 'native_player', wechatLinked: false,
+    profile: { nickname: 'Mini Game', avatarId: 'strawberry' },
+  } });
+  expect(await call('/auth/me/profile', 'PATCH', payload, session.token)).toMatchObject({ status: 200, body: updated.body });
+  expect(await call('/auth/me/profile', 'POST', {}, session.token)).toMatchObject({ status: 400, body: { error: { code: 'INVALID_INPUT' } } });
+});
+
 test('WeChat-only accounts can add credentials and reset through their linked identity', async () => {
   const wechat = await call('/auth/wechat/login', 'POST', { code: 'identity' });
   expect(wechat).toMatchObject({ status: 200, body: { user: { username: null, wechatLinked: true } } });
