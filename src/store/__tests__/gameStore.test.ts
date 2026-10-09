@@ -2,6 +2,28 @@ import type { RoomSnapshot, ServerMessage } from '../../network/protocol';
 import type { GameClientHandlers } from '../../network/GameClient';
 import { createGameStore } from '../gameStore';
 import type { GameClientPort } from '../gameStore';
+import { act, renderHook } from '@testing-library/react-native';
+import { createGameStoreApi } from '../createGameStoreApi';
+import { bindReactStore } from '../reactStoreBinding';
+
+it('React binding renders selectors from the same vanilla API and preserves subscriptions', async () => {
+  const api = createGameStoreApi(() => { throw new Error('No online client expected'); }, () => null);
+  const store = bindReactStore(api);
+  const { result, unmount } = await renderHook(() => store(state => state.sessionMode));
+  const states: string[] = [];
+  const unsubscribe = store.subscribe(state => { states.push(state.sessionMode); });
+  expect(result.current).toBe('none');
+  expect(store.getState()).toBe(api.getState());
+  expect(store.setState).toBe(api.setState);
+  try {
+    await act(() => store.getState().startSinglePlayer({ nickname: 'Guest', avatarId: 'pear' }, 'easy'));
+    expect(result.current).toBe('single-player');
+    expect(store.getState()).toBe(api.getState());
+    await act(() => api.getState().leaveRoom());
+    expect(result.current).toBe('none');
+    expect(states).toContain('single-player');
+  } finally { await act(() => api.getState().leaveRoom()); unsubscribe(); await unmount(); }
+});
 
 describe('friend room game store', () => {
   it('distinguishes a confirmed empty lobby from a lobby that is still loading', () => {

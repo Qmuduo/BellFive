@@ -1,6 +1,6 @@
 import { GameClient } from '../../../src/network/GameClient';
 import { createGameStore } from '../../../src/store/createGameStore';
-import type { GameClientFactory } from '../../../src/store/createGameStore';
+import type { GameClientFactory } from '../../../src/store/createGameStoreApi';
 import { useMiniAuthStore } from './authStore';
 import { miniWebSocketUrl } from '../platform/miniConfig';
 import { createTaroSocket } from '../platform/socket';

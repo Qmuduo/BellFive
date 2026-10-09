@@ -4,7 +4,7 @@ import { useAuthStore } from '../auth/authStore';
 import { createGameStore } from './createGameStore';
 
 export { createGameStore } from './createGameStore';
-export type { GameClientFactory, GameClientPort, GameSessionMode, GameStore } from './createGameStore';
+export type { GameClientFactory, GameClientPort, GameSessionMode, GameStore } from './createGameStoreApi';
 
 function createDefaultClient(handlers: GameClientHandlers, authToken: string): GameClient {
   const configuredUrl = process.env.EXPO_PUBLIC_GAME_SERVER_URL?.trim();
