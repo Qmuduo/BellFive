@@ -3,9 +3,11 @@ import { copyFile, mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, context } from 'esbuild';
+import { loadMiniGameLocalSettings } from './local-settings.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = resolve(root, 'dist');
+const localSettings = await loadMiniGameLocalSettings(resolve(root, 'local.settings.json'));
 
 async function verifyOutput() {
   await new Promise((resolveExit, reject) => {
@@ -29,6 +31,10 @@ const options = {
   format: 'iife',
   globalName: 'BellFiveMiniGame',
   target: 'es2020',
+  define: {
+    __BELLFIVE_AUTH_URL__: JSON.stringify(localSettings.authUrl),
+    __BELLFIVE_SOCKET_URL__: JSON.stringify(localSettings.socketUrl),
+  },
   logLevel: 'info',
   plugins: [{
     name: 'mini-game-output',

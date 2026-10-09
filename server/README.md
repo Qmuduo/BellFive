@@ -39,10 +39,10 @@ See [`.env.example`](.env.example) for server configuration. The service reads p
 | `HOST` | Listen address, `0.0.0.0` |
 | `BELLFIVE_AUTH_DB_PATH` | Persistent SQLite path, `server/data/bellfive.sqlite` |
 | `BELLFIVE_CORS_ORIGINS` | Comma-separated exact browser origins, including scheme and port; empty denies browser cross-origin account requests |
-| `BELLFIVE_WECHAT_MINI_APP_ID` | Mini-program AppID used by the server's code exchange |
-| `BELLFIVE_WECHAT_MINI_APP_SECRET` | Mini-program AppSecret, held only in the server environment |
+| `BELLFIVE_WECHAT_MINI_APP_ID` | AppID for the one WeChat Mini Program or Mini Game currently using server-side code exchange |
+| `BELLFIVE_WECHAT_MINI_APP_SECRET` | Matching AppSecret, held only in the server environment |
 
-Set the two WeChat variables in the server terminal to enable WeChat login, linking, and password recovery. Password registration/login and `/health` work when those variables are absent; WeChat operations return `503` with `WECHAT_NOT_CONFIGURED`. Keep AppSecret out of tracked files, mini-program output, Expo bundles, and Web clients.
+Set the two WeChat variables in the server's private environment to enable WeChat login, linking, and password recovery. They must be a matching AppID/AppSecret pair for the client being tested. This server currently accepts one pair at a time; if the Taro Mini Program and native Mini Game use different AppIDs, select the matching pair for the active test. Password registration/login and `/health` work when those variables are absent; WeChat operations return `503` with `WECHAT_NOT_CONFIGURED`. Keep AppSecret out of tracked files, all client output, Expo bundles, and Web clients.
 
 The clients use these additional build-time variables. They configure public service addresses only; never place an AppSecret or other credential in a client variable.
 
@@ -59,9 +59,11 @@ For a local password-account check, use a username and password you choose in a 
 
 The account API accepts JSON bodies up to 16 KiB and returns `{ "error": { "code": "...", "message": "..." } }` on failure. Register returns an `AuthSession` with status `201`; password/WeChat login, WeChat linking, and WeChat password reset return an `AuthSession` with status `200`. `GET /auth/me`, `PATCH /auth/me/profile`, and `POST /auth/credentials` return an `AuthUser`; logout returns `204`. Send exactly one `Authorization: Bearer <token>` header to read/update the current account, add credentials, link WeChat, or log out. Password reset requires a fresh WeChat code for the identity already bound to a password account; first-release recovery is available only to those accounts. Identity conflicts require explicit confirmation for a temporary WeChat-only account and cannot overwrite an existing password account.
 
-## WeChat mini-program domains
+## Authenticated profile updates
 
 Native Mini Game networking uses authenticated `POST /auth/me/profile` as an alias for the existing `PATCH /auth/me/profile` route. Both accept `{ "profile": { ... } }`, apply the same sanitization and 16 KiB JSON limit, and return the updated `AuthUser`. Send the same single Bearer session header. Expo/Web continue using PATCH; the Mini Game adapter maps only profile PATCH to POST because wx.request's supported method set excludes PATCH.
+
+## WeChat Mini Program domains
 
 Deploy the account API behind HTTPS and the room connection behind WSS using a valid certificate. In the WeChat mini-program console, configure the API host in the **request legal domain** allowlist and the room host separately in the **WebSocket (socket) legal domain** allowlist. Adding one does not add the other. The mini-program obtains a fresh login code and sends it to `/auth/wechat/login`; the server exchanges it with WeChat using its AppSecret. Configure the registered Mini Program's AppID and AppSecret only in the server environment. Do not put the AppSecret in Mini project settings or the generated bundle.
 
@@ -80,6 +82,30 @@ Replace the URL placeholders with the actual service hosts you control. In WeCha
 For a local preview, use a registered development AppID and endpoints reachable from the test device. A local preview does not replace configuring legal domains for real-device tests or release. The account service's `/health` route can confirm the HTTP endpoint before importing the project.
 
 `BELLFIVE_CORS_ORIGINS` controls browser HTTP access and is separate from those WeChat allowlists. List each Expo Web origin exactly, including scheme and port where present; wildcard origins are not supported. The existing Expo client and in-memory room protocol continue to use the WebSocket endpoint described below.
+
+## WeChat Mini Game endpoints
+
+The Canvas Mini Game is a separate target under `minigame/`. From the repository root, install its dependencies and build it with:
+
+```powershell
+npm --prefix minigame ci
+npm run minigame:build
+```
+
+Import the `minigame/` root as a **Mini Game** project in WeChat Developer Tools. Its `project.config.json` uses `compileType: "game"` and points to the generated `dist/`; the build must create `minigame/dist/game.json`. The `miniprogram/` folder is a different Taro Mini Program target.
+
+The Mini Game defaults to `http://localhost:8787` for simulator account requests and `ws://localhost:8787` for room traffic. To use other public service endpoints, create the ignored `minigame/local.settings.json` before building:
+
+```json
+{
+  "authUrl": "https://api.example.com",
+  "socketUrl": "wss://game.example.com"
+}
+```
+
+The file accepts only the public root URLs `authUrl` (HTTP/HTTPS) and `socketUrl` (WS/WSS). Values are embedded into the generated client, so rebuild after changing them. Use localhost only where the Developer Tools simulator can reach the development computer. A phone's `localhost` is the phone itself; real-device testing needs reachable HTTPS/WSS hosts with valid certificates, and the Mini Game account must list the API host under **request legal domains** and the socket host under **socket legal domains**. Disabling domain checks in Developer Tools is only a simulator convenience.
+
+Set `BELLFIVE_WECHAT_MINI_APP_ID` to the registered Mini Game AppID in the server's private environment, and set its matching `BELLFIVE_WECHAT_MINI_APP_SECRET` there as well. In Developer Tools, choose the same Mini Game AppID or put it in the ignored `minigame/project.private.config.json`. Never put the AppSecret in either private project settings file, `local.settings.json`, the Mini Game bundle, or client-side environment variables. With the matching server configuration, `wx.login` can create the first BellFive account automatically; link an existing Expo/Web username and password from the Mini Game account page, or add username/password credentials to the new WeChat account for later Expo/Web sign-in. Guest solo remains available without WeChat credentials or an online service.
 
 For two phones on the same Wi-Fi, set the app endpoint to the development computer's LAN IPv4 address before starting Expo:
 

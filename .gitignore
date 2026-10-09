@@ -15,6 +15,7 @@ expo-env.d.ts
 /minigame/dist/
 /minigame/node_modules/
 /minigame/project.private.config.json
+/minigame/local.settings.json
 
 # Local environment and credentials. Keep checked-in example templates visible.
 .env

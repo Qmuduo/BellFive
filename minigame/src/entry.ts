@@ -10,6 +10,9 @@ import { renderLobby } from './screens/lobby';
 import { dispatchWaitingAction, renderWaiting } from './screens/waiting';
 import { dispatchMatchAction, renderMatch } from './screens/match';
 
+declare const __BELLFIVE_AUTH_URL__: string;
+declare const __BELLFIVE_SOCKET_URL__: string;
+
 export type BootWxApi = MiniGameWxApi;
 export interface MiniGameBootOptions extends MiniGameStoreOptions {
   scheduler?: FrameScheduler;
@@ -57,4 +60,7 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   };
 }
 
-if (typeof wx !== 'undefined') startMiniGame(wx);
+if (typeof wx !== 'undefined') startMiniGame(wx, {
+  authUrl: __BELLFIVE_AUTH_URL__,
+  socketUrl: __BELLFIVE_SOCKET_URL__,
+});
