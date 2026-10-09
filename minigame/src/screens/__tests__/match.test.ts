@@ -49,10 +49,21 @@ test.each([
   expect(createMatchViewModel(room({ turn }), local, null, options).controls.flip).toBe(enabled);
 });
 
-test('ring follows snapshot eligibility and the local ring lock', () => {
+test('ring remains legal while unlocked even without a correct timing opportunity', () => {
   expect(createMatchViewModel(room(), 'A', null, options).controls.ring).toBe(true);
-  expect(createMatchViewModel(room({ canRing: false }), 'A', null, options).controls.ring).toBe(false);
+  expect(createMatchViewModel(room({ canRing: false }), 'A', null, options).controls.ring).toBe(true);
+  expect(createMatchViewModel(room({ canRing: false, turn: 'B' }), 'A', null, options).controls.ring).toBe(true);
   expect(createMatchViewModel(room({ ringBlockedUntilFlip: { A: true, B: false } }), 'A', null, options).controls.ring).toBe(false);
+});
+
+test('ring action keeps its label and hit target while timing opportunity only changes the hint', () => {
+  const opportunity = createMatchViewModel(room(), 'A', null, options);
+  const noOpportunity = createMatchViewModel(room({ canRing: false }), 'A', null, options);
+  expect(opportunity.ringLabel).toBe('RING'); expect(noOpportunity.ringLabel).toBe('RING');
+  expect(noOpportunity.bellHint).not.toBe(opportunity.bellHint);
+  const ctx = context(); const targets = drawMatchScreen(ctx as any, geometry, noOpportunity);
+  expect(targets.map(target => target.id)).toContain('match.ring');
+  expect(ctx.texts).toContain('🔔 RING');
 });
 
 test.each(['connection-paused', 'waiting'] as const)('%s rooms disable play controls', phase => {
@@ -173,13 +184,37 @@ test('online dispatch uses existing client actions without changing outcomes and
   stop(); app.dispose();
 });
 
-test('stale direct actions cannot flip or ring while disconnected or on the wrong turn', () => {
+test('stale direct actions cannot flip or ring while disconnected, flip out of turn, or ring while locked', () => {
   const { game, calls } = onlineStore(); const app = createMiniGameApp(); const stores: any = { game };
   game.setState({ connectionStatus: 'reconnecting' });
   dispatchMatchAction('match.flip', app, stores); dispatchMatchAction('match.ring', app, stores);
-  game.setState({ connectionStatus: 'connected', roomSnapshot: room({ turn: 'B', canRing: false }) });
+  game.setState({ connectionStatus: 'connected', roomSnapshot: room({ turn: 'B', canRing: false, ringBlockedUntilFlip: { A: true, B: false } }) });
   dispatchMatchAction('match.flip', app, stores); dispatchMatchAction('match.ring', app, stores);
   expect(calls).toEqual([]); app.dispose();
+});
+
+test('online unlocked wrong ring attempts are sent without predicting the server outcome', () => {
+  const { game, calls } = onlineStore(); const app = createMiniGameApp();
+  const before = room({ turn: 'B', canRing: false }); game.setState({ roomSnapshot: before });
+  dispatchMatchAction('match.ring', app, { game } as any);
+  expect(calls).toEqual(['ring:1']);
+  expect(game.getState().roomSnapshot).toBe(before); expect(game.getState().lastActionResult).toBeNull();
+  app.dispose();
+});
+
+test('guest solo wrong ring attempts reach the shared penalty and bell lock without a client', () => {
+  const game = createGameStoreApi(() => { throw new Error('Guest solo must not create a client'); }, () => null);
+  const app = createMiniGameApp();
+  try {
+    game.getState().startSinglePlayer(profile, 'easy');
+    expect(game.getState().roomSnapshot?.canRing).toBe(false);
+    dispatchMatchAction('match.ring', app, { game } as any);
+    expect(game.getState().lastActionResult).toMatchObject({ accepted: true, outcome: 'wrong', movedCardCount: 1 });
+    expect(game.getState().roomSnapshot?.ringBlockedUntilFlip.A).toBe(true);
+    const result = game.getState().lastActionResult;
+    dispatchMatchAction('match.ring', app, { game } as any);
+    expect(game.getState().lastActionResult).toBe(result);
+  } finally { game.getState().leaveRoom(); app.dispose(); }
 });
 
 test('store-driven solo termination returns Home immediately', () => {

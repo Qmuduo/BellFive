@@ -66,7 +66,7 @@ export function createMatchViewModel(snapshot: RoomSnapshot | null, localPlayerI
   const timerLabel = seconds == null ? '—' : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   const controls = {
     flip: canSend && playing && snapshot.turn === localPlayerId,
-    ring: canSend && playing && snapshot.canRing && Boolean(localPlayerId && !snapshot.ringBlockedUntilFlip[localPlayerId]),
+    ring: canSend && playing && Boolean(localPlayerId && !snapshot.ringBlockedUntilFlip[localPlayerId]),
     rematch: canSend && finished && solo,
     ready: canSend && finished && !solo && !options.readyPending,
     leave: !leaving && mode !== 'none', returnHome: !leaving,
@@ -76,7 +76,7 @@ export function createMatchViewModel(snapshot: RoomSnapshot | null, localPlayerI
     title: solo ? t('game.singlePlayer') : `${t('game.table')} · ${snapshot?.roomCode ?? ''}`,
     connectionLabel: solo ? t('debug.singlePlayer') : t(`status.connection.${options.connectionStatus ?? 'connected'}`),
     ringFeedback, resultLabel, ringHistory,
-    ringLabel: snapshot?.canRing ? t('bell.ring') : t('game.ready'),
+    ringLabel: t('bell.ring'),
     bellHint: localPlayerId && snapshot?.ringBlockedUntilFlip[localPlayerId] ? t('match.ringLocked')
       : connectionPaused ? t('game.connectionPausedBanner') : snapshot?.canRing ? t('bell.anytime') : t('game.topCardsOnly'),
     readyLabel: snapshot && localPlayerId && snapshot.ready[localPlayerId] ? t('waiting.cancelReady') : t('game.playAgain'),
