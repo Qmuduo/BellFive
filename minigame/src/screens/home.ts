@@ -112,11 +112,12 @@ function createPendingRoom(app: MiniGameApp, stores: MiniGameStores, generation:
   let started = false;
   let stopGame = () => {};
   let stopApp = () => {};
-  const finish = (result: 'success' | 'error' | 'cancel') => {
+  const finish = (result: 'success' | 'error' | 'transport-error' | 'cancel') => {
     if (pendingCreates.get(app) !== pending) return;
     pendingCreates.delete(app); stopGame(); stopApp();
-    if (result === 'cancel') stores.game.getState().resetClient();
+    if (result === 'cancel' || result === 'transport-error') stores.game.getState().resetClient();
     if (result === 'error' && app.intentIsCurrent(generation)) app.update({ onlineBusy: false });
+    else if (result === 'transport-error' && app.intentIsCurrent(generation)) app.update({ onlineBusy: false, errorCode: 'NETWORK_ERROR' });
     else app.clearIntent();
   };
   const pending = { cancel: () => finish('cancel') };
@@ -127,6 +128,8 @@ function createPendingRoom(app: MiniGameApp, stores: MiniGameStores, generation:
     else if (!requestId || !game.client || game.connectionStatus === 'disconnected'
       || (game.error?.requestId === requestId)
       || game.error?.code === 'AUTH_REQUIRED' || game.error?.code === 'CONNECTION_CLOSED') finish('error');
+    else if (game.connectionStatus === 'error') finish('error');
+    else if (game.error?.code === 'NETWORK_ERROR') finish('transport-error');
   };
   pendingCreates.set(app, pending);
   stopGame = stores.game.subscribe(observeGame);

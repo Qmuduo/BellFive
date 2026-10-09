@@ -338,3 +338,47 @@ test('a server room session completes the pending create and later store updates
   await dispatchScreenAction('home.cancelCreate', f.app, f.stores);
   expect(f.sockets[0].close).not.toHaveBeenCalled(); f.dispose();
 });
+
+test('an uncorrelated terminal transport error releases create for retry', async () => {
+  const f = fixture(); await f.stores.ready;
+  const pending = dispatchScreenAction('home.create', f.app, f.stores); await flush();
+  f.loginCallbacks.shift().success({ code: 'fixture-code' }); await flush();
+  f.api.connectSocket.mockImplementationOnce(() => { throw new Error('offline'); });
+  f.respond(session); await pending;
+
+  expect(f.stores.game.getState().connectionStatus).toBe('error');
+  expect(getScreenSnapshot(f.app, f.stores).pendingCreate).toBe(false);
+  expect(f.app.getState().pendingIntent).toEqual({ type: 'create-room' });
+  expect(f.app.getState().onlineBusy).toBe(false);
+  const targets = renderHome(canvasContext() as any, geometry, getScreenSnapshot(f.app, f.stores));
+  expect(targets.some(item => item.id === 'auth.retry')).toBe(true);
+  expect(targets.some(item => item.id === 'home.create')).toBe(true);
+
+  await dispatchScreenAction('auth.retry', f.app, f.stores);
+  expect(f.api.connectSocket).toHaveBeenCalledTimes(2);
+  f.connect();
+  expect(f.sockets[0].sent.map((frame: any) => frame.type)).toEqual(['session.authenticate', 'room.create']);
+  f.dispose();
+});
+
+test('an uncorrelated socket error closes the pending client and exposes retry', async () => {
+  const f = fixture(); await f.stores.ready;
+  const pending = dispatchScreenAction('home.create', f.app, f.stores); await f.authorize(); await pending;
+  f.connect();
+  f.sockets[0].listeners.error();
+
+  expect(getScreenSnapshot(f.app, f.stores).pendingCreate).toBe(false);
+  expect(f.stores.game.getState().client).toBeNull();
+  expect(f.app.getState().pendingIntent).toEqual({ type: 'create-room' });
+  expect(f.app.getState().onlineBusy).toBe(false);
+  expect(f.app.getState().errorCode).toBe('NETWORK_ERROR');
+  const targets = renderHome(canvasContext() as any, geometry, getScreenSnapshot(f.app, f.stores));
+  expect(targets.some(item => item.id === 'auth.retry')).toBe(true);
+
+  await dispatchScreenAction('auth.retry', f.app, f.stores);
+  expect(f.api.connectSocket).toHaveBeenCalledTimes(2);
+  f.sockets[1].listeners.open();
+  f.sockets[1].listeners.message({ data: JSON.stringify({ type: 'session.authenticated', userId: user.userId }) });
+  expect(f.sockets[1].sent.map((frame: any) => frame.type)).toEqual(['session.authenticate', 'room.create']);
+  f.dispose();
+});
