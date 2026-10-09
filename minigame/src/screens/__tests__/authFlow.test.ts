@@ -51,7 +51,8 @@ test('guest online intent authenticates on the server, persists session, and res
   expect(f.api.connectSocket).toHaveBeenCalledTimes(1);
   expect(f.sockets[0].sent).toEqual([]);
   f.connect(); expect(f.sockets[0].sent.map((item: any) => item.type)).toEqual(['session.authenticate', 'room.create']);
-  expect(f.app.getState().pendingIntent).toBeNull(); f.dispose();
+  expect(f.app.getState().pendingIntent).toEqual({ type: 'create-room' });
+  expect(f.app.getState().onlineBusy).toBe(true); f.dispose();
 });
 
 test('login API failure retains only the requested intent for retry and keeps guest solo available without a socket', async () => {
@@ -265,4 +266,75 @@ test('native entry renders home, dispatches one solo tap, and clears keyboard bu
   expect(f.api.request).not.toHaveBeenCalled(); expect(f.api.connectSocket).not.toHaveBeenCalled();
   boot.app.setField('password', 'clear-on-hide'); events.hide(); expect(boot.app.getState().fields.password).toBe('');
   boot.destroy(); expect(frames.size).toBe(0); expect(nativeApi.offKeyboardInput).toHaveBeenCalledTimes(1); f.dispose();
+});
+
+test('pending authenticated create disables online controls and direct duplicate taps until a matching terminal error enables retry', async () => {
+  const f = fixture(); await f.stores.ready;
+  f.stores.settings.getState().setLanguage('en');
+  const createRoom = jest.spyOn(f.stores.game.getState(), 'createRoom');
+  const pending = dispatchScreenAction('home.create', f.app, f.stores); await f.authorize(); await pending;
+  f.app.setField('roomCode', 'ABC234');
+  for (const action of ['home.create', 'home.lobby', 'home.join', 'auth.retry']) await dispatchScreenAction(action, f.app, f.stores);
+  f.connect(); const created = f.sockets[0].sent.find((frame: any) => frame.type === 'room.create');
+  for (const action of ['home.create', 'home.lobby', 'home.join', 'auth.retry']) await dispatchScreenAction(action, f.app, f.stores);
+  expect(f.sockets[0].sent.map((frame: any) => frame.type)).toEqual(['session.authenticate', 'room.create']);
+  expect(createRoom).toHaveBeenCalledTimes(1);
+  expect(created.requestId).toBe(createRoom.mock.results[0].value);
+  const context = canvasContext();
+  const targets = renderHome(context as any, geometry, getScreenSnapshot(f.app, f.stores));
+  expect(targets.some(item => ['home.create', 'home.lobby', 'home.join', 'auth.retry'].includes(item.id))).toBe(false);
+  expect(targets.some(item => item.id === 'home.cancelCreate')).toBe(true);
+  expect(f.app.getState().onlineBusy).toBe(true);
+  expect(context.texts.join(' ')).toContain('CONNECTING…');
+  f.message({ type: 'error', code: 'INVALID_INPUT', message: 'Unrelated error', requestId: 'unrelated-request' });
+  await dispatchScreenAction('home.create', f.app, f.stores);
+  expect(f.sockets[0].sent.filter((frame: any) => frame.type === 'room.create')).toHaveLength(1);
+  f.message({ type: 'error', code: 'ROOM_FULL', message: 'Creation failed', requestId: created.requestId });
+  const retryTargets = renderHome(canvasContext() as any, geometry, getScreenSnapshot(f.app, f.stores));
+  expect(retryTargets.some(item => item.id === 'home.create')).toBe(true);
+  expect(retryTargets.some(item => item.id === 'auth.retry')).toBe(true);
+  expect(f.app.getState().onlineBusy).toBe(false);
+  await dispatchScreenAction('auth.retry', f.app, f.stores);
+  expect(f.sockets[0].sent.filter((frame: any) => frame.type === 'room.create')).toHaveLength(2);
+  expect(f.sockets[0].sent.at(-1).requestId).not.toBe(created.requestId);
+  expect(f.api.connectSocket).toHaveBeenCalledTimes(1); f.dispose();
+});
+
+test('cancel pending create resets the client, ignores its late acknowledgement, and permits solo or a fresh online action', async () => {
+  const f = fixture(); await f.stores.ready;
+  const pending = dispatchScreenAction('home.create', f.app, f.stores); await f.authorize(); await pending;
+  const originalClient = f.stores.game.getState().client;
+  await dispatchScreenAction('home.cancelCreate', f.app, f.stores);
+  expect(f.stores.game.getState().client).toBeNull(); expect(f.sockets[0].close).toHaveBeenCalledTimes(1);
+  expect(f.app.getState().pendingIntent).toBeNull(); expect(f.app.getState().onlineBusy).toBe(false);
+  f.connect(); expect(f.sockets[0].sent).toEqual([]);
+  await dispatchScreenAction('home.solo.normal', f.app, f.stores);
+  expect(f.stores.game.getState().sessionMode).toBe('single-player');
+  await dispatchScreenAction('nav.home', f.app, f.stores);
+  await dispatchScreenAction('home.create', f.app, f.stores);
+  expect(f.stores.game.getState().client).not.toBe(originalClient);
+  expect(f.api.connectSocket).toHaveBeenCalledTimes(2); expect(f.api.login).toHaveBeenCalledTimes(1); f.dispose();
+});
+
+test('a server room session completes the pending create and later store updates cannot restore its lock', async () => {
+  const f = fixture(); await f.stores.ready;
+  const pending = dispatchScreenAction('home.create', f.app, f.stores); await f.authorize(); await pending; f.connect();
+  const requestId = f.sockets[0].sent.find((frame: any) => frame.type === 'room.create').requestId;
+  f.message({ type: 'room.session', requestId, roomCode: 'ABC234', localPlayerId: 'A', seatToken: 'fixture-seat',
+    snapshot: { roomCode: 'ABC234', phase: 'waiting', localPlayerId: 'A',
+      players: {
+        A: { connected: true, drawCount: null, playedCount: null, topCard: null, profile: user.profile },
+        B: { connected: false, drawCount: null, playedCount: null, topCard: null, profile: { nickname: '', avatarId: 'strawberry' } },
+      }, turn: null, winner: null, lastRingOutcome: null, visibleCounts: null, canRing: false, tableVersion: 0,
+      remainingSeconds: null, ringBlockedUntilFlip: { A: false, B: false }, lastRingEvent: null,
+      lastFlipEvent: null, ready: { A: false, B: false }, ringHistory: [],
+    },
+  });
+  expect(f.stores.game.getState().sessionMode).toBe('online');
+  expect(f.app.getState().pendingIntent).toBeNull(); expect(f.app.getState().onlineBusy).toBe(false);
+  expect(getScreenSnapshot(f.app, f.stores).pendingCreate).toBe(false);
+  f.message({ type: 'error', requestId, code: 'ROOM_FULL', message: 'Stale error' });
+  expect(f.app.getState().pendingIntent).toBeNull(); expect(f.app.getState().onlineBusy).toBe(false);
+  await dispatchScreenAction('home.cancelCreate', f.app, f.stores);
+  expect(f.sockets[0].close).not.toHaveBeenCalled(); f.dispose();
 });

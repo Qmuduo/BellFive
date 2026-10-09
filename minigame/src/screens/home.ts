@@ -20,10 +20,12 @@ export interface ScreenSnapshot {
   readonly profile: PlayerProfileStore;
   readonly settings: SettingsStore;
   readonly game: Readonly<GameStore>;
+  readonly pendingCreate?: boolean;
 }
+const pendingCreates = new WeakMap<MiniGameApp, { cancel(): void }>();
 export function getScreenSnapshot(app: MiniGameApp, stores: MiniGameStores): ScreenSnapshot {
   return { app: app.getState(), auth: stores.auth.getState(), profile: stores.profile.getState(),
-    settings: stores.settings.getState(), game: stores.game.getState() };
+    settings: stores.settings.getState(), game: stores.game.getState(), pendingCreate: pendingCreates.has(app) };
 }
 export function label(snapshot: ScreenSnapshot, key: TranslationKey): string { return translate(snapshot.settings.language, key); }
 export function appError(snapshot: ScreenSnapshot): string {
@@ -79,11 +81,11 @@ export function drawMenu(context: CanvasContext2D, layout: ScreenLayout, title: 
 }
 
 export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snapshot: ScreenSnapshot): TapTarget[] {
-  const busy = snapshot.app.onlineBusy || snapshot.app.accountBusy;
+  const busy = snapshot.app.onlineBusy || snapshot.app.accountBusy || snapshot.pendingCreate;
   const profile = snapshot.auth.profileVerified && snapshot.auth.user ? snapshot.auth.user.profile : snapshot.profile.profile;
   const rows: ScreenRow[] = [
     ...(['easy', 'normal', 'hard'] as const).map(difficulty => ({ id: `home.solo.${difficulty}`,
-      text: `${label(snapshot, 'entry.singlePlayer')} · ${label(snapshot, `difficulty.${difficulty}`)}`, accent: true })),
+      text: `${label(snapshot, 'entry.singlePlayer')} · ${label(snapshot, `difficulty.${difficulty}`)}`, accent: true, enabled: !snapshot.pendingCreate })),
     { id: 'home.create', text: label(snapshot, 'entry.createRoom'), enabled: !busy },
     { id: 'home.lobby', text: label(snapshot, 'entry.openRooms'), enabled: !busy },
     { id: 'field.roomCode', text: `${label(snapshot, 'entry.roomCode')}: ${snapshot.app.fields.roomCode || '______'}`, enabled: !busy },
@@ -91,13 +93,47 @@ export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snaps
     { id: 'home.account', text: label(snapshot, 'entry.account'), enabled: !busy },
     { id: 'settings.language', text: `${label(snapshot, 'settings.title')}: ${snapshot.settings.language === 'en' ? 'English' : '简体中文'}` },
   ];
-  if (snapshot.app.pendingIntent) {
+  if (snapshot.pendingCreate) rows.push({ id: 'home.cancelCreate',
+    text: snapshot.settings.language === 'en' ? 'Cancel room creation' : '取消创建房间' });
+  else if (snapshot.app.pendingIntent) {
     if (!busy) rows.push({ id: 'auth.retry', text: label(snapshot, 'entry.refresh') });
     rows.push({ id: 'auth.cancel', text: label(snapshot, 'auth.back') });
   }
-  const status = appError(snapshot) || (busy ? label(snapshot, 'entry.connecting')
+  const status = snapshot.pendingCreate ? label(snapshot, 'entry.connecting') : appError(snapshot) || (busy ? label(snapshot, 'entry.connecting')
     : `${AVATAR_EMOJI[profile.avatarId]} ${profile.nickname || label(snapshot, 'account.guest')}`);
   return drawMenu(context, layout, 'BellFive', status, rows);
+}
+
+/** Auth completion does not complete room creation. Keep its intent locked until the
+ * real GameStore receives a session, a matching terminal error, or a cancellation. */
+function createPendingRoom(app: MiniGameApp, stores: MiniGameStores, generation: number): void {
+  const baselineVersion = stores.game.getState().roomSessionVersion;
+  let requestId = '';
+  let started = false;
+  let stopGame = () => {};
+  let stopApp = () => {};
+  const finish = (result: 'success' | 'error' | 'cancel') => {
+    if (pendingCreates.get(app) !== pending) return;
+    pendingCreates.delete(app); stopGame(); stopApp();
+    if (result === 'cancel') stores.game.getState().resetClient();
+    if (result === 'error' && app.intentIsCurrent(generation)) app.update({ onlineBusy: false });
+    else app.clearIntent();
+  };
+  const pending = { cancel: () => finish('cancel') };
+  const observeGame = () => {
+    if (!started) return;
+    const game = stores.game.getState();
+    if (game.roomSessionVersion !== baselineVersion && game.sessionMode === 'online') finish('success');
+    else if (!requestId || !game.client || game.connectionStatus === 'disconnected'
+      || (game.error?.requestId === requestId)
+      || game.error?.code === 'AUTH_REQUIRED' || game.error?.code === 'CONNECTION_CLOSED') finish('error');
+  };
+  pendingCreates.set(app, pending);
+  stopGame = stores.game.subscribe(observeGame);
+  stopApp = app.subscribe(() => { if (!app.intentIsCurrent(generation)) pending.cancel(); });
+  try {
+    requestId = stores.game.getState().createRoom(); started = true; observeGame();
+  } catch (error) { finish('cancel'); throw error; }
 }
 
 function codeOf(error: unknown): string {
@@ -126,16 +162,16 @@ export async function authorizeOnline(stores: MiniGameStores): Promise<void> {
   try { await operation; } finally { if (authorizing.get(stores) === operation) authorizing.delete(stores); }
 }
 async function runIntent(intent: OnlineIntent, app: MiniGameApp, stores: MiniGameStores): Promise<void> {
-  if (app.getState().onlineBusy || app.getState().accountBusy) return;
+  if (app.getState().onlineBusy || app.getState().accountBusy || pendingCreates.has(app)) return;
   const generation = app.beginIntent(intent);
   try {
     await authorizeOnline(stores);
     if (!app.intentIsCurrent(generation)) return;
-    app.clearIntent();
     const game = stores.game.getState();
     game.clearError();
-    if (intent.type === 'create-room') game.createRoom();
+    if (intent.type === 'create-room') createPendingRoom(app, stores, generation);
     else {
+      app.clearIntent();
       if (intent.type === 'open-lobby') game.openLobby(); else game.joinRoom(intent.roomCode);
       app.navigation.navigate('lobby');
     }
@@ -149,6 +185,9 @@ export function validatedRoomCode(value: string): string | null {
 }
 
 export async function dispatchScreenAction(actionId: string, app: MiniGameApp, stores: MiniGameStores): Promise<void> {
+  if (actionId === 'home.cancelCreate') { pendingCreates.get(app)?.cancel(); return; }
+  if (pendingCreates.has(app) && (actionId.startsWith('home.') || actionId.startsWith('account.')
+    || actionId.startsWith('lobby.') || actionId === 'auth.retry' || actionId === 'field.roomCode')) return;
   if (actionId.startsWith('field.')) {
     const field = actionId.slice(6);
     if (['username', 'password', 'nickname', 'roomCode'].includes(field)) app.focusField(field as InputField);
