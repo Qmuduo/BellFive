@@ -17,6 +17,7 @@
   ],
   "exclude": [
     "server",
-    "miniprogram"
+    "miniprogram",
+    "minigame"
   ]
 }

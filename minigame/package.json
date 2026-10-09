@@ -1,0 +1,19 @@
+{
+  "name": "bellfive-minigame",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "minigame-api-typings": "^3.8.0",
+    "typescript": "~6.0.3"
+  }
+}

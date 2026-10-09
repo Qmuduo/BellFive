@@ -1,0 +1,12 @@
+{
+  "projectname": "BellFiveMiniGame",
+  "description": "BellFive WeChat Mini Game. Set a Mini Game account AppID in ignored project.private.config.json; a Mini Program-only AppID cannot run this target.",
+  "appid": "wx0000000000000000",
+  "compileType": "game",
+  "miniprogramRoot": "dist/",
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "minified": true
+  }
+}
