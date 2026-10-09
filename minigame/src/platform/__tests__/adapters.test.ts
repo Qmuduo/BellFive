@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { AuthClient } from '../../../../src/auth/AuthClient';
 import { AuthClientError } from '../../../../src/auth/contracts';
+import { GameClient, type SocketHandlers } from '../../../../src/network/GameClient';
 import { createWxStorage } from '../storage';
 import { createWxAuthTransport } from '../authTransport';
 import { getWechatLoginCode } from '../wechatLogin';
@@ -94,6 +95,82 @@ test('socket task maps all events, replaces handlers without duplicating listene
   listeners.message({ data: 'stale' });
   expect(events).toEqual(['open', '{"type":"session.authenticated"}', 'error', 'close:4401']);
   expect(sent).toEqual(['hello']); expect(closes).toBe(1);
+});
+
+function socketClientFixture(failure: 'connect' | 'send' | 'close') {
+  const tasks: { listeners: Record<string, (data?: any) => void>; failConnect: () => void; sent: string[] }[] = [];
+  const events: string[] = [];
+  const api = { connectSocket: (options: any) => {
+    const listeners: Record<string, (data?: any) => void> = {};
+    const sent: string[] = [];
+    tasks.push({ listeners, failConnect: () => options.fail({ errMsg: 'connection unavailable' }), sent });
+    if (failure === 'connect' && tasks.length === 1) options.fail({ errMsg: 'connection unavailable' });
+    return {
+      onOpen: (fn: any) => { listeners.open = fn; }, onMessage: (fn: any) => { listeners.message = fn; },
+      onClose: (fn: any) => { listeners.close = fn; }, onError: (fn: any) => { listeners.error = fn; },
+      send: ({ data, fail }: any) => { sent.push(data); if (failure === 'send') fail({ errMsg: 'send unavailable' }); },
+      close: ({ fail }: any) => { if (failure === 'close') fail({ errMsg: 'close unavailable' }); },
+    };
+  } };
+  const client = new GameClient({ url: 'wss://rooms.example.test', authToken: 'test-session', reconnectDelayMs: 20,
+    webSocketFactory: url => {
+      const socket = createWxSocket(api as any, url);
+      return { ...socket, setHandlers(handlers: SocketHandlers) {
+        socket.setHandlers({ ...handlers,
+          onError: () => { events.push('error'); handlers.onError(); },
+          onClose: code => { events.push(`close:${code}`); handlers.onClose(code); },
+          onOpen: () => { events.push('open'); handlers.onOpen(); },
+        });
+      } };
+    },
+  });
+  return { client, tasks, events };
+}
+
+test('early native connection failure closes once and lets real GameClient reconnect the lobby', () => {
+  jest.useFakeTimers();
+  const { client, tasks, events } = socketClientFixture('connect');
+  try {
+    client.subscribeLobby();
+    expect(events).toEqual(['error', 'close:1006']);
+    expect(client.getStatus()).toBe('reconnecting');
+    tasks[0].failConnect(); tasks[0].listeners.open(); tasks[0].listeners.error(); tasks[0].listeners.close({ code: 1000 });
+    expect(events).toEqual(['error', 'close:1006']);
+    expect(tasks[0].sent).toEqual([]);
+    jest.advanceTimersByTime(20);
+    expect(tasks).toHaveLength(2);
+    tasks[1].listeners.open(); tasks[1].listeners.message({ data: '{"type":"session.authenticated","userId":"test-user"}' });
+    expect(client.getStatus()).toBe('connected');
+  } finally { client.disconnect(); jest.useRealTimers(); }
+});
+
+test('native send failure terminates once and GameClient can retry instead of retaining a dead socket', () => {
+  jest.useFakeTimers();
+  const { client, tasks, events } = socketClientFixture('send');
+  try {
+    client.subscribeLobby(); tasks[0].listeners.open();
+    expect(events).toEqual(['open', 'error', 'close:1006']);
+    expect(client.getStatus()).toBe('reconnecting');
+    tasks[0].listeners.open(); tasks[0].listeners.close({ code: 1000 });
+    expect(events).toEqual(['open', 'error', 'close:1006']);
+    client.disconnect(); jest.advanceTimersByTime(1000);
+    expect(client.getStatus()).toBe('disconnected'); expect(tasks).toHaveLength(1);
+  } finally { client.disconnect(); jest.useRealTimers(); }
+});
+
+test('failed intentional native close ends normally without an error or spurious reconnect', () => {
+  jest.useFakeTimers();
+  const { client, tasks, events } = socketClientFixture('close');
+  try {
+    client.subscribeLobby(); tasks[0].listeners.open();
+    tasks[0].listeners.message({ data: '{"type":"session.authenticated","userId":"test-user"}' });
+    client.disconnect();
+    expect(events).toEqual(['open', 'close:1000']);
+    tasks[0].listeners.error(); tasks[0].listeners.open(); tasks[0].listeners.close({ code: 1006 });
+    jest.advanceTimersByTime(1000);
+    expect(events).toEqual(['open', 'close:1000']);
+    expect(client.getStatus()).toBe('disconnected'); expect(tasks).toHaveLength(1);
+  } finally { client.disconnect(); jest.useRealTimers(); }
 });
 
 test('keyboard focus updates only the current field, confirms once and releases subscriptions', () => {
