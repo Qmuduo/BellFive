@@ -24,6 +24,7 @@ export class ScreenNavigation {
 export function connectRoomNavigation(app: Pick<ReturnType<typeof createMiniGameApp>, 'navigation' | 'getState' | 'update'>,
   gameStore: Pick<StoreApi<GameStore>, 'getState' | 'subscribe'>): () => void {
   let hadOnlineSession = gameStore.getState().sessionMode === 'online';
+  let hadSoloSession = gameStore.getState().sessionMode === 'single-player';
   let roomSessionVersion = gameStore.getState().roomSessionVersion;
   const update = () => {
     const game = gameStore.getState();
@@ -46,11 +47,13 @@ export function connectRoomNavigation(app: Pick<ReturnType<typeof createMiniGame
       app.update({ pendingCancelApplicationId: null });
     }
     if (game.sessionMode === 'single-player') {
+      hadSoloSession = true;
       hadOnlineSession = false;
       app.navigation.navigate('solo', true);
       return;
     }
     if (game.sessionMode === 'online' && game.roomSnapshot) {
+      hadSoloSession = false;
       hadOnlineSession = true;
       switch (game.roomSnapshot.phase) {
         case 'waiting': app.navigation.navigate('waiting', true); return;
@@ -64,8 +67,9 @@ export function connectRoomNavigation(app: Pick<ReturnType<typeof createMiniGame
       }
     }
     if (game.leavingRoom) { hadOnlineSession = true; return; }
-    if (hadOnlineSession) {
+    if (hadOnlineSession || hadSoloSession) {
       hadOnlineSession = false;
+      hadSoloSession = false;
       app.navigation.navigate('home', true);
     }
   };

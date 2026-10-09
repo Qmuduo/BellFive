@@ -1,17 +1,19 @@
 import { createWxKeyboard } from './platform/keyboard';
+import { connectMatchFeedback, createWxFeedback } from './platform/feedback';
 import { createWxRuntimePlatform, type FrameScheduler, type MiniGameWxApi } from './platform/wxApi';
 import { CanvasRuntime, type CanvasScreen } from './runtime/canvas';
 import { connectRoomNavigation, createMiniGameApp, type MiniGameApp } from './runtime/navigation';
 import { createMiniGameStores, type MiniGameStores, type MiniGameStoreOptions } from './stores/gameStore';
-import { dispatchScreenAction, drawMenu, getScreenSnapshot, label, renderHome, type ScreenSnapshot } from './screens/home';
+import { dispatchScreenAction, getScreenSnapshot, renderHome } from './screens/home';
 import { renderAccount } from './screens/account';
 import { renderLobby } from './screens/lobby';
 import { dispatchWaitingAction, renderWaiting } from './screens/waiting';
+import { dispatchMatchAction, renderMatch } from './screens/match';
 
 export type BootWxApi = MiniGameWxApi;
 export interface MiniGameBootOptions extends MiniGameStoreOptions {
   scheduler?: FrameScheduler;
-  /** Later gameplay screens attach to this same native runtime. */
+  /** Optional Canvas screen overrides share the native runtime and stores. */
   screens?: (app: MiniGameApp, stores: MiniGameStores) => Readonly<Record<string, CanvasScreen>>;
 }
 
@@ -26,22 +28,13 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
     onBack() { void dispatchScreenAction('nav.home', app, stores); },
     onHide() { app.clearPasswords(); app.clearIntent(); },
   });
-  // Keep the single-player and upcoming table UI on the same Canvas and socket lifecycle.
-  const sessionScreen = (context: Parameters<typeof renderHome>[0], layout: Parameters<typeof renderHome>[1], snapshot: ScreenSnapshot) =>
-    drawMenu(context, layout, label(snapshot, snapshot.game.sessionMode === 'single-player' ? 'game.singlePlayer' : 'waiting.title'),
-      snapshot.game.roomCode ?? label(snapshot, 'game.ready'), [{ id: 'session.leave', text: label(snapshot, 'game.leaveRoom') }]);
-  const session = screen(sessionScreen);
-  session.onAction = actionId => {
-    if (actionId === 'session.leave') {
-      const mode = stores.game.getState().sessionMode;
-      stores.game.getState().leaveRoom();
-      if (mode === 'single-player') app.navigation.navigate('home', true);
-    }
-  };
-  session.onBack = () => {
-    const mode = stores.game.getState().sessionMode;
-    stores.game.getState().leaveRoom();
-    if (mode === 'single-player') app.navigation.navigate('home', true);
+  let feedbackActive = true;
+  const feedback = createWxFeedback(wxApi);
+  const matchScreen: CanvasScreen = {
+    render(context, layout) { return renderMatch(context, layout, getScreenSnapshot(app, stores)); },
+    onAction(actionId) { dispatchMatchAction(actionId, app, stores); },
+    onBack() { dispatchMatchAction('match.leave', app, stores); },
+    onHide() { app.clearPasswords(); app.clearIntent(); },
   };
   const waitingScreen: CanvasScreen = {
     render(context, layout) { return renderWaiting(context, layout, getScreenSnapshot(app, stores)); },
@@ -50,12 +43,17 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
     onHide() { app.clearPasswords(); app.clearIntent(); },
   };
   const stopRoomNavigation = connectRoomNavigation(app, stores.game);
+  const stopFeedback = connectMatchFeedback(stores.game, feedback, () => stores.settings.getState().musicEnabled,
+    () => feedbackActive && (app.navigation.current === 'solo' || app.navigation.current === 'match'));
+  const stopFeedbackHide = platform.subscribe('hide', () => { feedbackActive = false; });
+  const stopFeedbackShow = platform.subscribe('show', () => { feedbackActive = true; });
   const screens = { home: screen(renderHome), account: screen(renderAccount), lobby: screen(renderLobby),
-    solo: session, waiting: waitingScreen, match: session, ...options.screens?.(app, stores) };
+    solo: matchScreen, waiting: waitingScreen, match: matchScreen, ...options.screens?.(app, stores) };
   const runtime = new CanvasRuntime({ platform, keyboard, navigation: app.navigation, screens,
     stores: [app, stores.auth, stores.profile, stores.settings, stores.game] });
   return { canvas: platform.canvas, runtime, app, stores, screens,
-    destroy() { stopRoomNavigation(); runtime.destroy(); app.dispose(); stores.dispose(); },
+    destroy() { stopFeedback(); stopFeedbackHide(); stopFeedbackShow(); feedback.dispose();
+      stopRoomNavigation(); runtime.destroy(); app.dispose(); stores.dispose(); },
   };
 }
 

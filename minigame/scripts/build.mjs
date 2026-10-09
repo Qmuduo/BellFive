@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { copyFile, rm } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, context } from 'esbuild';
@@ -40,6 +40,10 @@ const options = {
       builder.onEnd(async (result) => {
         if (result.errors.length > 0) return;
         await copyFile(resolve(root, 'game.json'), resolve(output, 'game.json'));
+        await mkdir(resolve(output, 'assets/audio'), { recursive: true });
+        for (const name of ['card-flip', 'bell', 'victory', 'defeat']) {
+          await copyFile(resolve(root, `../assets/audio/${name}.wav`), resolve(output, `assets/audio/${name}.wav`));
+        }
         await verifyOutput();
       });
     },
