@@ -62,8 +62,8 @@ export type GameStore = {
   closeLobby: () => void;
   applyToRoom: (code: string) => string;
   decideApplication: (applicationId: string, approved: boolean) => void;
-  cancelApplication: () => void;
-  setReady: (ready: boolean) => void;
+  cancelApplication: () => boolean;
+  setReady: (ready: boolean) => string | null;
   flip: () => void;
   ring: () => void;
   rematch: () => void;
@@ -355,7 +355,9 @@ export function createGameStoreApi(
       cancelApplication: () => {
         const client = getActiveClient();
         const { localApplicationId } = get();
-        if (localApplicationId) client?.cancelApplication(localApplicationId);
+        if (!localApplicationId || !client) return false;
+        client.cancelApplication(localApplicationId);
+        return true;
       },
       setReady: ready => {
         if (get().sessionMode === 'single-player') {
@@ -363,10 +365,10 @@ export function createGameStoreApi(
             set(state => ({ roomSessionVersion: state.roomSessionVersion + 1 }));
             singlePlayerController.rematch();
           }
-          return;
+          return null;
         }
         set({ error: null });
-        getActiveClient()?.setReady(ready);
+        return getActiveClient()?.setReady(ready) ?? null;
       },
       flip: () => {
         if (get().sessionMode === 'single-player') {

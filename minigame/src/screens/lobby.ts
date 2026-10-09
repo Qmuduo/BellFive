@@ -22,7 +22,8 @@ export function renderLobby(context: CanvasContext2D, layout: ScreenLayout, snap
   }
   rows.push({ id: 'field.roomCode', text: `${label(snapshot, 'entry.roomCode')}: ${app.fields.roomCode || '______'}`, enabled: !pending });
   rows.push({ id: 'home.join', text: label(snapshot, 'entry.joinRoom'), enabled: !pending });
-  if (game.localApplicationId) rows.push({ id: 'lobby.cancel', text: label(snapshot, 'entry.cancelRequest') });
+  if (game.localApplicationId) rows.push({ id: 'lobby.cancel', text: label(snapshot, 'entry.cancelRequest'),
+    enabled: game.connectionStatus === 'connected' && app.pendingCancelApplicationId !== game.localApplicationId });
   if (app.pendingIntent) {
     if (!app.onlineBusy) rows.push({ id: 'auth.retry', text: label(snapshot, 'entry.refresh') });
     rows.push({ id: 'auth.cancel', text: label(snapshot, 'auth.back') });
@@ -41,7 +42,14 @@ export async function dispatchLobbyAction(actionId: string, app: MiniGameApp, st
   if (actionId === 'lobby.next') {
     app.update({ lobbyPage: Math.min(Math.max(0, Math.ceil(game.openRooms.length / 4) - 1), app.getState().lobbyPage + 1) }); return;
   }
-  if (actionId === 'lobby.cancel') { game.cancelApplication(); return; }
+  if (actionId === 'lobby.cancel') {
+    const applicationId = game.localApplicationId;
+    if (game.connectionStatus !== 'connected' || !applicationId || game.localApplicationStatus?.status !== 'pending'
+      || app.getState().pendingCancelApplicationId === applicationId) return;
+    game.clearError();
+    if (game.cancelApplication()) app.update({ pendingCancelApplicationId: applicationId });
+    return;
+  }
   if (actionId !== 'lobby.refresh' && !actionId.startsWith('lobby.apply.')) return;
   if (app.getState().onlineBusy || app.getState().accountBusy) return;
   const roomCode = actionId.startsWith('lobby.apply.') ? validatedRoomCode(actionId.slice(12)) : null;

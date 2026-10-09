@@ -1,5 +1,6 @@
-import { createStore } from 'zustand/vanilla';
+import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { AvatarId } from '../../../src/profile';
+import type { GameStore } from '../../../src/store/createGameStoreApi';
 import type { KeyboardAdapter } from '../platform/keyboard';
 
 export class ScreenNavigation {
@@ -18,9 +19,70 @@ export class ScreenNavigation {
   private changed(): void { for (const listener of this.listeners) listener(); }
 }
 
+/** Route only from authoritative shared-store sessions and snapshots. While a room is
+ * being left, retain its screen until the server confirms the seat is gone. */
+export function connectRoomNavigation(app: Pick<ReturnType<typeof createMiniGameApp>, 'navigation' | 'getState' | 'update'>,
+  gameStore: Pick<StoreApi<GameStore>, 'getState' | 'subscribe'>): () => void {
+  let hadOnlineSession = gameStore.getState().sessionMode === 'online';
+  let roomSessionVersion = gameStore.getState().roomSessionVersion;
+  const update = () => {
+    const game = gameStore.getState();
+    if (game.roomSessionVersion !== roomSessionVersion) {
+      roomSessionVersion = game.roomSessionVersion;
+      app.update({ waitingApplicationPage: 0, pendingReadyAction: null, pendingCancelApplicationId: null });
+    }
+    const pendingReady = app.getState().pendingReadyAction;
+    if (pendingReady && (pendingReady.roomSessionVersion !== game.roomSessionVersion
+      || game.sessionMode !== 'online' || game.error?.actionId === pendingReady.actionId
+      || game.connectionStatus === 'disconnected' || game.connectionStatus === 'error'
+      || (game.roomSnapshot !== null && game.roomSnapshot.localPlayerId === pendingReady.playerId
+        && game.roomSnapshot.ready[pendingReady.playerId] === pendingReady.desiredReady))) {
+      app.update({ pendingReadyAction: null });
+    }
+    const pendingCancelId = app.getState().pendingCancelApplicationId;
+    if (pendingCancelId && (game.localApplicationId !== pendingCancelId
+      || game.localApplicationStatus?.applicationId === pendingCancelId && game.localApplicationStatus.status !== 'pending'
+      || game.error !== null || game.connectionStatus === 'disconnected' || game.connectionStatus === 'error')) {
+      app.update({ pendingCancelApplicationId: null });
+    }
+    if (game.sessionMode === 'single-player') {
+      hadOnlineSession = false;
+      app.navigation.navigate('solo', true);
+      return;
+    }
+    if (game.sessionMode === 'online' && game.roomSnapshot) {
+      hadOnlineSession = true;
+      switch (game.roomSnapshot.phase) {
+        case 'waiting': app.navigation.navigate('waiting', true); return;
+        case 'playing':
+        case 'finished': app.navigation.navigate('match', true); return;
+        case 'connection-paused':
+          if (app.navigation.current !== 'waiting' && app.navigation.current !== 'match') {
+            app.navigation.navigate('waiting', true);
+          }
+          return;
+      }
+    }
+    if (game.leavingRoom) { hadOnlineSession = true; return; }
+    if (hadOnlineSession) {
+      hadOnlineSession = false;
+      app.navigation.navigate('home', true);
+    }
+  };
+  const stop = gameStore.subscribe(update);
+  update();
+  return stop;
+}
+
 export type OnlineIntent = Readonly<{ type: 'create-room' } | { type: 'open-lobby' } | { type: 'join-room'; roomCode: string }>;
 export type AccountMode = 'menu' | 'profile' | 'login' | 'register' | 'credentials' | 'link' | 'reset';
 export type InputField = 'username' | 'password' | 'nickname' | 'roomCode';
+export type PendingReadyAction = Readonly<{
+  actionId: string;
+  playerId: 'A' | 'B';
+  desiredReady: boolean;
+  roomSessionVersion: number;
+}>;
 export interface MiniGameAppState {
   readonly pendingIntent: OnlineIntent | null;
   readonly onlineBusy: boolean;
@@ -31,6 +93,9 @@ export interface MiniGameAppState {
   readonly confirmTransfer: boolean;
   readonly avatarId: AvatarId;
   readonly lobbyPage: number;
+  readonly waitingApplicationPage: number;
+  readonly pendingReadyAction: PendingReadyAction | null;
+  readonly pendingCancelApplicationId: string | null;
   readonly fields: Readonly<Record<InputField, string>>;
 }
 
@@ -38,7 +103,8 @@ export interface MiniGameAppState {
 export function createMiniGameApp(keyboard?: KeyboardAdapter) {
   const state = createStore<MiniGameAppState>(() => ({
     pendingIntent: null, onlineBusy: false, accountBusy: false, errorCode: null, notice: null,
-    accountMode: 'menu', confirmTransfer: false, avatarId: 'strawberry', lobbyPage: 0,
+    accountMode: 'menu', confirmTransfer: false, avatarId: 'strawberry', lobbyPage: 0, waitingApplicationPage: 0,
+    pendingReadyAction: null, pendingCancelApplicationId: null,
     fields: { username: '', password: '', nickname: '', roomCode: '' },
   }));
   const navigation = new ScreenNavigation('home');
