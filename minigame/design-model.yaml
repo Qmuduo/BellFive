@@ -1,0 +1,46 @@
+meta:
+  name: BellFive Mini Game
+  purpose: Canvas 2D visual parity with the Android game client
+  reference:
+    - src/theme/gameColors.ts
+    - src/components/RoomEntry.tsx
+    - src/components/WaitingRoom.tsx
+    - src/components/AuthScreen.tsx
+    - src/components/AccountSettings.tsx
+    - src/components/GameScreen.tsx
+renderer: canvas-2d
+type:
+  display: system sans-serif
+  body: system sans-serif
+  heading_weight: 900
+  body_weight: 400
+  action_weight: 900
+color:
+  canvas: "#F5F0FF"
+  surface: "#FFFFFF"
+  lavender_surface: "#E2D5FF"
+  border: "#D7C9E8"
+  plum: "#34214F"
+  ink: "#2F194C"
+  muted: "#796887"
+  purple: "#7040C4"
+  purple_action: "#9165D2"
+  purple_action_border: "#C6A3F7"
+  purple_shadow: "#583780"
+  lime: "#E3FB88"
+shape:
+  card_radius: 18
+  input_radius: 12
+  primary_button_radius: 16
+  secondary_button_radius: 14
+layout:
+  safe_area: required
+  content_density: comfortable
+  touch_targets_follow_painted_controls: true
+  overflow: scroll_or_paginate
+page_language:
+  home: profile_card_plus_primary_actions_and_room_entry
+  lobby: room_cards_with_separate_join_actions
+  waiting: room_code_card_player_status_and_readiness
+  account: grouped_profile_and_auth_forms
+  match: player_table_and_bottom_action_console
