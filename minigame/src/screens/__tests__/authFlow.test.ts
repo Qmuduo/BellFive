@@ -182,6 +182,42 @@ test('keyboard failure is recoverable and prevents submitting stale account cred
   f.dispose();
 });
 
+test('transfer confirmation does not clear keyboard failure or submit stale link credentials', async () => {
+  const f = fixture(); await f.stores.ready;
+  const login = dispatchScreenAction('account.wechat', f.app, f.stores); await f.authorize(); await login;
+  await dispatchScreenAction('account.mode.link', f.app, f.stores);
+  f.app.setField('username', 'existing'); f.app.setField('password', 'old-valid-password');
+  await dispatchScreenAction('field.username', f.app, f.stores);
+  f.keyboard.focus.mock.calls.at(-1)?.[0].onFailure();
+
+  expect(f.app.getState().errorCode).toBe('KEYBOARD_UNAVAILABLE');
+  await dispatchScreenAction('account.confirmTransfer', f.app, f.stores);
+  expect(f.app.getState().confirmTransfer).toBe(true);
+  expect(f.app.getState().errorCode).toBe('KEYBOARD_UNAVAILABLE');
+
+  const requestCount = f.api.request.mock.calls.length;
+  const loginCount = f.api.login.mock.calls.length;
+  await dispatchScreenAction('account.submit', f.app, f.stores);
+  expect(f.api.request).toHaveBeenCalledTimes(requestCount);
+  expect(f.api.login).toHaveBeenCalledTimes(loginCount);
+  f.dispose();
+});
+
+test('keyboard failure prevents joining with a stale room code', async () => {
+  const f = fixture(); await f.stores.ready;
+  f.app.setField('roomCode', 'ABC234');
+  await dispatchScreenAction('field.roomCode', f.app, f.stores);
+  f.keyboard.focus.mock.calls.at(-1)?.[0].onFailure();
+
+  const context = canvasContext();
+  const targets = renderHome(context as any, geometry, getScreenSnapshot(f.app, f.stores));
+  expect(targets.some(target => target.id === 'home.join')).toBe(false);
+  await dispatchScreenAction('home.join', f.app, f.stores);
+  expect(f.api.login).not.toHaveBeenCalled();
+  expect(f.api.connectSocket).not.toHaveBeenCalled();
+  f.dispose();
+});
+
 test('profile save sanitizes guest data locally and authenticated profile uses server response', async () => {
   const f = fixture(); await f.stores.ready;
   await dispatchScreenAction('account.mode.profile', f.app, f.stores);

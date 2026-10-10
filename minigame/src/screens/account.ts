@@ -84,7 +84,10 @@ export async function dispatchAccountAction(actionId: string, app: MiniGameApp, 
   if (actionId.startsWith('account.avatar.')) {
     const avatar = actionId.slice(15); if (isAvatarId(avatar)) app.update({ avatarId: avatar }); return;
   }
-  if (actionId === 'account.confirmTransfer') { app.update(current => ({ confirmTransfer: !current.confirmTransfer, errorCode: null })); return; }
+  if (actionId === 'account.confirmTransfer') { app.update(current => ({
+    confirmTransfer: !current.confirmTransfer,
+    errorCode: current.errorCode === 'KEYBOARD_UNAVAILABLE' ? current.errorCode : null,
+  })); return; }
   if (actionId === 'account.wechat') { await accountOperation(app, () => authorizeOnline(stores)); return; }
   if (actionId === 'account.refresh') {
     await accountOperation(app, async () => {
