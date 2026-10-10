@@ -82,6 +82,7 @@ export function drawMenu(context: CanvasContext2D, layout: ScreenLayout, title: 
 
 export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snapshot: ScreenSnapshot): TapTarget[] {
   const busy = snapshot.app.onlineBusy || snapshot.app.accountBusy || snapshot.pendingCreate;
+  const keyboardUnavailable = snapshot.app.errorCode === 'KEYBOARD_UNAVAILABLE';
   const profile = snapshot.auth.profileVerified && snapshot.auth.user ? snapshot.auth.user.profile : snapshot.profile.profile;
   const rows: ScreenRow[] = [
     ...(['easy', 'normal', 'hard'] as const).map(difficulty => ({ id: `home.solo.${difficulty}`,
@@ -89,7 +90,7 @@ export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snaps
     { id: 'home.create', text: label(snapshot, 'entry.createRoom'), enabled: !busy },
     { id: 'home.lobby', text: label(snapshot, 'entry.openRooms'), enabled: !busy },
     { id: 'field.roomCode', text: `${label(snapshot, 'entry.roomCode')}: ${snapshot.app.fields.roomCode || '______'}`, enabled: !busy },
-    { id: 'home.join', text: label(snapshot, 'entry.joinRoom'), enabled: !busy },
+    { id: 'home.join', text: label(snapshot, 'entry.joinRoom'), enabled: !busy && !keyboardUnavailable },
     { id: 'home.account', text: label(snapshot, 'entry.account'), enabled: !busy },
     { id: 'settings.language', text: `${label(snapshot, 'settings.title')}: ${snapshot.settings.language === 'en' ? 'English' : '简体中文'}` },
   ];
@@ -188,6 +189,7 @@ export function validatedRoomCode(value: string): string | null {
 
 export async function dispatchScreenAction(actionId: string, app: MiniGameApp, stores: MiniGameStores): Promise<void> {
   if (actionId === 'home.cancelCreate') { pendingCreates.get(app)?.cancel(); return; }
+  if (actionId === 'home.join' && app.getState().errorCode === 'KEYBOARD_UNAVAILABLE') return;
   if (pendingCreates.has(app) && (actionId.startsWith('home.') || actionId.startsWith('account.')
     || actionId.startsWith('lobby.') || actionId === 'auth.retry' || actionId === 'field.roomCode')) return;
   if (actionId.startsWith('field.')) {

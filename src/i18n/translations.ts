@@ -33,6 +33,7 @@ const en = {
   'auth.error.generic': 'The account request failed. Please try again.',
   'auth.error.unauthorized': 'Your session expired. Sign in again.',
   'auth.error.profileRefreshRequired': 'Reconnect to refresh your account before saving profile changes.',
+  'auth.error.keyboardUnavailable': 'The device keyboard could not open. Tap an input field to try again, or return to solo play.',
   'account.title': 'Account settings',
   'account.guest': 'Guest profile',
   'account.usernameLabel': 'USERNAME',
@@ -272,6 +273,7 @@ const zhCN = {
   'auth.error.generic': '账号请求失败，请重试。',
   'auth.error.unauthorized': '登录状态已过期，请重新登录。',
   'auth.error.profileRefreshRequired': '请先重新连接并刷新账号资料，再保存修改。',
+  'auth.error.keyboardUnavailable': '无法打开设备键盘。请点输入框重试，也可以返回游客单机。',
   'account.title': '账号设置',
   'account.guest': '游客资料',
   'account.usernameLabel': '用户名',
@@ -532,6 +534,7 @@ const authErrorKeyByCode: Readonly<Record<string, TranslationKey>> = {
   NETWORK_ERROR: 'auth.error.network',
   UNAUTHORIZED: 'auth.error.unauthorized',
   PROFILE_REFRESH_REQUIRED: 'auth.error.profileRefreshRequired',
+  KEYBOARD_UNAVAILABLE: 'auth.error.keyboardUnavailable',
 };
 
 export function formatAuthError(language: Language, code: string): string {

@@ -13,6 +13,7 @@ function local(snapshot: ScreenSnapshot, en: string, zh: string): string { retur
 export function renderAccount(context: CanvasContext2D, layout: ScreenLayout, snapshot: ScreenSnapshot): TapTarget[] {
   const { app, auth } = snapshot;
   const busy = app.accountBusy || app.onlineBusy || auth.pending;
+  const keyboardUnavailable = app.errorCode === 'KEYBOARD_UNAVAILABLE';
   const signedIn = Boolean(auth.user && auth.sessionToken);
   const editable = !busy && (!signedIn || auth.profileVerified);
   const rows: ScreenRow[] = [];
@@ -44,7 +45,8 @@ export function renderAccount(context: CanvasContext2D, layout: ScreenLayout, sn
     const titles: Record<Exclude<AccountMode, 'menu' | 'profile'>, TranslationKey> = {
       login: 'auth.login', register: 'auth.register', credentials: 'account.addCredentials', link: 'account.wechatLinked', reset: 'account.recovery',
     };
-    rows.push({ id: 'account.submit', text: label(snapshot, titles[app.accountMode]), enabled: !busy && (app.accountMode !== 'link' || app.confirmTransfer), accent: true });
+    rows.push({ id: 'account.submit', text: label(snapshot, titles[app.accountMode]),
+      enabled: !busy && !keyboardUnavailable && (app.accountMode !== 'link' || app.confirmTransfer), accent: true });
   }
   if (app.accountMode !== 'menu') rows.push({ id: 'account.mode.menu', text: label(snapshot, 'auth.back'), enabled: !busy });
   rows.push({ id: 'nav.home', text: label(snapshot, 'account.back') });
@@ -68,6 +70,7 @@ async function accountOperation(app: MiniGameApp, operation: () => Promise<void>
 }
 export async function dispatchAccountAction(actionId: string, app: MiniGameApp, stores: MiniGameStores): Promise<void> {
   if (app.getState().accountBusy || app.getState().onlineBusy) return;
+  if (actionId === 'account.submit' && app.getState().errorCode === 'KEYBOARD_UNAVAILABLE') return;
   if (actionId.startsWith('account.mode.')) {
     const mode = actionId.slice(13);
     if (!['menu', 'profile', 'login', 'register', 'credentials', 'link', 'reset'].includes(mode)) return;

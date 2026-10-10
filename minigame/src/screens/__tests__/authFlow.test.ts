@@ -155,6 +155,33 @@ test('account keyboard buffers mask password glyphs and clear immediately on sub
   expect(f.app.getState().fields.password).toBe(''); f.dispose();
 });
 
+test('keyboard failure is recoverable and prevents submitting stale account credentials', async () => {
+  const f = fixture(); await f.stores.ready;
+  await dispatchScreenAction('home.account', f.app, f.stores);
+  await dispatchScreenAction('account.mode.login', f.app, f.stores);
+  f.app.setField('username', 'player'); f.app.setField('password', 'old-valid-password');
+  await dispatchScreenAction('field.username', f.app, f.stores);
+  const focus = f.keyboard.focus.mock.calls.at(-1)?.[0];
+  if (typeof focus?.onFailure === 'function') focus.onFailure();
+
+  expect(f.app.getState().errorCode).toBe('KEYBOARD_UNAVAILABLE');
+  const ctx = canvasContext();
+  const targets = renderAccount(ctx as any, geometry, getScreenSnapshot(f.app, f.stores));
+  expect(ctx.texts.join(' ')).toContain('无法打开设备键盘。请点输入框重试，也可以返回游客单机。');
+  expect(targets.some(target => target.id === 'account.submit')).toBe(false);
+
+  const submit = dispatchScreenAction('account.submit', f.app, f.stores);
+  await flush();
+  const submitted = f.api.request.mock.calls.length > 0;
+  if (f.requests.length) f.respond({ error: { code: 'INVALID_CREDENTIALS', message: 'private' } }, 401);
+  await submit;
+  expect(submitted).toBe(false);
+
+  await dispatchScreenAction('field.username', f.app, f.stores);
+  expect(f.app.getState().errorCode).toBeNull();
+  f.dispose();
+});
+
 test('profile save sanitizes guest data locally and authenticated profile uses server response', async () => {
   const f = fixture(); await f.stores.ready;
   await dispatchScreenAction('account.mode.profile', f.app, f.stores);

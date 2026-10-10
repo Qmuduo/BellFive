@@ -123,10 +123,12 @@ export function createMiniGameApp(keyboard?: KeyboardAdapter) {
     navigation, getState: state.getState, subscribe: state.subscribe, update: state.setState,
     setField(field: InputField, value: string) { state.setState(current => ({ fields: { ...current.fields, [field]: value } })); },
     focusField(field: InputField) {
+      state.setState(current => current.errorCode === 'KEYBOARD_UNAVAILABLE' ? { errorCode: null } : current);
       const setValue = (value: string) => state.setState(current => ({ fields: { ...current.fields, [field]: value } }));
       keyboard?.focus({ value: field === 'password' ? '' : state.getState().fields[field],
         maxLength: field === 'nickname' ? 48 : field === 'roomCode' ? 12 : field === 'username' ? 24 : 128,
         onInput: setValue, onConfirm: setValue,
+        onFailure: () => state.setState({ errorCode: 'KEYBOARD_UNAVAILABLE' }),
       });
     },
     clearPasswords, clearIntent,

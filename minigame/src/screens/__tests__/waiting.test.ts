@@ -50,6 +50,7 @@ function context() {
 test('host sees server join requests, both seats, and ready controls; auto-start requires both connected and ready', () => {
   const initial = snapshot({ pendingApplications: [application] as any });
   const ctx = context(); const targets = renderWaiting(ctx as any, geometry, initial);
+  expect(ctx.texts.join(' ')).toContain('ABC234');
   expect(targets.map(item => item.id)).toEqual(expect.arrayContaining(['waiting.share', 'waiting.approve.apply-1', 'waiting.reject.apply-1', 'waiting.ready', 'waiting.leave']));
   expect(ctx.texts.join(' ')).toContain('Guest wants to join');
   expect(ctx.texts.join(' ')).toContain('Host · You · Connected');
@@ -59,6 +60,13 @@ test('host sees server join requests, both seats, and ready controls; auto-start
   expect(canStartWaitingMatch(room({ players: { A: { ...room().players.A, connected: true }, B: { ...room().players.B, connected: false } }, ready: { A: true, B: true } }))).toBe(false);
   expect(canStartWaitingMatch(room({ players: { A: { ...room().players.A, connected: true }, B: { ...room().players.B, connected: true } }, ready: { A: true, B: true } }))).toBe(true);
   expect(canStartWaitingMatch(room({ phase: 'connection-paused', players: { A: { ...room().players.A, connected: true }, B: { ...room().players.B, connected: true } }, ready: { A: true, B: true } }))).toBe(false);
+});
+
+test('room code stays visible while reconnecting with the retained room snapshot', () => {
+  const ctx = context();
+  renderWaiting(ctx as any, geometry, snapshot({ connectionStatus: 'reconnecting' }));
+  expect(ctx.texts.join(' ')).toContain('ABC234');
+  expect(ctx.texts.join(' ')).toContain('Reconnecting');
 });
 
 test('guest sees application status and can cancel only a pending request', () => {

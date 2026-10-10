@@ -6,6 +6,7 @@ export interface KeyboardFocus {
   onInput(value: string): void;
   onConfirm?(value: string): void;
   onCancel?(): void;
+  onFailure?(): void;
 }
 export interface KeyboardAdapter { focus(input: KeyboardFocus): void; blur(): void; dispose(): void; }
 
@@ -30,7 +31,7 @@ export function createWxKeyboard(api: Pick<MiniGameWxApi,
     focus(next) {
       if (disposed) return;
       focused = next;
-      const fail = () => { if (focused === next) { focused = undefined; next.onCancel?.(); } };
+      const fail = () => { if (focused === next) { focused = undefined; next.onFailure?.(); } };
       try {
         api.showKeyboard({ defaultValue: next.value, maxLength: next.maxLength ?? 128, multiple: false,
           confirmHold: false, confirmType: 'done', keyboardType: 'text', fail });

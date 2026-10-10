@@ -53,6 +53,7 @@ export function renderWaiting(context: CanvasContext2D, layout: ScreenLayout, sn
   const online = game.sessionMode === 'online' && Boolean(view.room);
   const canSend = online && !game.leavingRoom && game.connectionStatus === 'connected';
   const rows: ScreenRow[] = [];
+  if (view.roomCode) rows.push({ text: `${label(snapshot, 'waiting.roomCode')}: ${view.roomCode}`, enabled: false });
   if (view.room) {
     rows.push({ id: 'waiting.share', text: label(snapshot, 'waiting.shareInvite'), enabled: Boolean(view.roomCode) && !game.leavingRoom });
     rows.push({ text: playerRow(snapshot, view.room, 'A') });

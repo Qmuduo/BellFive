@@ -192,6 +192,28 @@ test('keyboard focus updates only the current field, confirms once and releases 
   keyboard.dispose(); keyboard.dispose(); expect(detached).toEqual(['Input', 'Confirm', 'Complete']);
 });
 
+test('keyboard show failure is distinct from normal dismissal', () => {
+  const events: Record<string, (event: any) => void> = {};
+  const shown: any[] = [];
+  const api: any = { showKeyboard: (options: any) => shown.push(options), hideKeyboard: () => {} };
+  for (const name of ['Input', 'Confirm', 'Complete']) {
+    api[`onKeyboard${name}`] = (fn: any) => { events[name] = fn; };
+    api[`offKeyboard${name}`] = jest.fn();
+  }
+  const keyboard = createWxKeyboard(api);
+  const failures = jest.fn(); const cancellations = jest.fn();
+  keyboard.focus({ value: '', onInput: jest.fn(), onFailure: failures, onCancel: cancellations });
+  shown[0].fail();
+  expect(failures).toHaveBeenCalledTimes(1);
+  expect(cancellations).not.toHaveBeenCalled();
+
+  keyboard.focus({ value: '', onInput: jest.fn(), onFailure: failures, onCancel: cancellations });
+  events.Complete({ value: '' });
+  expect(cancellations).toHaveBeenCalledTimes(1);
+  expect(failures).toHaveBeenCalledTimes(1);
+  keyboard.dispose();
+});
+
 test('feedback obeys disabled settings, tolerates unavailable capabilities and releases audio', () => {
   let played = 0; let vibrated = 0; let destroyed = 0; const shared: unknown[] = [];
   const feedback = createWxFeedback({
