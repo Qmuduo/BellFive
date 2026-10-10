@@ -53,6 +53,14 @@ test('disabled buttons mute their fill and label and return the painted hit rect
   expect(context.fillText).toHaveBeenCalledWith('Join', 60, 40);
 });
 
+test('enabled text buttons paint a low-contrast backing across their full hit rectangle', () => {
+  const context = createContext();
+  const target = drawCanvasButton(context, rect, 'Back', { variant: 'text', enabled: true, fontSize: 16, radius: 12 });
+  expect(target).toBe(rect);
+  expect((context as CanvasContext2D & { __fillColors: string[] }).__fillColors).toContain('#FFFFFF');
+  expect(context.stroke).not.toHaveBeenCalled();
+});
+
 test('focused input fields align their label and value to separate regions', () => {
   const context = createContext();
   drawInputField(context, rect, 'Room code', 'AB12', { focused: true, enabled: true, fontSize: 14, radius: 12 });

@@ -61,14 +61,12 @@ export function drawCanvasButton(
     primary: { fill: gameColors.purpleAction, border: gameColors.purpleShadow, text: gameColors.onAction },
     secondary: { fill: gameColors.surface, border: gameColors.border, text: gameColors.plum },
     lime: { fill: gameColors.lime, border: gameColors.lime, text: gameColors.onLimeMuted },
-    text: { fill: gameColors.canvas, border: undefined, text: gameColors.purple },
+    text: { fill: gameColors.surface, border: undefined, text: gameColors.purple },
   } as const;
   const palette = options.enabled ? palettes[options.variant] : {
     fill: gameColors.lavenderSurface, border: gameColors.border, text: gameColors.muted,
   };
-  if (options.variant !== 'text' || !options.enabled) {
-    drawRoundedPanel(context, rect, { fill: palette.fill, border: palette.border, radius: options.radius });
-  }
+  drawRoundedPanel(context, rect, { fill: palette.fill, border: palette.border, radius: options.radius });
   context.save();
   context.font = `900 ${options.fontSize}px sans-serif`;
   context.fillStyle = palette.text;
