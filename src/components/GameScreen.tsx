@@ -39,7 +39,6 @@ export type GameScreenProps = Readonly<{
   onAuthenticate?: (action: 'create' | 'join' | 'lobby', roomCode?: string) => void;
   onAccount?: () => void;
 }>;
-
 type ActiveRingDanmaku = Readonly<{
   event: RingFeedbackEvent;
   lane: number;
