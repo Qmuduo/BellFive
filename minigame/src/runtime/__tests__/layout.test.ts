@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { hitTest, layoutForScreen, logicalPoint } from '../layout';
+import { clipTapTargetsToContent, hitTest, layoutForScreen, logicalPoint } from '../layout';
 import { ScreenNavigation } from '../navigation';
 import { CanvasRuntime } from '../canvas';
 
@@ -40,7 +40,18 @@ test('device coordinates are divided once while native logical coordinates are p
   expect(() => layoutForScreen(0, 844, { top: 0, bottom: 0 })).toThrow();
 });
 
-function runtimeFixture() {
+test('tap targets retain only their visible intersection with safe content', () => {
+  const targets = [
+    { id: 'above', rect: { x: 20, y: 0, width: 20, height: 30 } },
+    { id: 'partial', rect: { x: 0, y: 35, width: 50, height: 30 } },
+    { id: 'below', rect: { x: 20, y: 110, width: 20, height: 20 } },
+  ];
+  expect(clipTapTargetsToContent(targets, { x: 10, y: 40, width: 100, height: 60 })).toEqual([
+    { id: 'partial', rect: { x: 10, y: 40, width: 40, height: 25 } },
+  ]);
+});
+
+function runtimeFixture(scrollContentHeight?: number) {
   const events = new Map<string, (event?: any) => void>();
   const frames = new Map<number, (time: number) => void>();
   const detached: string[] = [];
@@ -61,13 +72,16 @@ function runtimeFixture() {
   };
   const actions: string[] = [];
   const rendered: string[] = [];
+  const scrollOffsets: number[] = [];
   const lifecycle: string[] = [];
   let storeListener: (() => void) | undefined;
   const store = { subscribe: (listener: () => void) => { storeListener = listener; return () => { storeListener = undefined; }; } };
   const navigation = new ScreenNavigation('home');
   const screen = (name: string) => ({
+    ...(scrollContentHeight === undefined ? {} : { scrollContentHeight: () => scrollContentHeight }),
     render: (_context: unknown, layout: ReturnType<typeof layoutForScreen>) => {
       rendered.push(name);
+      scrollOffsets.push(layout.scrollY);
       return [...layout.targets, { id: 'unsafe', rect: { x: 0, y: 0, width: 40, height: 40 } }];
     },
     onAction: (action: string) => actions.push(`${name}:${action}`),
@@ -81,14 +95,14 @@ function runtimeFixture() {
     frames.delete(entry[0]); entry[1](100);
   };
   const touch = (name: string, x = 195, y = 740, identifier = 1, space = 'logical') => events.get(name)?.({ points: [{ identifier, x, y }], space });
-  return { runtime, events, frames, detached, canvas, transforms, actions, rendered, lifecycle, keyboard, navigation, frame, touch,
+  return { runtime, events, frames, detached, canvas, transforms, actions, rendered, scrollOffsets, lifecycle, keyboard, navigation, frame, touch,
     changeStore: () => storeListener?.(), resize: () => { viewport = { ...viewport, width: 430 }; events.get('resize')?.(); },
   };
 }
 
 test('runtime registers once, renders at DPR, and coalesces store redraws into animation frames', () => {
   const f = runtimeFixture();
-  expect(f.events.size).toBe(7);
+  expect(f.events.size).toBe(8);
   expect(f.canvas).toEqual({ width: 1170, height: 2532 });
   expect(f.transforms).toEqual([[3, 0, 0, 3, 0, 0]]);
   f.changeStore(); f.changeStore();
@@ -143,7 +157,47 @@ test('resize invalidates gestures and hide cancels frames while show restores re
   expect(f.keyboard.blur).toHaveBeenCalled();
   f.runtime.destroy(); f.runtime.destroy();
   expect(f.keyboard.dispose).toHaveBeenCalledTimes(1);
-  expect(f.detached).toHaveLength(7);
+  expect(f.detached).toHaveLength(8);
+});
+
+test('scrolling clamps to content bounds and releases without dispatching a tap', () => {
+  const f = runtimeFixture(900); f.frame();
+  f.touch('touchstart', 195, 740);
+  f.touch('touchmove', 195, 700);
+  f.frame();
+  expect(f.scrollOffsets.at(-1)).toBe(40);
+  f.touch('touchmove', 195, 100);
+  f.frame();
+  expect(f.scrollOffsets.at(-1)).toBe(134);
+  f.touch('touchend', 195, 100);
+  expect(f.actions).toEqual([]);
+  f.touch('touchstart', 195, 740);
+  f.touch('touchmove', 195, 749);
+  f.frame();
+  expect(f.scrollOffsets.at(-1)).toBe(125);
+  f.touch('touchend', 195, 749);
+  expect(f.actions).toEqual([]);
+  f.runtime.destroy();
+});
+
+test('movement within six logical pixels remains a tap and redraw keeps the active gesture', () => {
+  const f = runtimeFixture(900); f.frame();
+  f.touch('touchstart'); f.touch('touchmove', 195, 735);
+  f.changeStore(); f.frame(); f.touch('touchend');
+  expect(f.actions).toEqual(['home:primary']);
+  expect(f.scrollOffsets.at(-1)).toBe(0);
+  f.runtime.destroy();
+});
+
+test('scroll offsets are retained per screen while navigation cancels the current drag', () => {
+  const f = runtimeFixture(900); f.frame();
+  f.touch('touchstart'); f.touch('touchmove', 195, 700); f.frame();
+  f.runtime.navigate('account'); f.touch('touchend', 195, 700); f.frame();
+  expect(f.scrollOffsets.at(-1)).toBe(0);
+  f.runtime.navigate('home'); f.frame();
+  expect(f.scrollOffsets.at(-1)).toBe(40);
+  expect(f.actions).toEqual([]);
+  f.runtime.destroy();
 });
 
 test('navigation history is separate and observable with back at the root remaining stable', () => {

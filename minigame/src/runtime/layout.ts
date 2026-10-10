@@ -3,8 +3,18 @@ export interface Rect extends Point { width: number; height: number; }
 export interface SafeAreaInsets { top: number; bottom: number; left?: number; right?: number; }
 export interface TapTarget { id: string; rect: Rect; enabled?: boolean; }
 export interface ScreenLayout {
-  width: number; height: number; content: Rect;
+  width: number; height: number; content: Rect; scrollY: number;
   primaryButton: Rect; secondaryButton: Rect; cards: readonly Rect[]; targets: readonly TapTarget[];
+}
+
+export function clipTapTargetsToContent(targets: readonly TapTarget[], content: Rect): TapTarget[] {
+  return targets.flatMap(target => {
+    const x = Math.max(target.rect.x, content.x);
+    const y = Math.max(target.rect.y, content.y);
+    const right = Math.min(target.rect.x + target.rect.width, content.x + content.width);
+    const bottom = Math.min(target.rect.y + target.rect.height, content.y + content.height);
+    return right > x && bottom > y ? [{ ...target, rect: { x, y, width: right - x, height: bottom - y } }] : [];
+  });
 }
 
 export function contains(point: Point, rect: Rect): boolean {
@@ -39,7 +49,7 @@ export function layoutForScreen(width: number, height: number, safeArea: SafeAre
   const cardHeight = Math.min(cardWidth * 1.4, content.height / 3);
   const cards = [0, 1].map(index => ({ x: left + (content.width - cardWidth * 2 - gap) / 2 + index * (cardWidth + gap),
     y: top + margin, width: cardWidth, height: cardHeight }));
-  return { width, height, content, primaryButton, secondaryButton, cards,
+  return { width, height, content, scrollY: 0, primaryButton, secondaryButton, cards,
     targets: [{ id: 'secondary', rect: secondaryButton }, { id: 'primary', rect: primaryButton }],
   };
 }

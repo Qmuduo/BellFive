@@ -20,7 +20,7 @@ export type MiniGameWxApi = Pick<typeof wx,
   | 'showKeyboard' | 'hideKeyboard' | 'onKeyboardInput' | 'offKeyboardInput'
   | 'onKeyboardConfirm' | 'offKeyboardConfirm' | 'onKeyboardComplete' | 'offKeyboardComplete'
   | 'createInnerAudioContext' | 'vibrateShort' | 'shareAppMessage'
-  | 'createCanvas' | 'getSystemInfoSync' | 'onTouchStart' | 'offTouchStart'
+  | 'createCanvas' | 'getSystemInfoSync' | 'onTouchStart' | 'offTouchStart' | 'onTouchMove' | 'offTouchMove'
   | 'onTouchEnd' | 'offTouchEnd' | 'onTouchCancel' | 'offTouchCancel'
   | 'onWindowResize' | 'offWindowResize' | 'onHide' | 'offHide' | 'onShow' | 'offShow'
   | 'onKeyDown' | 'offKeyDown'>;
@@ -30,7 +30,7 @@ export type CanvasContext2D = ReturnType<WechatMinigame.Canvas['getContext']>;
 export interface Viewport { width: number; height: number; pixelRatio: number; safeArea: SafeAreaInsets; }
 export interface TouchPoint { identifier: number; x: number; y: number; }
 export interface TouchInput { points: readonly TouchPoint[]; space: 'logical' | 'device'; }
-export type RuntimeEvent = 'touchstart' | 'touchend' | 'touchcancel' | 'resize' | 'back' | 'hide' | 'show';
+export type RuntimeEvent = 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel' | 'resize' | 'back' | 'hide' | 'show';
 export interface FrameScheduler {
   requestFrame(callback: (timestamp: number) => void): number;
   cancelFrame(handle: number): void;
@@ -43,7 +43,7 @@ export interface CanvasPlatform extends FrameScheduler {
 }
 
 type RuntimeWxApi = Pick<MiniGameWxApi,
-  | 'createCanvas' | 'getSystemInfoSync' | 'onTouchStart' | 'offTouchStart'
+  | 'createCanvas' | 'getSystemInfoSync' | 'onTouchStart' | 'offTouchStart' | 'onTouchMove' | 'offTouchMove'
   | 'onTouchEnd' | 'offTouchEnd' | 'onTouchCancel' | 'offTouchCancel'
   | 'onWindowResize' | 'offWindowResize' | 'onHide' | 'offHide' | 'onShow' | 'offShow'
   | 'onKeyDown' | 'offKeyDown'>;
@@ -76,6 +76,7 @@ export function createWxRuntimePlatform(api: RuntimeWxApi, scheduler: FrameSched
       };
       switch (event) {
         case 'touchstart': api.onTouchStart(touch); return () => api.offTouchStart(touch);
+        case 'touchmove': api.onTouchMove(touch); return () => api.offTouchMove(touch);
         case 'touchend': api.onTouchEnd(touch); return () => api.offTouchEnd(touch);
         case 'touchcancel': api.onTouchCancel(touch); return () => api.offTouchCancel(touch);
         case 'resize': api.onWindowResize(simple); return () => api.offWindowResize(simple);

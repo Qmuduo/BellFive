@@ -238,7 +238,7 @@ test('runtime wx adapter normalizes safe-area insets, native logical touches and
     createCanvas: () => ({ width: 0, height: 0, getContext: () => ({}) }),
     getSystemInfoSync: () => ({ windowWidth: 390, windowHeight: 844, pixelRatio: 3, safeArea: { top: 44, bottom: 810, left: 0, right: 390 } }),
   };
-  for (const name of ['TouchStart', 'TouchEnd', 'TouchCancel', 'WindowResize', 'Hide', 'Show', 'KeyDown']) {
+  for (const name of ['TouchStart', 'TouchMove', 'TouchEnd', 'TouchCancel', 'WindowResize', 'Hide', 'Show', 'KeyDown']) {
     api[`on${name}`] = (fn: any) => { callbacks[name] = fn; };
     api[`off${name}`] = (fn: any) => { if (callbacks[name] === fn) removed.push(name); };
   }
@@ -246,9 +246,14 @@ test('runtime wx adapter normalizes safe-area insets, native logical touches and
   expect(platform.getViewport()).toEqual({ width: 390, height: 844, pixelRatio: 3, safeArea: { top: 44, bottom: 34, left: 0, right: 0 } });
   const touches: unknown[] = []; let back = 0;
   const stopTouch = platform.subscribe('touchend', event => touches.push(event));
+  const stopMove = platform.subscribe('touchmove', event => touches.push(event));
   const stopBack = platform.subscribe('back', () => { back++; });
   callbacks.TouchEnd({ changedTouches: [{ identifier: 5, clientX: 195, clientY: 740 }], touches: [], timeStamp: 100 });
+  callbacks.TouchMove({ changedTouches: [{ identifier: 5, clientX: 195, clientY: 700 }], touches: [], timeStamp: 101 });
   callbacks.KeyDown({ key: 'a', code: 'KeyA' }); callbacks.KeyDown({ key: 'Escape', code: 'Escape' });
-  expect(touches).toEqual([{ points: [{ identifier: 5, x: 195, y: 740 }], space: 'logical' }]);
-  expect(back).toBe(1); stopTouch(); stopBack(); expect(removed).toEqual(['TouchEnd', 'KeyDown']);
+  expect(touches).toEqual([
+    { points: [{ identifier: 5, x: 195, y: 740 }], space: 'logical' },
+    { points: [{ identifier: 5, x: 195, y: 700 }], space: 'logical' },
+  ]);
+  expect(back).toBe(1); stopTouch(); stopMove(); stopBack(); expect(removed).toEqual(['TouchEnd', 'TouchMove', 'KeyDown']);
 });

@@ -1,10 +1,11 @@
 import type { CanvasContext2D, CanvasPlatform, TouchInput, Viewport } from '../platform/wxApi';
 import type { KeyboardAdapter, KeyboardFocus } from '../platform/keyboard';
-import { contains, hitTest, layoutForScreen, logicalPoint, type ScreenLayout, type TapTarget } from './layout';
+import { clipTapTargetsToContent, contains, hitTest, layoutForScreen, logicalPoint, type Point, type ScreenLayout, type TapTarget } from './layout';
 import { ScreenNavigation } from './navigation';
 
 export interface CanvasScreen {
   render(context: CanvasContext2D, layout: ScreenLayout, timestamp: number): readonly TapTarget[];
+  scrollContentHeight?(layout: ScreenLayout): number;
   onAction?(actionId: string, runtime: CanvasRuntime): void;
   onBack?(runtime: CanvasRuntime): void;
   onHide?(runtime: CanvasRuntime): void;
@@ -19,7 +20,8 @@ export interface RuntimeOptions {
 
 export class CanvasRuntime {
   private readonly stops: (() => void)[] = [];
-  private readonly activeTouches = new Set<number>();
+  private readonly activeTouches = new Map<number, { start: Point; last: Point; scrolling: boolean }>();
+  private readonly scrollOffsets = new Map<string, number>();
   private targets: readonly TapTarget[] = [];
   private viewport!: Viewport;
   private geometry!: ScreenLayout;
@@ -31,6 +33,7 @@ export class CanvasRuntime {
     const { platform, navigation } = options;
     this.stops.push(
       platform.subscribe('touchstart', event => this.startTouch(event)),
+      platform.subscribe('touchmove', event => this.moveTouch(event)),
       platform.subscribe('touchend', event => this.endTouch(event)),
       platform.subscribe('touchcancel', () => this.activeTouches.clear()),
       platform.subscribe('resize', () => this.resize()),
@@ -63,7 +66,9 @@ export class CanvasRuntime {
       if (this.destroyed || this.hidden) return;
       const { context } = this.options.platform;
       context.clearRect(0, 0, this.viewport.width, this.viewport.height);
-      this.targets = this.options.screens[this.currentScreen]?.render(context, this.geometry, timestamp) ?? [];
+      const screen = this.options.screens[this.currentScreen];
+      this.geometry.scrollY = this.clampScroll(this.currentScreen);
+      this.targets = clipTapTargetsToContent(screen?.render(context, this.geometry, timestamp) ?? [], this.geometry.content);
       this.requestRender();
     });
   }
@@ -93,14 +98,41 @@ export class CanvasRuntime {
   private startTouch(event?: TouchInput): void {
     if (this.destroyed || this.hidden || !event) return;
     for (const point of event.points) {
-      if (contains(logicalPoint(point, this.viewport.pixelRatio, event.space), this.geometry.content)) this.activeTouches.add(point.identifier);
+      const logical = logicalPoint(point, this.viewport.pixelRatio, event.space);
+      if (contains(logical, this.geometry.content)) this.activeTouches.set(point.identifier, { start: logical, last: logical, scrolling: false });
     }
+  }
+  private moveTouch(event?: TouchInput): void {
+    if (this.destroyed || this.hidden || !event) return;
+    const screen = this.options.screens[this.currentScreen];
+    if (!screen?.scrollContentHeight) return;
+    for (const point of event.points) {
+      const touch = this.activeTouches.get(point.identifier);
+      if (!touch) continue;
+      const logical = logicalPoint(point, this.viewport.pixelRatio, event.space);
+      if (!touch.scrolling && Math.hypot(logical.x - touch.start.x, logical.y - touch.start.y) > 6) touch.scrolling = true;
+      if (touch.scrolling) {
+        const next = this.clampScroll(this.currentScreen, this.geometry.scrollY + touch.last.y - logical.y);
+        if (next !== this.geometry.scrollY) { this.geometry.scrollY = next; this.requestRender(); }
+      }
+      touch.last = logical;
+    }
+  }
+  private clampScroll(screenId: string, proposed = this.scrollOffsets.get(screenId) ?? 0): number {
+    const contentHeight = this.options.screens[screenId]?.scrollContentHeight?.(this.geometry);
+    const max = Math.max(0, (Number.isFinite(contentHeight) ? contentHeight! : 0) - this.geometry.content.height);
+    const offset = Math.min(max, Math.max(0, proposed));
+    this.scrollOffsets.set(screenId, offset);
+    return offset;
   }
   private endTouch(event?: TouchInput): void {
     if (this.destroyed || this.hidden || !event) return;
     let action: string | null = null;
     for (const point of event.points) {
-      if (!this.activeTouches.delete(point.identifier)) continue;
+      const touch = this.activeTouches.get(point.identifier);
+      if (!touch) continue;
+      this.activeTouches.delete(point.identifier);
+      if (touch.scrolling) continue;
       const logical = logicalPoint(point, this.viewport.pixelRatio, event.space);
       if (action === null && contains(logical, this.geometry.content)) action = hitTest(logical, this.targets);
     }
