@@ -6,7 +6,7 @@ import type { ScreenLayout } from './runtime/layout';
 import { connectRoomNavigation, createMiniGameApp, type MiniGameApp } from './runtime/navigation';
 import { createMiniGameStores, type MiniGameStores, type MiniGameStoreOptions } from './stores/gameStore';
 import { dispatchScreenAction, getScreenSnapshot, homeContentHeight, renderHome } from './screens/home';
-import { renderAccount } from './screens/account';
+import { accountContentHeight, renderAccount } from './screens/account';
 import { renderLobby } from './screens/lobby';
 import { dispatchWaitingAction, renderWaiting } from './screens/waiting';
 import { dispatchMatchAction, renderMatch } from './screens/match';
@@ -74,7 +74,9 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   const stopFeedbackShow = platform.subscribe('show', () => { feedbackActive = true; });
   const screens = { home: { ...screen(renderHome), scrollContentHeight(layout: ScreenLayout) {
     return homeContentHeight(layout, getScreenSnapshot(app, stores));
-  } }, account: screen(renderAccount), lobby: screen(renderLobby),
+  } }, account: { ...screen(renderAccount), scrollContentHeight(layout: ScreenLayout) {
+    return accountContentHeight(layout, getScreenSnapshot(app, stores));
+  } }, lobby: screen(renderLobby),
     solo: matchScreen, waiting: waitingScreen, match: matchScreen, ...options.screens?.(app, stores) };
   const runtime = new CanvasRuntime({ platform, keyboard, navigation: app.navigation, screens,
     stores: [app, stores.auth, stores.profile, stores.settings, stores.game] });

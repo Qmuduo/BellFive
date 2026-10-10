@@ -101,6 +101,7 @@ export interface MiniGameAppState {
   readonly pendingReadyAction: PendingReadyAction | null;
   readonly pendingCancelApplicationId: string | null;
   readonly fields: Readonly<Record<InputField, string>>;
+  readonly focusedField: InputField | null;
 }
 
 /** Forms and intents live in memory only; credentials never enter persisted stores. */
@@ -109,12 +110,12 @@ export function createMiniGameApp(keyboard?: KeyboardAdapter) {
     pendingIntent: null, onlineBusy: false, accountBusy: false, errorCode: null, notice: null,
     accountMode: 'menu', confirmTransfer: false, avatarId: 'strawberry', lobbyPage: 0, waitingApplicationPage: 0,
     pendingReadyAction: null, pendingCancelApplicationId: null,
-    fields: { username: '', password: '', nickname: '', roomCode: '' },
+    fields: { username: '', password: '', nickname: '', roomCode: '' }, focusedField: null,
   }));
   const navigation = new ScreenNavigation('home');
   let intentGeneration = 0;
   const clearPasswords = () => {
-    state.setState(current => ({ fields: { ...current.fields, password: '' } }));
+    state.setState(current => ({ fields: { ...current.fields, password: '' }, focusedField: null }));
     keyboard?.blur();
   };
   const clearIntent = () => { intentGeneration++; state.setState({ pendingIntent: null, onlineBusy: false, errorCode: null }); };
@@ -123,12 +124,15 @@ export function createMiniGameApp(keyboard?: KeyboardAdapter) {
     navigation, getState: state.getState, subscribe: state.subscribe, update: state.setState,
     setField(field: InputField, value: string) { state.setState(current => ({ fields: { ...current.fields, [field]: value } })); },
     focusField(field: InputField) {
-      state.setState(current => current.errorCode === 'KEYBOARD_UNAVAILABLE' ? { errorCode: null } : current);
+      state.setState(current => ({ focusedField: field,
+        errorCode: current.errorCode === 'KEYBOARD_UNAVAILABLE' ? null : current.errorCode }));
       const setValue = (value: string) => state.setState(current => ({ fields: { ...current.fields, [field]: value } }));
       keyboard?.focus({ value: field === 'password' ? '' : state.getState().fields[field],
         maxLength: field === 'nickname' ? 48 : field === 'roomCode' ? 12 : field === 'username' ? 24 : 128,
-        onInput: setValue, onConfirm: setValue,
-        onFailure: () => state.setState({ errorCode: 'KEYBOARD_UNAVAILABLE' }),
+        onInput: setValue,
+        onConfirm(value: string) { setValue(value); state.setState({ focusedField: null }); },
+        onCancel: () => state.setState({ focusedField: null }),
+        onFailure: () => state.setState({ errorCode: 'KEYBOARD_UNAVAILABLE', focusedField: null }),
       });
     },
     clearPasswords, clearIntent,
