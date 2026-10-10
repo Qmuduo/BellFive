@@ -4,10 +4,10 @@ import { homeContentHeight, renderHome } from '../home';
 import { gameColors } from '../../../../src/theme/gameColors';
 
 const context = () => ({
-  fills: [] as string[], texts: [] as string[],
+  fills: [] as string[], texts: [] as string[], textCalls: [] as { text: string; x: number; y: number }[],
   fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textAlign: 'left', textBaseline: 'middle',
   save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, closePath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, arc() {}, fill() { this.fills.push(this.fillStyle); }, stroke() {},
-  fillRect() { this.fills.push(this.fillStyle); }, fillText(text: string) { this.texts.push(text); },
+  fillRect() { this.fills.push(this.fillStyle); }, fillText(text: string, x: number, y: number) { this.texts.push(text); this.textCalls.push({ text, x, y }); },
   measureText(text: string) { return { width: text.length * 8 }; },
 });
 const snapshot = (overrides: any = {}) => ({
@@ -24,6 +24,8 @@ test('home paints Android color hierarchy and keeps all primary actions', () => 
   expect(c.fills).toContain(gameColors.purpleAction);
   expect(c.fills).toContain(gameColors.lime);
   expect(targets.map(item => item.id)).toEqual(expect.arrayContaining(['settings.language', 'home.account', 'home.create', 'home.solo.easy', 'home.solo.normal', 'home.solo.hard', 'home.lobby']));
+  const lobby = targets.find(item => item.id === 'home.lobby')!;
+  expect(c.textCalls).toContainEqual({ text: 'OPEN ROOMS', x: lobby.rect.x + lobby.rect.width / 2, y: lobby.rect.y + lobby.rect.height / 2 });
   expect(targets.every(item => item.rect.y >= 20 && item.rect.y + item.rect.height <= 548)).toBe(true);
 });
 

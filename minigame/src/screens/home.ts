@@ -163,7 +163,7 @@ export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snaps
     label(snapshot, `difficulty.${difficulty}`), 'secondary', !snapshot.pendingCreate, 10));
   y += 134;
   drawScreenText(context, label(snapshot, 'entry.openRooms'), x, y + 17, 12, gameColors.plum);
-  action('home.lobby', { x: x + width - 94, y, width: 94, height: 34 }, label(snapshot, 'entry.refresh'), 'text', !busy, 10);
+  action('home.lobby', { x: x + width - 94, y, width: 94, height: 34 }, label(snapshot, 'entry.openRooms'), 'text', !busy, 10);
   y += 38;
   const rooms = snapshot.game.openRooms.slice(0, 2);
   if (rooms.length) rooms.forEach(room => {
