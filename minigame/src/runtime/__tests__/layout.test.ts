@@ -117,6 +117,15 @@ test('touch dispatch ignores duplicates, unsafe touches, cancelled gestures and 
   f.runtime.destroy();
 });
 
+test('a store redraw does not cancel a tap already in progress', () => {
+  const f = runtimeFixture(); f.frame();
+  f.touch('touchstart');
+  f.changeStore();
+  f.touch('touchend');
+  expect(f.actions).toEqual(['home:primary']);
+  f.runtime.destroy();
+});
+
 test('resize invalidates gestures and hide cancels frames while show restores rendering', () => {
   const f = runtimeFixture(); f.frame(); f.touch('touchstart'); f.resize(); f.touch('touchend');
   expect(f.actions).toEqual([]);

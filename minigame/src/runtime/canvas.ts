@@ -38,7 +38,7 @@ export class CanvasRuntime {
       platform.subscribe('hide', () => this.hide()),
       platform.subscribe('show', () => { this.hidden = false; this.resize(); }),
       navigation.subscribe(() => { this.invalidateTargets(); this.blurInput(); this.requestRender(); }),
-      ...(options.stores ?? []).map(store => store.subscribe(() => { this.invalidateTargets(); this.requestRender(); })),
+      ...(options.stores ?? []).map(store => store.subscribe(() => this.requestRender())),
     );
     this.requestRender();
   }
