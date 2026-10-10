@@ -9,6 +9,7 @@ import { gameColors } from '../../../src/theme/gameColors';
 import type { CanvasContext2D } from '../platform/wxApi';
 import { CARD_SYMBOLS, drawCard } from '../runtime/drawCard';
 import { drawText } from '../runtime/drawText';
+import { drawAvatarBadge, drawCanvasButton, drawRoundedPanel } from '../runtime/ui';
 import type { Rect, ScreenLayout, TapTarget } from '../runtime/layout';
 import type { MiniGameApp } from '../runtime/navigation';
 import type { MiniGameStores } from '../stores/gameStore';
@@ -89,58 +90,97 @@ export type MatchViewModel = ReturnType<typeof createMatchViewModel>;
 /** All painting and interactive rectangles are derived from the safe logical content. */
 export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, view: MatchViewModel): TapTarget[] {
   const { content } = layout;
-  const margin = Math.min(18, content.width / 16, content.height / 30);
+  const margin = Math.min(12, content.width / 24, content.height / 35);
   const x = content.x + margin; const width = Math.max(0, content.width - margin * 2);
-  const y = content.y + margin; const height = Math.max(0, content.height - margin * 2);
-  const region = (top: number, size: number): Rect => ({ x, y: y + height * top, width, height: height * size });
-  const font = Math.min(14, height / 32, width / 20);
-  const text = (rect: Rect, value: string, maxLines = 1, bold = false) => drawText(context, rect, value,
-    { fontSize: font, maxLines, bold, color: gameColors.plum });
-  context.save(); context.beginPath(); context.rect(content.x, content.y, content.width, content.height); context.clip();
-  context.fillStyle = '#f5f1e8'; context.fillRect(content.x, content.y, content.width, content.height);
-  drawText(context, region(0, 0.05), view.title, { fontSize: font * 1.5, bold: true, color: gameColors.plum });
-  text(region(0.05, 0.04), `${view.connectionLabel} · ${view.timerLabel}`);
-  text(region(0.09, 0.07), view.winnerLabel || view.turnPrompt, 2, true);
-  const gap = Math.min(16, width / 16);
-  const columnWidth = Math.max(0, (width - gap) / 2);
-  view.players.forEach((player, index) => {
-    const column = (top: number, size: number): Rect => ({ x: x + index * (columnWidth + gap), y: y + height * top,
-      width: columnWidth, height: height * size });
-    context.fillStyle = player.local ? gameColors.lavenderSurface : '#efe7d8';
-    const row = column(0.17, 0.12); context.fillRect(row.x, row.y, row.width, row.height);
-    text(column(0.17, 0.04), player.identityLabel, 1, true);
-    text(column(0.21, 0.045), player.countLabel, 2);
-    text(column(0.255, 0.03), player.statusLabel);
-    const area = column(0.30, 0.25);
-    const cardWidth = Math.min(area.width * 0.88, area.height / 1.4);
-    const cardRect = { x: area.x + (area.width - cardWidth) / 2, y: area.y,
-      width: cardWidth, height: Math.min(area.height, cardWidth * 1.4) };
-    drawCard(context, cardRect, player.topCard, player.local ? 'local' : 'opponent', {
-      face: gameColors.surface, back: player.local ? gameColors.lavenderSurface : '#efe7d8', border: gameColors.border, ink: gameColors.plum,
-    });
-  });
-  text(region(0.56, 0.07), view.visibleCountLabel, 2);
-  text(region(0.63, 0.045), `${CARD_SYMBOLS.bell} ${view.bellHint}`);
-  text(region(0.675, 0.065), view.leaving ? view.turnPrompt : view.resultLabel, 2);
-  text(region(0.745, 0.025), translate(view.language, 'log.heading'), 1, true);
-  if (view.ringHistory.length) view.ringHistory.forEach((event, index) => text(region(0.77 + index * 0.027, 0.027), event.label));
-  else text(region(0.77, 0.06), translate(view.language, 'log.empty'));
+  const top = content.y + margin; const bottom = content.y + content.height - margin;
+  const compact = content.height < 520;
+  const headerHeight = 30; const turnHeight = compact ? 40 : 46;
+  const consoleHeight = compact ? Math.max(112, Math.min(145, content.height * 0.32)) : 156;
+  const consoleY = bottom - consoleHeight;
+  const turnY = top + headerHeight + 6;
+  const boardY = turnY + turnHeight + 8;
+  const detailHeight = compact ? 38 : 64;
+  const boardHeight = Math.max(72, consoleY - 8 - detailHeight - boardY);
+  const boardBottom = Math.min(consoleY - 8, boardY + boardHeight);
+  const font = Math.min(13, Math.max(10, width / 29));
+  const text = (rect: Rect, value: string, size = font, color: string = gameColors.plum, maxLines = 1, bold = false) =>
+    drawText(context, rect, value, { fontSize: size, color, maxLines, bold });
   const targets: TapTarget[] = [];
-  const button = (id: string, label: string, rect: Rect, enabled: boolean, accent = false) => {
-    context.fillStyle = enabled ? accent ? gameColors.lime : gameColors.surface : '#e6e1e8';
-    context.fillRect(rect.x, rect.y, rect.width, rect.height);
-    drawText(context, rect, label, { fontSize: font * 1.1, bold: accent, align: 'center', color: enabled ? gameColors.plum : gameColors.muted });
+  const button = (id: string, label: string, rect: Rect, enabled: boolean,
+    variant: 'primary' | 'secondary' | 'lime' | 'text', size: number) => {
+    drawCanvasButton(context, rect, label, { variant, enabled, fontSize: size, radius: Math.min(14, rect.height / 3) });
     if (enabled && rect.width > 0 && rect.height > 0) targets.push({ id, rect, enabled: true });
   };
-  const half = (top: number, index: number): Rect => ({ x: x + index * (columnWidth + gap), y: y + height * top, width: columnWidth, height: height * 0.065 });
-  if (view.finished) button(view.solo ? 'match.rematch' : 'match.ready', view.readyLabel,
-    region(0.855, 0.065), view.solo ? view.controls.rematch : view.controls.ready, true);
-  else {
-    button('match.flip', translate(view.language, 'game.flip'), half(0.855, 0), view.controls.flip, true);
-    button('match.ring', `${CARD_SYMBOLS.bell} ${view.ringLabel}`, half(0.855, 1), view.controls.ring, true);
+  context.save(); context.beginPath(); context.rect(content.x, content.y, content.width, content.height); context.clip();
+  context.fillStyle = gameColors.canvas; context.fillRect(content.x, content.y, content.width, content.height);
+  const auxiliaryWidth = Math.min(58, width * 0.17);
+  button('match.leave', translate(view.language, 'game.leaveRoom'),
+    { x: x + width - auxiliaryWidth * 2 - 4, y: top, width: auxiliaryWidth, height: headerHeight }, view.controls.leave, 'text', 9);
+  button('match.home', view.language === 'en' ? 'Home' : '首页',
+    { x: x + width - auxiliaryWidth, y: top, width: auxiliaryWidth, height: headerHeight }, view.controls.returnHome, 'text', 9);
+  text({ x, y: top, width: width - auxiliaryWidth * 2 - 70, height: headerHeight }, view.title, font + 2, gameColors.plum, 1, true);
+  text({ x: x + width - auxiliaryWidth * 2 - 68, y: top, width: 60, height: headerHeight }, view.timerLabel, font + 1, gameColors.purple, 1, true);
+
+  drawRoundedPanel(context, { x, y: turnY, width, height: turnHeight },
+    { fill: gameColors.lavenderSurface, radius: 14 });
+  text({ x: x + 12, y: turnY + 4, width: width - 24, height: turnHeight * 0.54 },
+    view.winnerLabel || view.turnPrompt, font + 1, gameColors.plum, 1, true);
+  text({ x: x + 12, y: turnY + turnHeight * 0.57, width: width - 24, height: turnHeight * 0.32 },
+    view.bellHint, font - 2, gameColors.muted);
+
+  const gap = Math.min(10, width / 28); const columnWidth = (width - gap) / 2;
+  view.players.forEach((player, index) => {
+    const px = x + index * (columnWidth + gap);
+    const panel = { x: px, y: boardY, width: columnWidth, height: Math.max(0, boardBottom - boardY) };
+    drawRoundedPanel(context, panel, { fill: gameColors.surface, border: gameColors.border, radius: 16 });
+    drawAvatarBadge(context, { x: px + 8, y: boardY + 8, width: 30, height: 30 }, player.avatar,
+      { background: player.local ? gameColors.lavenderSurface : gameColors.canvas, foreground: gameColors.plum,
+        fontSize: 17, radius: 15 });
+    text({ x: px + 42, y: boardY + 7, width: columnWidth - 48, height: 18 }, player.identityLabel,
+      font - 2, gameColors.plum, 1, true);
+    text({ x: px + 42, y: boardY + 26, width: columnWidth - 48, height: 14 }, player.statusLabel,
+      font - 3, gameColors.muted);
+    const cardSpace = Math.max(0, panel.height - 53);
+    const cardWidth = Math.min(columnWidth - 24, cardSpace / 1.4);
+    const cardRect = { x: px + (columnWidth - cardWidth) / 2, y: boardY + 47,
+      width: cardWidth, height: Math.min(cardSpace, cardWidth * 1.4) };
+    drawCard(context, cardRect, player.topCard, player.local ? 'local' : 'opponent', {
+      face: gameColors.surface, back: gameColors.lavenderSurface, border: gameColors.border, ink: gameColors.plum,
+    });
+  });
+  const detailY = boardBottom + 5;
+  text({ x, y: detailY, width, height: 17 }, view.visibleCountLabel, font - 2, gameColors.muted);
+  text({ x, y: detailY + 17, width, height: 18 }, view.leaving ? view.turnPrompt : view.resultLabel || view.connectionLabel,
+    font - 2, gameColors.plum);
+  if (!compact) {
+    text({ x, y: detailY + 36, width: 85, height: 16 }, translate(view.language, 'log.heading'), font - 2, gameColors.plum, 1, true);
+    text({ x: x + 88, y: detailY + 36, width: width - 88, height: 16 },
+      view.ringHistory[view.ringHistory.length - 1]?.label ?? translate(view.language, 'log.empty'), font - 2, gameColors.muted);
   }
-  button('match.leave', translate(view.language, 'game.leaveRoom'), half(0.935, 0), view.controls.leave);
-  button('match.home', view.language === 'en' ? 'Return Home' : '返回首页', half(0.935, 1), view.controls.returnHome);
+
+  drawRoundedPanel(context, { x, y: consoleY, width, height: consoleHeight }, { fill: gameColors.plum, radius: 18 });
+  const own = view.players.find(player => player.local);
+  text({ x: x + 14, y: consoleY + 7, width: width * 0.43, height: 19 }, own?.identityLabel ?? view.title,
+    font, gameColors.onDark, 1, true);
+  text({ x: x + width * 0.44, y: consoleY + 7, width: width * 0.52 - 8, height: 19 },
+    view.players.map(player => `${player.drawCount ?? '—'}/${player.playedCount ?? '—'}`).join(' : '), font, gameColors.lime, 1, true);
+  text({ x: x + 14, y: consoleY + 27, width: width - 28, height: 19 },
+    view.finished ? view.winnerLabel : view.turnPrompt, font - 1, gameColors.mutedOnDark);
+  const actionY = consoleY + (consoleHeight <= 120 ? 50 : 56);
+  const actionHeight = Math.max(44, Math.min(56, consoleHeight - (actionY - consoleY) - 19));
+  if (view.finished) button(view.solo ? 'match.rematch' : 'match.ready', view.readyLabel,
+    { x: x + 12, y: actionY, width: width - 24, height: actionHeight },
+    view.solo ? view.controls.rematch : view.controls.ready, 'primary', font + 2);
+  else {
+    const actionGap = 10; const actionWidth = (width - 24 - actionGap) / 2;
+    button('match.flip', translate(view.language, 'game.flip'),
+      { x: x + 12, y: actionY, width: actionWidth, height: actionHeight }, view.controls.flip, 'primary', font + 2);
+    button('match.ring', `${CARD_SYMBOLS.bell} ${view.ringLabel}`,
+      { x: x + 12 + actionWidth + actionGap, y: actionY, width: actionWidth, height: actionHeight },
+      view.controls.ring, 'lime', font + 2);
+  }
+  text({ x: x + 12, y: actionY + actionHeight + 2, width: width - 24, height: 17 },
+    view.ringFeedback || view.bellHint, font - 2, gameColors.subtleOnDark);
   context.restore(); return targets;
 }
 

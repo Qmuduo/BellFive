@@ -27,12 +27,28 @@ function room(patch: Partial<RoomSnapshot> = {}): RoomSnapshot {
 }
 function context() {
   const texts: string[] = [];
-  const fills: { x: number; y: number; width: number; height: number }[] = [];
-  return { texts, fills, fillStyle: '', font: '', textAlign: '', textBaseline: '',
-    fillRect: (x: number, y: number, width: number, height: number) => fills.push({ x, y, width, height }),
+  const painted: { rect: { x: number; y: number; width: number; height: number }; color: string }[] = [];
+  let points: { x: number; y: number }[] = [];
+  let fillStyle = '';
+  return { texts, font: '', textAlign: '', textBaseline: '',
+    painted,
+    fillRect: (x: number, y: number, width: number, height: number) => {
+      const rect = { x, y, width, height }; painted.push({ rect, color: fillStyle });
+    },
     fillText: (text: string) => texts.push(text), clearRect: jest.fn(), setTransform: jest.fn(),
-    save: jest.fn(), restore: jest.fn(), beginPath: jest.fn(), rect: jest.fn(), clip: jest.fn(),
+    save: jest.fn(), restore: jest.fn(), beginPath: () => { points = []; }, rect: jest.fn(), clip: jest.fn(),
+    moveTo: (x: number, y: number) => { points.push({ x, y }); },
+    lineTo: (x: number, y: number) => { points.push({ x, y }); },
+    quadraticCurveTo: (x1: number, y1: number, x: number, y: number) => { points.push({ x: x1, y: y1 }, { x, y }); },
+    closePath: jest.fn(), stroke: jest.fn(), arc: jest.fn(),
+    fill: () => {
+      if (!points.length) return;
+      const xs = points.map(point => point.x); const ys = points.map(point => point.y);
+      const x = Math.min(...xs); const y = Math.min(...ys);
+      painted.push({ rect: { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }, color: fillStyle });
+    },
     translate: jest.fn(), rotate: jest.fn(), strokeRect: jest.fn(),
+    get fillStyle() { return fillStyle; }, set fillStyle(value: string) { fillStyle = value; },
     measureText: (text: string) => ({ width: Array.from(text).length * 7 }),
   };
 }
@@ -134,7 +150,7 @@ test.each([[390, 844], [320, 568], [844, 390]])('painted controls and hit areas 
   const targets = drawMatchScreen(ctx as any, layout, createMatchViewModel(room(), 'A', null, options));
   expect(targets.map(target => target.id)).toEqual(expect.arrayContaining(['match.flip', 'match.ring', 'match.leave', 'match.home']));
   for (const target of targets) {
-    expect(ctx.fills).toContainEqual(target.rect);
+    expect(ctx.painted.map(item => item.rect)).toContainEqual(target.rect);
     expect(target.rect.x).toBeGreaterThanOrEqual(layout.content.x);
     expect(target.rect.y).toBeGreaterThanOrEqual(layout.content.y);
     expect(target.rect.x + target.rect.width).toBeLessThanOrEqual(layout.content.x + layout.content.width);
@@ -143,11 +159,51 @@ test.each([[390, 844], [320, 568], [844, 390]])('painted controls and hit areas 
   }
 });
 
+test.each([[390, 844, 44, 34], [320, 568, 44, 34], [320, 568, 80, 55]])
+('match keeps its colored console actions in the safe viewport at %sx%s with insets %s/%s', (width, height, top, bottom) => {
+  const ctx = context(); const layout = layoutForScreen(width, height, { top, bottom });
+  const targets = drawMatchScreen(ctx as any, layout, createMatchViewModel(room(), 'A', null, options));
+  const flip = targets.find(target => target.id === 'match.flip')!;
+  const ring = targets.find(target => target.id === 'match.ring')!;
+  expect(ctx.painted).toContainEqual({ rect: flip.rect, color: '#9165D2' });
+  expect(ctx.painted).toContainEqual({ rect: ring.rect, color: '#E3FB88' });
+  expect(ctx.painted.some(item => item.color === '#34214F' && item.rect.y <= flip.rect.y && item.rect.y + item.rect.height >= flip.rect.y + flip.rect.height)).toBe(true);
+  for (const target of [flip, ring]) {
+    expect(target.rect.height).toBeGreaterThanOrEqual(44);
+    expect(target.rect.y + target.rect.height).toBeLessThanOrEqual(layout.content.y + layout.content.height);
+  }
+});
+
+test('disabled controls are still painted but never tappable; finished replay owns the console action', () => {
+  const enabledContext = context();
+  const enabled = drawMatchScreen(enabledContext as any, geometry, createMatchViewModel(room(), 'A', null, options));
+  const enabledActionRects = enabled.filter(target => target.id === 'match.flip' || target.id === 'match.ring').map(target => target.rect);
+  const pausedContext = context();
+  const paused = drawMatchScreen(pausedContext as any, geometry, createMatchViewModel(room({ phase: 'connection-paused' }), 'A', null, options));
+  expect(paused.map(target => target.id)).not.toContain('match.flip');
+  expect(paused.map(target => target.id)).not.toContain('match.ring');
+  for (const rect of enabledActionRects) expect(pausedContext.painted).toContainEqual({ rect, color: '#E2D5FF' });
+  const finishedContext = context();
+  const finished = drawMatchScreen(finishedContext as any, geometry,
+    createMatchViewModel(room({ phase: 'finished', winner: 'A' }), 'A', null, { ...options, sessionMode: 'single-player' }));
+  expect(finished.map(target => target.id)).toContain('match.rematch');
+  expect(finished.map(target => target.id)).not.toContain('match.flip');
+  expect(finished.map(target => target.id)).not.toContain('match.ring');
+  const replay = finished.find(target => target.id === 'match.rematch')!;
+  expect(finishedContext.painted).toContainEqual({ rect: replay.rect, color: '#9165D2' });
+  expect(finishedContext.texts.join(' ')).toContain('WINS');
+  const pendingContext = context();
+  const pending = drawMatchScreen(pendingContext as any, geometry,
+    createMatchViewModel(room({ phase: 'finished' }), 'A', null, { ...options, readyPending: true }));
+  expect(pending.map(target => target.id)).not.toContain('match.ready');
+  expect(pendingContext.painted).toContainEqual({ rect: replay.rect, color: '#E2D5FF' });
+});
+
 test('table rendering displays snapshot identities, piles, cards, timer, winner and ring history', () => {
   const ctx = context();
   drawMatchScreen(ctx as any, geometry, createMatchViewModel(room({ phase: 'finished', winner: 'B', lastRingEvent: ringEvent, ringHistory: [ringEvent] }), 'A', null, options));
   const text = ctx.texts.join(' ');
-  for (const expected of ['Guest', 'Peer', '27', '26', '3', '4', '1:05', 'Connected', 'WINS', 'RING LOG', '6 cards', '🍌', '🔔']) expect(text).toContain(expected);
+  for (const expected of ['Guest', 'Peer', '27/3', '26/4', '1:05', 'Connected', 'WINS', 'RING LOG', '6 cards', '🍌', '🔔']) expect(text).toContain(expected);
   const paused = drawMatchScreen(context() as any, geometry, createMatchViewModel(room({ phase: 'connection-paused' }), 'A', null, options));
   expect(paused.map(target => target.id)).not.toContain('match.flip');
   expect(paused.map(target => target.id)).not.toContain('match.ring');
@@ -269,7 +325,7 @@ function nativeFixture() {
     createCanvas: () => ({ getContext: () => ctx, width: 0, height: 0 }),
     getSystemInfoSync: () => ({ windowWidth: 390, windowHeight: 844, pixelRatio: 2, safeArea: { top: 44, bottom: 810, left: 0, right: 390 } }),
   };
-  for (const name of ['TouchStart', 'TouchEnd', 'TouchCancel', 'WindowResize', 'Hide', 'Show', 'KeyDown', 'KeyboardInput', 'KeyboardConfirm', 'KeyboardComplete']) {
+  for (const name of ['TouchStart', 'TouchMove', 'TouchEnd', 'TouchCancel', 'WindowResize', 'Hide', 'Show', 'KeyDown', 'KeyboardInput', 'KeyboardConfirm', 'KeyboardComplete']) {
     nativeApi[`on${name}`] = (callback: (...args: any[]) => void) => { events[name] = callback; }; nativeApi[`off${name}`] = jest.fn();
   }
   const scheduler = { requestFrame: (callback: (time: number) => void) => { frames.set(++sequence, callback); return sequence; }, cancelFrame: (id: number) => { frames.delete(id); } };
