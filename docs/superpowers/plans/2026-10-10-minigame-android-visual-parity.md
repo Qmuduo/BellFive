@@ -57,7 +57,7 @@ TypeScript、微信小游戏 Canvas 2D、Jest、项目现有的 Mini Game API �
 2. 实现明确导出的纯绘制函数：
    - `drawRoundedPanel(context, rect, options: { fill: string; border?: string; radius: number; borderWidth?: number })`：用 `moveTo`/`lineTo`/`quadraticCurveTo` 构造圆角路径。
    - `drawDivider(context, rect, color)`：绘制一条像素对齐的分隔线。
-   - `drawCanvasButton(context, rect, label, options: { variant: 'primary' | 'secondary' | 'lime' | 'text'; enabled: boolean; fontSize: number; radius: number })`：绘制禁用/启用态和居中标签，返回原 `rect` 供页面创建同范围 tap target。
+   - `drawCanvasButton(context, rect, label, options: { variant: 'primary' | 'secondary' | 'lime' | 'text'; enabled: boolean; fontSize: number; radius: number })`：绘制禁用/启用态和居中标签，返回原 `rect` 供页面创建同范围 tap target；`text` 变体也绘制低对比度白色轻底板、不绘制强调描边，使完整命中区域可见且仍弱于主/次按钮。
    - `drawInputField(context, rect, label, value, options: { focused: boolean; enabled: boolean; fontSize: number; radius: number })`：标签、值、聚焦/禁用态分区绘制，输入值由页面控制。
    - `drawStatusBadge(context, rect, label, tone: 'neutral' | 'success' | 'warning' | 'error')`：按连接、准备和错误状态选择模型内颜色。
    - `drawAvatarBadge(context, rect, avatar: string, options: { background: string; foreground: string; fontSize: number; radius: number })`：使用现有头像 emoji 和圆形/圆角背景，不加载外部资源。
@@ -89,7 +89,7 @@ TypeScript、微信小游戏 Canvas 2D、Jest、项目现有的 Mini Game API �
 **Files:** `minigame/src/screens/waiting.ts`, `minigame/src/screens/__tests__/waiting.test.ts`
 
 1. 扩展等待房间渲染测试，断言醒目的房间码卡、两个玩家状态卡、申请同意/拒绝独立按钮、连接暂停状态、准备按钮状态，以及 targets 与实际绘制矩形一致；先运行 `npm test -- --runInBand minigame/src/screens/__tests__/waiting.test.ts` 确认失败。
-2. 用紫灰房间码卡、玩家头像/连接/准备状态卡、申请人请求卡与分离的同意/拒绝按钮替换行菜单。准备按钮按未准备紫色、已准备青柠色区分；分享为次级按钮，离开为弱强调文字操作。
+2. 用紫灰房间码卡、玩家头像/连接/准备状态卡、申请人请求卡与分离的同意/拒绝按钮替换行菜单。准备按钮按未准备紫色、已准备青柠色区分；分享为次级按钮，离开使用带低对比度轻底板的弱强调文字按钮。
 3. 保留应用状态分页和所有 action ID（`waiting.share`、`waiting.approve.*`、`waiting.reject.*`、`waiting.applications.previous|next`、`waiting.cancelApplication`、`waiting.ready`、`waiting.leave`、`nav.home`）；连接异常、离开中、无房间、未连接和 auto-start 状态都继续可见。
 4. 重新运行 waiting 测试与 `authFlow.test.ts`，确保联网动作没有被视觉重构改变；提交 `feat(minigame): redesign waiting room canvas screen`。
 
