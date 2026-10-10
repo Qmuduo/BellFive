@@ -28,10 +28,11 @@ function room(patch: Partial<RoomSnapshot> = {}): RoomSnapshot {
 function context() {
   const texts: string[] = [];
   const painted: { rect: { x: number; y: number; width: number; height: number }; color: string }[] = [];
+  const cardRects: { width: number; height: number }[] = [];
   let points: { x: number; y: number }[] = [];
   let fillStyle = '';
   return { texts, font: '', textAlign: '', textBaseline: '',
-    painted,
+    painted, cardRects,
     fillRect: (x: number, y: number, width: number, height: number) => {
       const rect = { x, y, width, height }; painted.push({ rect, color: fillStyle });
     },
@@ -47,7 +48,7 @@ function context() {
       const x = Math.min(...xs); const y = Math.min(...ys);
       painted.push({ rect: { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }, color: fillStyle });
     },
-    translate: jest.fn(), rotate: jest.fn(), strokeRect: jest.fn(),
+    translate: jest.fn(), rotate: jest.fn(), strokeRect: (_x: number, _y: number, width: number, height: number) => cardRects.push({ width, height }),
     get fillStyle() { return fillStyle; }, set fillStyle(value: string) { fillStyle = value; },
     measureText: (text: string) => ({ width: Array.from(text).length * 7 }),
   };
@@ -178,6 +179,39 @@ test('match auxiliary controls avoid the native capsule without shrinking short-
     expect(rect.height).toBeGreaterThanOrEqual(44);
     expect(rect.height).toBe(originalRect.height);
     expect(rect.y + rect.height).toBeLessThanOrEqual(layout.content.y + layout.content.height);
+  }
+});
+
+test('landscape auxiliary controls use the header area before the native capsule', () => {
+  const capsule = { x: 748, y: 20, width: 96, height: 40 };
+  const layout = layoutForScreen(844, 390, { top: 20, bottom: 20, left: 0, right: 0 }, capsule);
+  const ctx = context();
+  const targets = drawMatchScreen(ctx as any, layout, createMatchViewModel(room(), 'A', null, options));
+  const intersects = (a: any, b: any) => a.x < b.x + b.width && a.x + a.width > b.x
+    && a.y < b.y + b.height && a.y + a.height > b.y;
+
+  for (const id of ['match.leave', 'match.home']) {
+    const rect = targets.find(target => target.id === id)!.rect;
+    expect(intersects(rect, capsule)).toBe(false);
+    expect(rect.x + rect.width).toBeLessThanOrEqual(capsule.x - 4);
+  }
+});
+
+test('landscape match preserves readable cards and tappable play controls when capsule bounds are unavailable', () => {
+  const capsule = { x: 748, y: 20, width: 96, height: 40 };
+  const layout = layoutForScreen(844, 390, { top: 20, bottom: 20, left: 0, right: 0 }, capsule);
+  const ctx = context();
+  const targets = drawMatchScreen(ctx as any, layout, createMatchViewModel(room(), 'A', null, options));
+  expect(ctx.cardRects).toHaveLength(2);
+  for (const rect of ctx.cardRects) {
+    expect(rect.width).toBeGreaterThanOrEqual(24);
+    expect(rect.height).toBeGreaterThanOrEqual(34);
+  }
+  for (const id of ['match.flip', 'match.ring']) {
+    const target = targets.find(item => item.id === id)!;
+    expect(target.rect.width).toBeGreaterThanOrEqual(44);
+    expect(target.rect.height).toBeGreaterThanOrEqual(44);
+    expect(hitTest({ x: target.rect.x + target.rect.width / 2, y: target.rect.y + target.rect.height / 2 }, targets)).toBe(id);
   }
 });
 
