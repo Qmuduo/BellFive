@@ -159,6 +159,28 @@ test.each([[390, 844], [320, 568], [844, 390]])('painted controls and hit areas 
   }
 });
 
+test('match auxiliary controls avoid the native capsule without shrinking short-screen play actions', () => {
+  const safeArea = { top: 20, bottom: 20 };
+  const capsule = { x: 230, y: 20, width: 84, height: 32 };
+  const layout = layoutForScreen(320, 568, safeArea, capsule);
+  const baseline = layoutForScreen(320, 568, safeArea);
+  const ctx = context();
+  const targets = drawMatchScreen(ctx as any, layout, createMatchViewModel(room(), 'A', null, options));
+  const original = drawMatchScreen(context() as any, baseline, createMatchViewModel(room(), 'A', null, options));
+  const intersects = (a: any, b: any) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  for (const id of ['match.leave', 'match.home']) {
+    const rect = targets.find(target => target.id === id)!.rect;
+    expect(intersects(rect, capsule)).toBe(false);
+  }
+  for (const id of ['match.flip', 'match.ring']) {
+    const rect = targets.find(target => target.id === id)!.rect;
+    const originalRect = original.find(target => target.id === id)!.rect;
+    expect(rect.height).toBeGreaterThanOrEqual(44);
+    expect(rect.height).toBe(originalRect.height);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(layout.content.y + layout.content.height);
+  }
+});
+
 test.each([[390, 844, 44, 34], [320, 568, 44, 34], [320, 568, 80, 55]])
 ('match keeps its colored console actions in the safe viewport at %sx%s with insets %s/%s', (width, height, top, bottom) => {
   const ctx = context(); const layout = layoutForScreen(width, height, { top, bottom });

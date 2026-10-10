@@ -4,6 +4,7 @@ export interface SafeAreaInsets { top: number; bottom: number; left?: number; ri
 export interface TapTarget { id: string; rect: Rect; enabled?: boolean; }
 export interface ScreenLayout {
   width: number; height: number; content: Rect; scrollY: number;
+  menuButton?: Rect;
   primaryButton: Rect; secondaryButton: Rect; cards: readonly Rect[]; targets: readonly TapTarget[];
 }
 
@@ -34,7 +35,7 @@ export function logicalPoint(point: Point, pixelRatio: number, space: 'logical' 
   return space === 'device' ? { x: point.x / pixelRatio, y: point.y / pixelRatio } : { x: point.x, y: point.y };
 }
 
-export function layoutForScreen(width: number, height: number, safeArea: SafeAreaInsets): ScreenLayout {
+export function layoutForScreen(width: number, height: number, safeArea: SafeAreaInsets, menuButton?: Rect): ScreenLayout {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) throw new Error('Invalid screen dimensions.');
   const inset = (value: number | undefined, maximum: number) => Math.min(maximum, Math.max(0, Number.isFinite(value) ? value! : 0));
   const top = inset(safeArea.top, height); const bottom = inset(safeArea.bottom, height - top);
@@ -49,7 +50,7 @@ export function layoutForScreen(width: number, height: number, safeArea: SafeAre
   const cardHeight = Math.min(cardWidth * 1.4, content.height / 3);
   const cards = [0, 1].map(index => ({ x: left + (content.width - cardWidth * 2 - gap) / 2 + index * (cardWidth + gap),
     y: top + margin, width: cardWidth, height: cardHeight }));
-  return { width, height, content, scrollY: 0, primaryButton, secondaryButton, cards,
+  return { width, height, content, scrollY: 0, ...(menuButton ? { menuButton } : {}), primaryButton, secondaryButton, cards,
     targets: [{ id: 'secondary', rect: secondaryButton }, { id: 'primary', rect: primaryButton }],
   };
 }

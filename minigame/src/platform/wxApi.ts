@@ -20,14 +20,14 @@ export type MiniGameWxApi = Pick<typeof wx,
   | 'showKeyboard' | 'hideKeyboard' | 'onKeyboardInput' | 'offKeyboardInput'
   | 'onKeyboardConfirm' | 'offKeyboardConfirm' | 'onKeyboardComplete' | 'offKeyboardComplete'
   | 'createInnerAudioContext' | 'vibrateShort' | 'shareAppMessage'
-  | 'createCanvas' | 'getSystemInfoSync' | 'onTouchStart' | 'offTouchStart' | 'onTouchMove' | 'offTouchMove'
+  | 'createCanvas' | 'getSystemInfoSync' | 'getMenuButtonBoundingClientRect' | 'onTouchStart' | 'offTouchStart' | 'onTouchMove' | 'offTouchMove'
   | 'onTouchEnd' | 'offTouchEnd' | 'onTouchCancel' | 'offTouchCancel'
   | 'onWindowResize' | 'offWindowResize' | 'onHide' | 'offHide' | 'onShow' | 'offShow'
   | 'onKeyDown' | 'offKeyDown'>;
 
 // Mini Game typings expose the native 2D rendering context through getContext.
 export type CanvasContext2D = ReturnType<WechatMinigame.Canvas['getContext']>;
-export interface Viewport { width: number; height: number; pixelRatio: number; safeArea: SafeAreaInsets; }
+export interface Viewport { width: number; height: number; pixelRatio: number; safeArea: SafeAreaInsets; menuButton?: { x: number; y: number; width: number; height: number }; }
 export interface TouchPoint { identifier: number; x: number; y: number; }
 export interface TouchInput { points: readonly TouchPoint[]; space: 'logical' | 'device'; }
 export type RuntimeEvent = 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel' | 'resize' | 'back' | 'hide' | 'show';
@@ -46,7 +46,7 @@ type RuntimeWxApi = Pick<MiniGameWxApi,
   | 'createCanvas' | 'getSystemInfoSync' | 'onTouchStart' | 'offTouchStart' | 'onTouchMove' | 'offTouchMove'
   | 'onTouchEnd' | 'offTouchEnd' | 'onTouchCancel' | 'offTouchCancel'
   | 'onWindowResize' | 'offWindowResize' | 'onHide' | 'offHide' | 'onShow' | 'offShow'
-  | 'onKeyDown' | 'offKeyDown'>;
+  | 'onKeyDown' | 'offKeyDown'> & Partial<Pick<MiniGameWxApi, 'getMenuButtonBoundingClientRect'>>;
 
 export function createWxRuntimePlatform(api: RuntimeWxApi, scheduler: FrameScheduler = {
   requestFrame: callback => requestAnimationFrame(callback),
@@ -59,9 +59,18 @@ export function createWxRuntimePlatform(api: RuntimeWxApi, scheduler: FrameSched
     getViewport() {
       const info = api.getSystemInfoSync();
       const area = info.safeArea;
+      let menuButton: Viewport['menuButton'];
+      try {
+        const rect = api.getMenuButtonBoundingClientRect?.();
+        if (rect && Number.isFinite(rect.left) && Number.isFinite(rect.top)
+          && Number.isFinite(rect.width) && Number.isFinite(rect.height) && rect.width > 0 && rect.height > 0) {
+          menuButton = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+        }
+      } catch { /* Older base libraries may not expose the native menu-button bounds. */ }
       return { width: info.windowWidth, height: info.windowHeight, pixelRatio: info.pixelRatio,
         safeArea: { top: area?.top ?? 0, bottom: area ? Math.max(0, info.windowHeight - area.bottom) : 0,
           left: area?.left ?? 0, right: area ? Math.max(0, info.windowWidth - area.right) : 0 },
+        ...(menuButton ? { menuButton } : {}),
       };
     },
     subscribe(event, listener) {

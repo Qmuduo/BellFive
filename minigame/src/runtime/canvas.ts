@@ -88,7 +88,7 @@ export class CanvasRuntime {
     if (this.destroyed) return;
     this.invalidateTargets();
     this.viewport = this.options.platform.getViewport();
-    this.geometry = layoutForScreen(this.viewport.width, this.viewport.height, this.viewport.safeArea);
+    this.geometry = layoutForScreen(this.viewport.width, this.viewport.height, this.viewport.safeArea, this.viewport.menuButton);
     const ratio = this.viewport.pixelRatio;
     const { canvas, context } = this.options.platform;
     canvas.width = Math.round(this.viewport.width * ratio); canvas.height = Math.round(this.viewport.height * ratio);

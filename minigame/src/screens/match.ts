@@ -94,11 +94,11 @@ export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, 
   const x = content.x + margin; const width = Math.max(0, content.width - margin * 2);
   const top = content.y + margin; const bottom = content.y + content.height - margin;
   const compact = content.height < 520;
-  const headerHeight = 30; const turnHeight = compact ? 40 : 46;
+  const titleHeight = 30; let headerHeight = titleHeight; const turnHeight = compact ? 40 : 46;
   const consoleHeight = compact ? Math.max(112, Math.min(145, content.height * 0.32)) : 156;
   const consoleY = bottom - consoleHeight;
-  const turnY = top + headerHeight + 6;
-  const boardY = turnY + turnHeight + 8;
+  let turnY = top + headerHeight + 6;
+  let boardY = turnY + turnHeight + 8;
   const detailHeight = compact ? 38 : 64;
   const boardHeight = Math.max(72, consoleY - 8 - detailHeight - boardY);
   const boardBottom = Math.min(consoleY - 8, boardY + boardHeight);
@@ -114,12 +114,24 @@ export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, 
   context.save(); context.beginPath(); context.rect(content.x, content.y, content.width, content.height); context.clip();
   context.fillStyle = gameColors.canvas; context.fillRect(content.x, content.y, content.width, content.height);
   const auxiliaryWidth = Math.min(58, width * 0.17);
+  let auxiliaryY = top;
+  const menu = layout.menuButton;
+  const overlapsMenu = (rect: Rect) => !!menu && rect.x < menu.x + menu.width && rect.x + rect.width > menu.x
+    && rect.y < menu.y + menu.height && rect.y + rect.height > menu.y;
+  const leaveRect = { x: x + width - auxiliaryWidth * 2 - 4, y: auxiliaryY, width: auxiliaryWidth, height: headerHeight };
+  const homeRect = { x: x + width - auxiliaryWidth, y: auxiliaryY, width: auxiliaryWidth, height: headerHeight };
+  if (overlapsMenu(leaveRect) || overlapsMenu(homeRect)) {
+    auxiliaryY = Math.max(top, menu!.y + menu!.height + 4);
+    headerHeight = auxiliaryY - top + 30;
+    turnY = top + headerHeight + 6;
+    boardY = turnY + turnHeight + 8;
+  }
   button('match.leave', translate(view.language, 'game.leaveRoom'),
-    { x: x + width - auxiliaryWidth * 2 - 4, y: top, width: auxiliaryWidth, height: headerHeight }, view.controls.leave, 'text', 9);
+    { ...leaveRect, y: auxiliaryY, height: 30 }, view.controls.leave, 'text', 9);
   button('match.home', view.language === 'en' ? 'Home' : '首页',
-    { x: x + width - auxiliaryWidth, y: top, width: auxiliaryWidth, height: headerHeight }, view.controls.returnHome, 'text', 9);
-  text({ x, y: top, width: width - auxiliaryWidth * 2 - 70, height: headerHeight }, view.title, font + 2, gameColors.plum, 1, true);
-  text({ x: x + width - auxiliaryWidth * 2 - 68, y: top, width: 60, height: headerHeight }, view.timerLabel, font + 1, gameColors.purple, 1, true);
+    { ...homeRect, y: auxiliaryY, height: 30 }, view.controls.returnHome, 'text', 9);
+  text({ x, y: top, width: width - auxiliaryWidth * 2 - 70, height: titleHeight }, view.title, font + 2, gameColors.plum, 1, true);
+  text({ x: x + width - auxiliaryWidth * 2 - 68, y: top, width: 60, height: titleHeight }, view.timerLabel, font + 1, gameColors.purple, 1, true);
 
   drawRoundedPanel(context, { x, y: turnY, width, height: turnHeight },
     { fill: gameColors.lavenderSurface, radius: 14 });

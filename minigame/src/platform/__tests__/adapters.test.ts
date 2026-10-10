@@ -237,13 +237,15 @@ test('runtime wx adapter normalizes safe-area insets, native logical touches and
   const api: any = {
     createCanvas: () => ({ width: 0, height: 0, getContext: () => ({}) }),
     getSystemInfoSync: () => ({ windowWidth: 390, windowHeight: 844, pixelRatio: 3, safeArea: { top: 44, bottom: 810, left: 0, right: 390 } }),
+    getMenuButtonBoundingClientRect: () => ({ left: 294, top: 8, right: 382, bottom: 40, width: 88, height: 32 }),
   };
   for (const name of ['TouchStart', 'TouchMove', 'TouchEnd', 'TouchCancel', 'WindowResize', 'Hide', 'Show', 'KeyDown']) {
     api[`on${name}`] = (fn: any) => { callbacks[name] = fn; };
     api[`off${name}`] = (fn: any) => { if (callbacks[name] === fn) removed.push(name); };
   }
   const platform = createWxRuntimePlatform(api, { requestFrame: () => 1, cancelFrame: () => {} });
-  expect(platform.getViewport()).toEqual({ width: 390, height: 844, pixelRatio: 3, safeArea: { top: 44, bottom: 34, left: 0, right: 0 } });
+  expect(platform.getViewport()).toEqual({ width: 390, height: 844, pixelRatio: 3,
+    safeArea: { top: 44, bottom: 34, left: 0, right: 0 }, menuButton: { x: 294, y: 8, width: 88, height: 32 } });
   const touches: unknown[] = []; let back = 0;
   const stopTouch = platform.subscribe('touchend', event => touches.push(event));
   const stopMove = platform.subscribe('touchmove', event => touches.push(event));

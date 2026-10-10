@@ -29,6 +29,29 @@ test('home paints Android color hierarchy and keeps all primary actions', () => 
   expect(targets.every(item => item.rect.y >= 20 && item.rect.y + item.rect.height <= 548)).toBe(true);
 });
 
+test('home account entry avoids the native capsule reserved region', () => {
+  const layout = layoutForScreen(390, 844, { top: 0, bottom: 0 }, { x: 294, y: 8, width: 88, height: 32 });
+  const targets = renderHome(context() as any, layout, snapshot());
+  const account = targets.find(item => item.id === 'home.account')!;
+  const language = targets.find(item => item.id === 'settings.language')!;
+  expect(account.rect.x + account.rect.width).toBeLessThanOrEqual(294);
+  expect(account.rect.x).toBeGreaterThanOrEqual(language.rect.x + language.rect.width);
+});
+
+test('short home keeps the displaced account entry and bottom join action reachable by scrolling', () => {
+  const data = snapshot();
+  const layout = layoutForScreen(320, 568, { top: 20, bottom: 20 }, { x: 230, y: 20, width: 84, height: 32 });
+  const targetsAtTop = renderHome(context() as any, layout, data);
+  const language = targetsAtTop.find(item => item.id === 'settings.language')!;
+  const account = targetsAtTop.find(item => item.id === 'home.account')!;
+  expect(account.rect.x).toBe(language.rect.x);
+  expect(account.rect.y).toBeGreaterThanOrEqual(language.rect.y + language.rect.height);
+  expect(homeContentHeight(layout, data)).toBeGreaterThan(layout.content.height);
+  layout.scrollY = homeContentHeight(layout, data) - layout.content.height;
+  const join = renderHome(context() as any, layout, data).find(item => item.id === 'home.join')!;
+  expect(join.rect.y + join.rect.height).toBeLessThanOrEqual(layout.content.y + layout.content.height);
+});
+
 test('home room preview has its own join target and bottom code controls remain reachable after scrolling', () => {
   const data = snapshot({ game: { openRooms: [{ roomCode: 'ABCD23', hostProfile: { nickname: 'Mira', avatarId: 'bell' } }] } });
   const layout = layoutForScreen(320, 568, { top: 20, bottom: 20 });

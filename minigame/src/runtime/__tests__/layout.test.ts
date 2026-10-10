@@ -59,7 +59,8 @@ function runtimeFixture(scrollContentHeight?: number) {
   const canvas = { width: 0, height: 0 };
   const context = { setTransform: (...values: number[]) => transforms.push(values), clearRect: () => {} };
   let id = 0;
-  let viewport = { width: 390, height: 844, pixelRatio: 3, safeArea: { top: 44, bottom: 34 } };
+  let viewport = { width: 390, height: 844, pixelRatio: 3, safeArea: { top: 44, bottom: 34 },
+    menuButton: { x: 292, y: 8, width: 88, height: 32 } };
   const platform = {
     canvas, context, getViewport: () => viewport,
     requestFrame: (callback: (time: number) => void) => { frames.set(++id, callback); return id; },
@@ -102,6 +103,7 @@ function runtimeFixture(scrollContentHeight?: number) {
 
 test('runtime registers once, renders at DPR, and coalesces store redraws into animation frames', () => {
   const f = runtimeFixture();
+  expect(f.runtime.layout.menuButton).toEqual({ x: 292, y: 8, width: 88, height: 32 });
   expect(f.events.size).toBe(8);
   expect(f.canvas).toEqual({ width: 1170, height: 2532 });
   expect(f.transforms).toEqual([[3, 0, 0, 3, 0, 0]]);
