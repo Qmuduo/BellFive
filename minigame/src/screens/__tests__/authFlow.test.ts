@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { createMiniGameStores } from '../../stores/gameStore';
 import { createMiniGameApp } from '../../runtime/navigation';
-import { dispatchScreenAction, getScreenSnapshot, renderHome } from '../home';
+import { dispatchScreenAction, getScreenSnapshot, homeContentHeight, renderHome } from '../home';
 import { renderAccount } from '../account';
 import { renderLobby } from '../lobby';
 import { layoutForScreen } from '../../runtime/layout';
@@ -265,7 +265,14 @@ test('credentials, WeChat password recovery, language, and logout use shared acc
 const geometry = layoutForScreen(320, 568, { top: 20, bottom: 20 });
 function canvasContext() {
   const texts: string[] = []; return { texts, fillRect: jest.fn(), fillText: (text: string) => texts.push(text),
-    save: jest.fn(), restore: jest.fn(), beginPath: jest.fn(), rect: jest.fn(), clip: jest.fn(), measureText: (text: string) => ({ width: text.length * 8 }) };
+    save: jest.fn(), restore: jest.fn(), beginPath: jest.fn(), rect: jest.fn(), clip: jest.fn(),
+    moveTo: jest.fn(), lineTo: jest.fn(), quadraticCurveTo: jest.fn(), closePath: jest.fn(), arc: jest.fn(), fill: jest.fn(), stroke: jest.fn(),
+    measureText: (text: string) => ({ width: text.length * 8 }) };
+}
+function homeBottomLayout(snapshot: ReturnType<typeof getScreenSnapshot>) {
+  const layout = layoutForScreen(320, 568, { top: 20, bottom: 20 });
+  layout.scrollY = homeContentHeight(layout, snapshot) - layout.content.height;
+  return layout;
 }
 test('renderers return enabled targets within the safe content and preserve solo after an account error', async () => {
   const f = fixture(); await f.stores.ready;
@@ -314,7 +321,7 @@ test('native entry renders home, dispatches one solo tap, and clears keyboard bu
     getSystemInfoSync: () => ({ windowWidth: 320, windowHeight: 568, pixelRatio: 2 }),
     showKeyboard: jest.fn(), hideKeyboard: jest.fn(),
   };
-  for (const [method, event] of [['TouchStart', 'start'], ['TouchEnd', 'end'], ['TouchCancel', 'cancel'], ['WindowResize', 'resize'],
+  for (const [method, event] of [['TouchStart', 'start'], ['TouchMove', 'move'], ['TouchEnd', 'end'], ['TouchCancel', 'cancel'], ['WindowResize', 'resize'],
     ['Hide', 'hide'], ['Show', 'show'], ['KeyDown', 'key'], ['KeyboardInput', 'input'], ['KeyboardConfirm', 'confirm'], ['KeyboardComplete', 'complete']]) {
     nativeApi[`on${method}`] = (fn: any) => { events[event] = fn; };
     nativeApi[`off${method}`] = jest.fn();
@@ -331,6 +338,54 @@ test('native entry renders home, dispatches one solo tap, and clears keyboard bu
   boot.destroy(); expect(frames.size).toBe(0); expect(nativeApi.offKeyboardInput).toHaveBeenCalledTimes(1); f.dispose();
 });
 
+test('home subscribes after verified session hydration, retains lobby list across home and lobby, and releases it on exit', async () => {
+  const f = fixture({ user, sessionToken: session.token, sessionExpiresAt: session.expiresAt });
+  const context = { ...canvasContext(), clearRect: jest.fn(), setTransform: jest.fn() };
+  const nativeApi: any = { ...f.api,
+    createCanvas: () => ({ getContext: () => context, width: 0, height: 0 }),
+    getSystemInfoSync: () => ({ windowWidth: 320, windowHeight: 568, pixelRatio: 2 }),
+    showKeyboard: jest.fn(), hideKeyboard: jest.fn(),
+  };
+  for (const method of ['TouchStart', 'TouchMove', 'TouchEnd', 'TouchCancel', 'WindowResize', 'Hide', 'Show', 'KeyDown',
+    'KeyboardInput', 'KeyboardConfirm', 'KeyboardComplete']) {
+    nativeApi[`on${method}`] = jest.fn(); nativeApi[`off${method}`] = jest.fn();
+  }
+  const boot = startMiniGame(nativeApi, { scheduler: { requestFrame: () => 1, cancelFrame: jest.fn() } });
+  expect(f.api.connectSocket).not.toHaveBeenCalled();
+  await flush();
+  f.respond(user); f.respond(user);
+  await f.stores.ready; await boot.stores.ready; await flush();
+  expect(f.api.login).not.toHaveBeenCalled();
+  expect(f.api.connectSocket).toHaveBeenCalledTimes(1);
+  f.sockets[0].listeners.open();
+  f.sockets[0].listeners.message({ data: JSON.stringify({ type: 'session.authenticated', userId: user.userId }) });
+  expect(f.sockets[0].sent.map((item: any) => item.type)).toContain('room.lobby.subscribe');
+  boot.app.navigation.navigate('lobby'); boot.app.navigation.navigate('home');
+  expect(f.sockets[0].sent.filter((item: any) => item.type === 'room.lobby.unsubscribe')).toHaveLength(0);
+  boot.app.navigation.navigate('account');
+  expect(f.sockets[0].sent.filter((item: any) => item.type === 'room.lobby.unsubscribe')).toHaveLength(1);
+  boot.app.navigation.navigate('home');
+  expect(f.sockets[0].sent.filter((item: any) => item.type === 'room.lobby.subscribe')).toHaveLength(2);
+  await dispatchScreenAction('home.solo.easy', boot.app, boot.stores);
+  expect(f.sockets[0].sent.filter((item: any) => item.type === 'room.lobby.unsubscribe')).toHaveLength(2);
+  boot.destroy(); f.dispose();
+});
+
+test('guest home never opens a socket or silent WeChat login during hydration', async () => {
+  const f = fixture();
+  const context = { ...canvasContext(), clearRect: jest.fn(), setTransform: jest.fn() };
+  const nativeApi: any = { ...f.api, createCanvas: () => ({ getContext: () => context, width: 0, height: 0 }),
+    getSystemInfoSync: () => ({ windowWidth: 320, windowHeight: 568, pixelRatio: 2 }), showKeyboard: jest.fn(), hideKeyboard: jest.fn() };
+  for (const method of ['TouchStart', 'TouchMove', 'TouchEnd', 'TouchCancel', 'WindowResize', 'Hide', 'Show', 'KeyDown',
+    'KeyboardInput', 'KeyboardConfirm', 'KeyboardComplete']) {
+    nativeApi[`on${method}`] = jest.fn(); nativeApi[`off${method}`] = jest.fn();
+  }
+  const boot = startMiniGame(nativeApi, { scheduler: { requestFrame: () => 1, cancelFrame: jest.fn() } });
+  await boot.stores.ready; await flush();
+  expect(f.api.login).not.toHaveBeenCalled(); expect(f.api.connectSocket).not.toHaveBeenCalled();
+  boot.destroy(); f.dispose();
+});
+
 test('pending authenticated create disables online controls and direct duplicate taps until a matching terminal error enables retry', async () => {
   const f = fixture(); await f.stores.ready;
   f.stores.settings.getState().setLanguage('en');
@@ -344,7 +399,7 @@ test('pending authenticated create disables online controls and direct duplicate
   expect(createRoom).toHaveBeenCalledTimes(1);
   expect(created.requestId).toBe(createRoom.mock.results[0].value);
   const context = canvasContext();
-  const targets = renderHome(context as any, geometry, getScreenSnapshot(f.app, f.stores));
+  const targets = renderHome(context as any, homeBottomLayout(getScreenSnapshot(f.app, f.stores)), getScreenSnapshot(f.app, f.stores));
   expect(targets.some(item => ['home.create', 'home.lobby', 'home.join', 'auth.retry'].includes(item.id))).toBe(false);
   expect(targets.some(item => item.id === 'home.cancelCreate')).toBe(true);
   expect(f.app.getState().onlineBusy).toBe(true);
@@ -353,8 +408,8 @@ test('pending authenticated create disables online controls and direct duplicate
   await dispatchScreenAction('home.create', f.app, f.stores);
   expect(f.sockets[0].sent.filter((frame: any) => frame.type === 'room.create')).toHaveLength(1);
   f.message({ type: 'error', code: 'ROOM_FULL', message: 'Creation failed', requestId: created.requestId });
-  const retryTargets = renderHome(canvasContext() as any, geometry, getScreenSnapshot(f.app, f.stores));
-  expect(retryTargets.some(item => item.id === 'home.create')).toBe(true);
+  const retryTargets = renderHome(canvasContext() as any, homeBottomLayout(getScreenSnapshot(f.app, f.stores)), getScreenSnapshot(f.app, f.stores));
+  expect(renderHome(canvasContext() as any, geometry, getScreenSnapshot(f.app, f.stores)).some(item => item.id === 'home.create')).toBe(true);
   expect(retryTargets.some(item => item.id === 'auth.retry')).toBe(true);
   expect(f.app.getState().onlineBusy).toBe(false);
   await dispatchScreenAction('auth.retry', f.app, f.stores);
@@ -414,9 +469,9 @@ test('an uncorrelated terminal transport error releases create for retry', async
   expect(getScreenSnapshot(f.app, f.stores).pendingCreate).toBe(false);
   expect(f.app.getState().pendingIntent).toEqual({ type: 'create-room' });
   expect(f.app.getState().onlineBusy).toBe(false);
-  const targets = renderHome(canvasContext() as any, geometry, getScreenSnapshot(f.app, f.stores));
+  const targets = renderHome(canvasContext() as any, homeBottomLayout(getScreenSnapshot(f.app, f.stores)), getScreenSnapshot(f.app, f.stores));
   expect(targets.some(item => item.id === 'auth.retry')).toBe(true);
-  expect(targets.some(item => item.id === 'home.create')).toBe(true);
+  expect(renderHome(canvasContext() as any, geometry, getScreenSnapshot(f.app, f.stores)).some(item => item.id === 'home.create')).toBe(true);
 
   await dispatchScreenAction('auth.retry', f.app, f.stores);
   expect(f.api.connectSocket).toHaveBeenCalledTimes(2);
@@ -451,7 +506,7 @@ test('an uncorrelated socket error closes the pending client and exposes retry',
   expect(f.app.getState().pendingIntent).toEqual({ type: 'create-room' });
   expect(f.app.getState().onlineBusy).toBe(false);
   expect(f.app.getState().errorCode).toBe('NETWORK_ERROR');
-  const targets = renderHome(canvasContext() as any, geometry, getScreenSnapshot(f.app, f.stores));
+  const targets = renderHome(canvasContext() as any, homeBottomLayout(getScreenSnapshot(f.app, f.stores)), getScreenSnapshot(f.app, f.stores));
   expect(targets.some(item => item.id === 'auth.retry')).toBe(true);
 
   await dispatchScreenAction('auth.retry', f.app, f.stores);

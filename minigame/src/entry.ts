@@ -2,9 +2,10 @@ import { createWxKeyboard } from './platform/keyboard';
 import { connectMatchFeedback, createWxFeedback } from './platform/feedback';
 import { createWxRuntimePlatform, type FrameScheduler, type MiniGameWxApi } from './platform/wxApi';
 import { CanvasRuntime, type CanvasScreen } from './runtime/canvas';
+import type { ScreenLayout } from './runtime/layout';
 import { connectRoomNavigation, createMiniGameApp, type MiniGameApp } from './runtime/navigation';
 import { createMiniGameStores, type MiniGameStores, type MiniGameStoreOptions } from './stores/gameStore';
-import { dispatchScreenAction, getScreenSnapshot, renderHome } from './screens/home';
+import { dispatchScreenAction, getScreenSnapshot, homeContentHeight, renderHome } from './screens/home';
 import { renderAccount } from './screens/account';
 import { renderLobby } from './screens/lobby';
 import { dispatchWaitingAction, renderWaiting } from './screens/waiting';
@@ -46,16 +47,40 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
     onHide() { app.clearPasswords(); app.clearIntent(); },
   };
   const stopRoomNavigation = connectRoomNavigation(app, stores.game);
+  let lobbySubscribed = false;
+  let lifecycleActive = true;
+  const syncLobby = () => {
+    if (!lifecycleActive) return;
+    const auth = stores.auth.getState();
+    const visible = app.navigation.current === 'home' || app.navigation.current === 'lobby';
+    const valid = auth.hydrated && auth.profileVerified && Boolean(auth.user && auth.sessionToken)
+      && (auth.sessionExpiresAt ?? 0) > Date.now();
+    const wanted = visible && valid && stores.game.getState().sessionMode === 'none'
+      && !app.getState().pendingIntent;
+    if (wanted && !lobbySubscribed) {
+      lobbySubscribed = true;
+      stores.game.getState().openLobby();
+    } else if (!wanted && lobbySubscribed) {
+      lobbySubscribed = false;
+      stores.game.getState().closeLobby();
+    }
+  };
+  const stopLobbyNavigation = app.navigation.subscribe(syncLobby);
+  const stopLobbyAuth = stores.auth.subscribe(syncLobby);
+  void stores.ready.then(syncLobby);
   const stopFeedback = connectMatchFeedback(stores.game, feedback, () => stores.settings.getState().musicEnabled,
     () => feedbackActive && (app.navigation.current === 'solo' || app.navigation.current === 'match'));
   const stopFeedbackHide = platform.subscribe('hide', () => { feedbackActive = false; });
   const stopFeedbackShow = platform.subscribe('show', () => { feedbackActive = true; });
-  const screens = { home: screen(renderHome), account: screen(renderAccount), lobby: screen(renderLobby),
+  const screens = { home: { ...screen(renderHome), scrollContentHeight(layout: ScreenLayout) {
+    return homeContentHeight(layout, getScreenSnapshot(app, stores));
+  } }, account: screen(renderAccount), lobby: screen(renderLobby),
     solo: matchScreen, waiting: waitingScreen, match: matchScreen, ...options.screens?.(app, stores) };
   const runtime = new CanvasRuntime({ platform, keyboard, navigation: app.navigation, screens,
     stores: [app, stores.auth, stores.profile, stores.settings, stores.game] });
   return { canvas: platform.canvas, runtime, app, stores, screens,
-    destroy() { stopFeedback(); stopFeedbackHide(); stopFeedbackShow(); feedback.dispose();
+    destroy() { lifecycleActive = false; stopLobbyNavigation(); stopLobbyAuth(); if (lobbySubscribed) stores.game.getState().closeLobby();
+      stopFeedback(); stopFeedbackHide(); stopFeedbackShow(); feedback.dispose();
       stopRoomNavigation(); runtime.destroy(); app.dispose(); stores.dispose(); },
   };
 }

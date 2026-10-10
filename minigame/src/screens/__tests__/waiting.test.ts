@@ -44,7 +44,8 @@ const geometry = layoutForScreen(320, 640, { top: 20, bottom: 20 });
 function context() {
   const texts: string[] = [];
   return { texts, fillRect: jest.fn(), fillText: (text: string) => texts.push(text), clearRect: jest.fn(), setTransform: jest.fn(), save: jest.fn(), restore: jest.fn(),
-    beginPath: jest.fn(), rect: jest.fn(), clip: jest.fn(), measureText: (text: string) => ({ width: text.length * 8 }) };
+    beginPath: jest.fn(), rect: jest.fn(), clip: jest.fn(), moveTo: jest.fn(), lineTo: jest.fn(), quadraticCurveTo: jest.fn(),
+    closePath: jest.fn(), arc: jest.fn(), fill: jest.fn(), stroke: jest.fn(), measureText: (text: string) => ({ width: text.length * 8 }) };
 }
 
 test('host sees server join requests, both seats, and ready controls; auto-start requires both connected and ready', () => {
@@ -284,7 +285,7 @@ test('native entry registers Canvas waiting screen and routes authoritative room
     getSystemInfoSync: () => ({ windowWidth: 320, windowHeight: 640, pixelRatio: 1,
       safeArea: { top: 0, bottom: 640, left: 0, right: 320 } }),
   };
-  for (const [name, event] of [['TouchStart', 'touchstart'], ['TouchEnd', 'touchend'], ['TouchCancel', 'touchcancel'],
+  for (const [name, event] of [['TouchStart', 'touchstart'], ['TouchMove', 'touchmove'], ['TouchEnd', 'touchend'], ['TouchCancel', 'touchcancel'],
     ['WindowResize', 'resize'], ['Hide', 'hide'], ['Show', 'show'], ['KeyDown', 'back'],
     ['KeyboardInput', 'input'], ['KeyboardConfirm', 'confirm'], ['KeyboardComplete', 'complete']]) {
     nativeApi[`on${name}`] = (listener: (...args: any[]) => void) => { events[event] = listener; };
