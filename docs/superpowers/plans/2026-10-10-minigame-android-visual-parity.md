@@ -70,7 +70,7 @@ TypeScript、微信小游戏 Canvas 2D、Jest、项目现有的 Mini Game API �
 1. 先为 `clipTapTargetsToContent(targets, content)`、滚动偏移边界、可视区域外目标移除和拖动结束不触发点击增加失败测试；扩展微信适配测试，断言 `touchmove` 被订阅并以逻辑坐标传递。
 2. 在 `ScreenLayout` 增加 `scrollY`，默认值为 `0`；在 `CanvasScreen` 增加可选 `scrollContentHeight(layout): number`。无该方法的页面保持不可滚动。
 3. 在微信 API 类型和平台适配器增加 `onTouchMove`/`offTouchMove` 与 `RuntimeEvent: 'touchmove'`；沿用 touchstart/end 相同的 `clientX/clientY` 逻辑坐标转换。
-4. 在 `CanvasRuntime` 为每个 screen 保存滚动偏移；拖动超过 6 个逻辑像素后进入滚动态，按 content 高度将偏移限制在 `0..max(0, contentHeight - content.height)`。拖动手指释放时不派发 tap；轻点仍通过现有 `hitTest` 派发 action。
+4. 在 `CanvasRuntime` 为每个 screen 保存滚动偏移；从触摸起点累计总位移超过 6 个逻辑像素即标记为拖动，无论当前 screen 是否可滚动都抑制 tap。可滚动 screen 只用纵向位移更新 scrollY，并按 content 高度限制在 `0..max(0, contentHeight - content.height)`。在 touchmove 与 touchend 都检查起点到当前位置的总位移，避免系统只在抬手时报告大位移而误触；轻点仍通过现有 `hitTest` 派发 action。
 5. 每次渲染后将 tap target 与 `layout.content` 求交集，完全不可见的目标不参与 hit-test，部分可见区域只保留可见交集。屏幕切换、触摸取消和运行时销毁清除相应的手势状态。
 6. 更新运行时测试中注册事件数（新增 `touchmove` 后由 7 项变为 8 项）。先通过 `npm test -- --runInBand minigame/src/runtime/__tests__/layout.test.ts`，再通过 `npm test -- --runInBand minigame/src/platform/__tests__/adapters.test.ts`；提交 `feat(minigame): support safe-area canvas scrolling`。
 
