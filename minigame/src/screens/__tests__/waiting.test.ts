@@ -6,6 +6,7 @@ import { renderLobby, dispatchLobbyAction } from '../lobby';
 import { startMiniGame } from '../../entry';
 import type { ScreenSnapshot } from '../home';
 import type { RoomSnapshot } from '../../../../src/network/protocol';
+import { gameColors } from '../../../../src/theme/gameColors';
 
 const host = { nickname: 'Host', avatarId: 'bell' as const };
 const guest = { nickname: 'Guest', avatarId: 'banana' as const };
@@ -43,10 +44,69 @@ function snapshot(overrides: Partial<ScreenSnapshot['game']> = {}): ScreenSnapsh
 const geometry = layoutForScreen(320, 640, { top: 20, bottom: 20 });
 function context() {
   const texts: string[] = [];
-  return { texts, fillRect: jest.fn(), fillText: (text: string) => texts.push(text), clearRect: jest.fn(), setTransform: jest.fn(), save: jest.fn(), restore: jest.fn(),
-    beginPath: jest.fn(), rect: jest.fn(), clip: jest.fn(), moveTo: jest.fn(), lineTo: jest.fn(), quadraticCurveTo: jest.fn(),
-    closePath: jest.fn(), arc: jest.fn(), fill: jest.fn(), stroke: jest.fn(), measureText: (text: string) => ({ width: text.length * 8 }) };
+  const fills: { color: string; rect: { x: number; y: number; width: number; height: number } }[] = [];
+  let path: { x: number; y: number }[] = [];
+  const point = (x: number, y: number) => { path.push({ x, y }); };
+  return { texts, fills, fillStyle: '', fillRect: jest.fn(), fillText: (text: string) => texts.push(text), clearRect: jest.fn(), setTransform: jest.fn(), save: jest.fn(), restore: jest.fn(),
+    beginPath: () => { path = []; }, rect: jest.fn(), clip: jest.fn(), moveTo: point, lineTo: point,
+    quadraticCurveTo: (_cx: number, _cy: number, x: number, y: number) => point(x, y),
+    closePath: jest.fn(), arc: jest.fn(), fill() {
+      if (!path.length) return;
+      const x = Math.min(...path.map(item => item.x)); const y = Math.min(...path.map(item => item.y));
+      const right = Math.max(...path.map(item => item.x)); const bottom = Math.max(...path.map(item => item.y));
+      fills.push({ color: this.fillStyle, rect: { x, y, width: right - x, height: bottom - y } });
+    }, stroke: jest.fn(), measureText: (text: string) => ({ width: text.length * 8 }) };
 }
+
+test('waiting room paints code, player and request cards with separate visible action surfaces', () => {
+  const ctx = context();
+  const targets = renderWaiting(ctx as any, geometry, snapshot({ pendingApplications: [application] as any }));
+  const painted = (id: string, color: string) => {
+    const target = targets.find(item => item.id === id);
+    expect(target).toBeDefined();
+    expect(ctx.fills).toContainEqual({ color, rect: target!.rect });
+    return target!.rect;
+  };
+  expect(ctx.fills.some(item => item.color === gameColors.lavenderSurface && item.rect.height >= 60)).toBe(true);
+  expect(ctx.fills.filter(item => item.color === gameColors.surface && item.rect.height >= 45).length).toBeGreaterThanOrEqual(3);
+  const approve = painted('waiting.approve.apply-1', '#E4F3E9');
+  const reject = painted('waiting.reject.apply-1', '#FBE6E3');
+  expect(approve.x + approve.width).toBeLessThanOrEqual(reject.x);
+  painted('waiting.ready', gameColors.purpleAction);
+  painted('waiting.share', gameColors.surface);
+  painted('waiting.leave', gameColors.surface);
+});
+
+test('ready state uses lime and connection pause remains visible without an actionable ready target', () => {
+  const readyRoom = room({ ready: { A: true, B: false } });
+  const readyContext = context();
+  const ready = renderWaiting(readyContext as any, geometry, snapshot({ roomSnapshot: readyRoom }));
+  expect(readyContext.fills).toContainEqual({ color: gameColors.lime,
+    rect: ready.find(item => item.id === 'waiting.ready')!.rect });
+  const pausedContext = context();
+  const paused = renderWaiting(pausedContext as any, geometry,
+    snapshot({ connectionStatus: 'reconnecting', roomSnapshot: room({ phase: 'connection-paused' }) }));
+  expect(pausedContext.texts.join(' ')).toContain('Reconnecting');
+  expect(paused.some(item => item.id === 'waiting.ready')).toBe(false);
+});
+
+test('application paging keeps every enabled action inside the short-screen safe area', () => {
+  const short = layoutForScreen(320, 568, { top: 20, bottom: 20 });
+  const applications = [application, { ...application, applicationId: 'apply-2' }];
+  const targets = renderWaiting(context() as any, short, snapshot({ pendingApplications: applications as any }));
+  expect(targets.map(item => item.id)).toEqual(expect.arrayContaining([
+    'waiting.approve.apply-1', 'waiting.reject.apply-1', 'waiting.applications.next', 'waiting.ready', 'waiting.share', 'waiting.leave',
+  ]));
+  for (const { rect } of targets) {
+    expect(rect.y).toBeGreaterThanOrEqual(short.content.y);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(short.content.y + short.content.height);
+  }
+  const bothReady = room({ players: { A: room().players.A, B: { ...room().players.B, connected: true } },
+    ready: { A: true, B: true } });
+  const ctx = context();
+  renderWaiting(ctx as any, short, snapshot({ roomSnapshot: bothReady }));
+  expect(ctx.texts.join(' ')).toContain('automatically');
+});
 
 test('host sees server join requests, both seats, and ready controls; auto-start requires both connected and ready', () => {
   const initial = snapshot({ pendingApplications: [application] as any });
@@ -54,7 +114,8 @@ test('host sees server join requests, both seats, and ready controls; auto-start
   expect(ctx.texts.join(' ')).toContain('ABC234');
   expect(targets.map(item => item.id)).toEqual(expect.arrayContaining(['waiting.share', 'waiting.approve.apply-1', 'waiting.reject.apply-1', 'waiting.ready', 'waiting.leave']));
   expect(ctx.texts.join(' ')).toContain('Guest wants to join');
-  expect(ctx.texts.join(' ')).toContain('Host · You · Connected');
+  expect(ctx.texts).toContain('A · Host · You');
+  expect(ctx.texts).toContain('Connected');
   expect(ctx.texts.join(' ')).toContain('A player');
   expect(canStartWaitingMatch(initial.game.roomSnapshot!)).toBe(false);
   expect(canStartWaitingMatch(room({ players: { A: { ...room().players.A, connected: true }, B: { ...room().players.B, connected: true } }, ready: { A: true, B: false } }))).toBe(false);
