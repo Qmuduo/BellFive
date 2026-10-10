@@ -86,29 +86,40 @@ const HOME_MARGIN = 18;
 const HOME_GAP = 12;
 const HOME_ROOM_HEIGHT = 64;
 
-function homeHeaderOffset(layout: ScreenLayout): number {
+interface HomeHeaderLayout {
+  language: Rect;
+  account: Rect;
+  nextY: number;
+}
+
+function getHomeHeaderLayout(layout: ScreenLayout): HomeHeaderLayout {
   const menu = layout.menuButton;
-  if (!menu) return 0;
   const { content } = layout;
   const margin = Math.min(HOME_MARGIN, content.width / 12);
   const x = content.x + margin; const width = content.width - margin * 2;
-  const buttonWidth = Math.min(110, width * 0.4); const y = content.y + 12;
-  const languageRight = x + buttonWidth;
-  const account = { x: x + width - buttonWidth, y, width: buttonWidth, height: 36 };
-  const overlaps = account.x < menu.x + menu.width && account.x + account.width > menu.x
-    && account.y < menu.y + menu.height && account.y + account.height > menu.y;
-  if (!overlaps || menu.x - 8 - buttonWidth >= languageRight + 8) return 0;
-  const displacedY = Math.max(y + account.height + 8, menu.y + menu.height + 6);
-  return displacedY - y;
+  const y = content.y + 12; const height = 36; const buttonWidth = Math.min(110, width * 0.4);
+  const language = { x, y, width: buttonWidth, height };
+  const account = { x: x + width - buttonWidth, y, width: buttonWidth, height };
+  if (menu && account.x < menu.x + menu.width && account.x + account.width > menu.x) {
+    const leftCandidate = menu.x - 8 - account.width;
+    if (leftCandidate >= language.x + language.width + 8) account.x = leftCandidate;
+    else {
+      account.x = x;
+      account.y = Math.max(y + height + 8, menu.y + menu.height + 6);
+    }
+  }
+  return { language, account, nextY: Math.max(language.y + height, account.y + height) + 14 };
 }
 
 /** Includes the safe content origin only through the runtime's viewport height. */
 export function homeContentHeight(layout: ScreenLayout, snapshot: ScreenSnapshot): number {
+  const header = getHomeHeaderLayout(layout);
+  const headerOffset = Math.max(0, header.nextY - (layout.content.y + 62));
   const rooms = Math.min(2, snapshot.game.openRooms.length);
   const extras = snapshot.pendingCreate ? 44 : snapshot.app.pendingIntent ? 88 : 0;
   const status = appError(snapshot) || snapshot.pendingCreate || snapshot.app.onlineBusy ? 42 : 0;
   return 12 + 36 + 132 + 86 + 58 + 134 + 38 + (rooms ? rooms * (HOME_ROOM_HEIGHT + 8) : 52)
-    + 24 + 56 + 56 + extras + status + 34 + HOME_MARGIN + homeHeaderOffset(layout);
+    + 24 + 56 + 56 + extras + status + 34 + HOME_MARGIN + headerOffset;
 }
 
 export function drawScreenText(context: CanvasContext2D, text: string, x: number, y: number,
@@ -140,7 +151,9 @@ export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snaps
   const { content } = layout;
   const margin = Math.min(HOME_MARGIN, content.width / 12);
   const x = content.x + margin; const width = content.width - margin * 2;
-  let y = content.y + 12 - layout.scrollY;
+  const header = getHomeHeaderLayout(layout);
+  const scrollY = layout.scrollY;
+  let y = header.nextY - scrollY;
   const targets: TapTarget[] = [];
   const busy = snapshot.app.onlineBusy || snapshot.app.accountBusy || snapshot.pendingCreate;
   const keyboardUnavailable = snapshot.app.errorCode === 'KEYBOARD_UNAVAILABLE';
@@ -151,23 +164,8 @@ export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snaps
   };
   context.save(); context.beginPath(); context.rect(content.x, content.y, content.width, content.height); context.clip();
   context.fillStyle = gameColors.canvas; context.fillRect(content.x, content.y, content.width, content.height);
-  const headerHeight = 36; const headerWidth = Math.min(110, width * 0.4);
-  const languageRect = { x, y, width: headerWidth, height: headerHeight };
-  let accountRect = { x: x + width - headerWidth, y, width: headerWidth, height: headerHeight };
-  const menu = layout.menuButton;
-  const intersectsMenu = (rect: Rect) => !!menu && rect.x < menu.x + menu.width && rect.x + rect.width > menu.x
-    && rect.y < menu.y + menu.height && rect.y + rect.height > menu.y;
-  if (intersectsMenu(accountRect)) {
-    const leftCandidate = menu!.x - 8 - accountRect.width;
-    if (leftCandidate >= languageRect.x + languageRect.width + 8) accountRect.x = leftCandidate;
-    else {
-      accountRect.x = x;
-      accountRect.y = Math.max(y + headerHeight + 8, menu!.y + menu!.height + 6);
-    }
-  }
-  action('settings.language', languageRect, snapshot.settings.language === 'en' ? 'English' : '简体中文', 'text', true, 10);
-  action('home.account', accountRect, label(snapshot, 'entry.account'), 'secondary', !busy, 10);
-  y = Math.max(languageRect.y + headerHeight, accountRect.y + headerHeight) + 14;
+  action('settings.language', { ...header.language, y: header.language.y - scrollY }, snapshot.settings.language === 'en' ? 'English' : '简体中文', 'text', true, 10);
+  action('home.account', { ...header.account, y: header.account.y - scrollY }, label(snapshot, 'entry.account'), 'secondary', !busy, 10);
   const bell = { x: x + width / 2 - 28, y, width: 56, height: 56 };
   drawRoundedPanel(context, bell, { fill: gameColors.lime, radius: 18 });
   drawScreenText(context, '🔔', x + width / 2, y + 28, 30, gameColors.plum, 'center');

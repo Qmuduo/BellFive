@@ -237,7 +237,7 @@ test('runtime wx adapter normalizes safe-area insets, native logical touches and
   const api: any = {
     createCanvas: () => ({ width: 0, height: 0, getContext: () => ({}) }),
     getSystemInfoSync: () => ({ windowWidth: 390, windowHeight: 844, pixelRatio: 3, safeArea: { top: 44, bottom: 810, left: 0, right: 390 } }),
-    getMenuButtonBoundingClientRect: () => ({ left: 294, top: 8, right: 382, bottom: 40, width: 88, height: 32 }),
+    getMenuButtonBoundingClientRect: () => ({ left: 294, top: 8, right: 382, bottom: 40 }),
   };
   for (const name of ['TouchStart', 'TouchMove', 'TouchEnd', 'TouchCancel', 'WindowResize', 'Hide', 'Show', 'KeyDown']) {
     api[`on${name}`] = (fn: any) => { callbacks[name] = fn; };
@@ -258,4 +258,14 @@ test('runtime wx adapter normalizes safe-area insets, native logical touches and
     { points: [{ identifier: 5, x: 195, y: 700 }], space: 'logical' },
   ]);
   expect(back).toBe(1); stopTouch(); stopMove(); stopBack(); expect(removed).toEqual(['TouchEnd', 'TouchMove', 'KeyDown']);
+});
+
+test('runtime wx adapter reserves the simulated capsule band when its bounds API returns undefined', () => {
+  const platform = createWxRuntimePlatform({
+    createCanvas: () => ({ width: 0, height: 0, getContext: () => ({}) }),
+    getSystemInfoSync: () => ({ windowWidth: 390, windowHeight: 844, pixelRatio: 3,
+      safeArea: { top: 47, bottom: 810, left: 0, right: 390 } }),
+    getMenuButtonBoundingClientRect: () => undefined,
+  } as any, { requestFrame: () => 1, cancelFrame: () => {} });
+  expect(platform.getViewport().menuButton).toEqual({ x: 294, y: 47, width: 96, height: 40 });
 });

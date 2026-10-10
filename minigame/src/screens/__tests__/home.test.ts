@@ -52,6 +52,19 @@ test('short home keeps the displaced account entry and bottom join action reacha
   expect(join.rect.y + join.rect.height).toBeLessThanOrEqual(layout.content.y + layout.content.height);
 });
 
+test.each([
+  [20, { x: 230, y: 20, width: 84, height: 32 }, 47, 48],
+  [44, { x: 230, y: 8, width: 84, height: 32 }, 16, 17],
+] as const)('home header layout stays continuous when scrolling across capsule boundary (safe top %s)', (safeTop, capsule, before, after) => {
+  const data = snapshot();
+  const layout = layoutForScreen(320, 568, { top: safeTop, bottom: 20 }, capsule);
+  const createY = (scrollY: number) => {
+    layout.scrollY = scrollY;
+    return renderHome(context() as any, layout, data).find(item => item.id === 'home.create')!.rect.y;
+  };
+  expect(createY(before) + before).toBe(createY(after) + after);
+});
+
 test('home room preview has its own join target and bottom code controls remain reachable after scrolling', () => {
   const data = snapshot({ game: { openRooms: [{ roomCode: 'ABCD23', hostProfile: { nickname: 'Mira', avatarId: 'bell' } }] } });
   const layout = layoutForScreen(320, 568, { top: 20, bottom: 20 });

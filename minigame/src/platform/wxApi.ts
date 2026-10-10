@@ -62,11 +62,24 @@ export function createWxRuntimePlatform(api: RuntimeWxApi, scheduler: FrameSched
       let menuButton: Viewport['menuButton'];
       try {
         const rect = api.getMenuButtonBoundingClientRect?.();
-        if (rect && Number.isFinite(rect.left) && Number.isFinite(rect.top)
-          && Number.isFinite(rect.width) && Number.isFinite(rect.height) && rect.width > 0 && rect.height > 0) {
-          menuButton = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+        if (rect) {
+          const width = Number.isFinite(rect.width) ? rect.width : rect.right - rect.left;
+          const height = Number.isFinite(rect.height) ? rect.height : rect.bottom - rect.top;
+          const x = Number.isFinite(rect.left) ? rect.left : rect.right - width;
+          const y = Number.isFinite(rect.top) ? rect.top : rect.bottom - height;
+          if ([x, y, width, height].every(Number.isFinite) && width > 0 && height > 0) {
+            menuButton = { x, y, width, height };
+          }
         }
       } catch { /* Older base libraries may not expose the native menu-button bounds. */ }
+      if (!menuButton) {
+        // Mini Game DevTools can expose this API but return undefined. Reserve a
+        // conservative 96×40 logical-pixel band at the safe-area top-right.
+        const width = Math.min(96, info.windowWidth * 0.55);
+        const y = Math.min(info.windowHeight, area?.top ?? 0);
+        menuButton = { x: Math.max(0, info.windowWidth - width), y, width,
+          height: Math.min(40, Math.max(0, info.windowHeight - y)) };
+      }
       return { width: info.windowWidth, height: info.windowHeight, pixelRatio: info.pixelRatio,
         safeArea: { top: area?.top ?? 0, bottom: area ? Math.max(0, info.windowHeight - area.bottom) : 0,
           left: area?.left ?? 0, right: area ? Math.max(0, info.windowWidth - area.right) : 0 },
