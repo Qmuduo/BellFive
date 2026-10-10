@@ -189,6 +189,40 @@ test('movement within six logical pixels remains a tap and redraw keeps the acti
   f.runtime.destroy();
 });
 
+test('a drag on a screen without scroll content does not dispatch a tap', () => {
+  const f = runtimeFixture(); f.frame();
+  f.touch('touchstart', 195, 740);
+  f.touch('touchmove', 202, 740);
+  f.touch('touchend', 202, 740);
+  expect(f.actions).toEqual([]);
+  f.runtime.destroy();
+});
+
+test('a large displacement reported only at touchend does not dispatch a tap', () => {
+  const f = runtimeFixture(900); f.frame();
+  f.touch('touchstart', 195, 740);
+  f.touch('touchend', 195, 750);
+  expect(f.actions).toEqual([]);
+  f.runtime.destroy();
+});
+
+test('scroll displacement is independent of how touchmove events are grouped', () => {
+  const single = runtimeFixture(900); single.frame();
+  single.touch('touchstart', 195, 740);
+  single.touch('touchmove', 195, 733); single.frame();
+  expect(single.scrollOffsets.at(-1)).toBe(7);
+  single.touch('touchend', 195, 733); single.runtime.destroy();
+
+  const grouped = runtimeFixture(900); grouped.frame();
+  grouped.touch('touchstart', 195, 740);
+  grouped.touch('touchmove', 195, 737);
+  grouped.touch('touchmove', 195, 735);
+  grouped.touch('touchmove', 195, 733); grouped.frame();
+  expect(grouped.scrollOffsets.at(-1)).toBe(7);
+  expect(grouped.actions).toEqual([]);
+  grouped.touch('touchend', 195, 733); grouped.runtime.destroy();
+});
+
 test('scroll offsets are retained per screen while navigation cancels the current drag', () => {
   const f = runtimeFixture(900); f.frame();
   f.touch('touchstart'); f.touch('touchmove', 195, 700); f.frame();

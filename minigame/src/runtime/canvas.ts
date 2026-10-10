@@ -20,7 +20,7 @@ export interface RuntimeOptions {
 
 export class CanvasRuntime {
   private readonly stops: (() => void)[] = [];
-  private readonly activeTouches = new Map<number, { start: Point; last: Point; scrolling: boolean }>();
+  private readonly activeTouches = new Map<number, { start: Point; scrollStart: number; dragging: boolean }>();
   private readonly scrollOffsets = new Map<string, number>();
   private targets: readonly TapTarget[] = [];
   private viewport!: Viewport;
@@ -99,23 +99,23 @@ export class CanvasRuntime {
     if (this.destroyed || this.hidden || !event) return;
     for (const point of event.points) {
       const logical = logicalPoint(point, this.viewport.pixelRatio, event.space);
-      if (contains(logical, this.geometry.content)) this.activeTouches.set(point.identifier, { start: logical, last: logical, scrolling: false });
+      if (contains(logical, this.geometry.content)) this.activeTouches.set(point.identifier, {
+        start: logical, scrollStart: this.geometry.scrollY, dragging: false,
+      });
     }
   }
   private moveTouch(event?: TouchInput): void {
     if (this.destroyed || this.hidden || !event) return;
-    const screen = this.options.screens[this.currentScreen];
-    if (!screen?.scrollContentHeight) return;
+    const scrollable = !!this.options.screens[this.currentScreen]?.scrollContentHeight;
     for (const point of event.points) {
       const touch = this.activeTouches.get(point.identifier);
       if (!touch) continue;
       const logical = logicalPoint(point, this.viewport.pixelRatio, event.space);
-      if (!touch.scrolling && Math.hypot(logical.x - touch.start.x, logical.y - touch.start.y) > 6) touch.scrolling = true;
-      if (touch.scrolling) {
-        const next = this.clampScroll(this.currentScreen, this.geometry.scrollY + touch.last.y - logical.y);
+      if (Math.hypot(logical.x - touch.start.x, logical.y - touch.start.y) > 6) touch.dragging = true;
+      if (touch.dragging && scrollable) {
+        const next = this.clampScroll(this.currentScreen, touch.scrollStart + touch.start.y - logical.y);
         if (next !== this.geometry.scrollY) { this.geometry.scrollY = next; this.requestRender(); }
       }
-      touch.last = logical;
     }
   }
   private clampScroll(screenId: string, proposed = this.scrollOffsets.get(screenId) ?? 0): number {
@@ -132,8 +132,8 @@ export class CanvasRuntime {
       const touch = this.activeTouches.get(point.identifier);
       if (!touch) continue;
       this.activeTouches.delete(point.identifier);
-      if (touch.scrolling) continue;
       const logical = logicalPoint(point, this.viewport.pixelRatio, event.space);
+      if (touch.dragging || Math.hypot(logical.x - touch.start.x, logical.y - touch.start.y) > 6) continue;
       if (action === null && contains(logical, this.geometry.content)) action = hitTest(logical, this.targets);
     }
     if (action !== null) this.options.screens[this.currentScreen]?.onAction?.(action, this);
