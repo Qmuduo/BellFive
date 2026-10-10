@@ -135,7 +135,9 @@ function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: C
     const titles: Record<Exclude<AccountMode, 'menu' | 'profile'>, TranslationKey> = {
       login: 'auth.login', register: 'auth.register', credentials: 'account.addCredentials', link: 'account.wechatLinked', reset: 'account.recovery',
     };
-    heading(label(snapshot, titles[app.accountMode]));
+    const formTitle = app.accountMode === 'link' ? local(snapshot, 'Link an existing account', '绑定已有用户名账号')
+      : label(snapshot, titles[app.accountMode]);
+    heading(formTitle);
     if (app.accountMode === 'credentials') description(label(snapshot, 'account.credentialsDescription'));
     if (app.accountMode !== 'reset') field('username', label(snapshot, 'auth.username'), app.fields.username, !busy);
     field('password', label(snapshot, 'auth.password'), '•'.repeat(Math.min(20, Array.from(app.fields.password).length)), !busy);
@@ -150,7 +152,7 @@ function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: C
       if (!busy) targets.push({ id: 'account.confirmTransfer', rect });
       y += 58;
     }
-    button('account.submit', label(snapshot, titles[app.accountMode]), 'primary',
+    button('account.submit', formTitle, 'primary',
       !busy && !keyboardUnavailable && (app.accountMode !== 'link' || app.confirmTransfer));
   }
   y += 5;

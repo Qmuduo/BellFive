@@ -65,6 +65,21 @@ test('link submit requires visible transfer confirmation and keyboard errors kee
   expect(broken.some(item => item.id === 'account.submit')).toBe(false);
 });
 
+test('credential failure paints the localized error in a visible error panel', () => {
+  const c = canvas();
+  renderAccount(c as any, geometry(), data('login', { app: { errorCode: 'INVALID_CREDENTIALS' } }));
+  expect(c.fills).toContain('#FBE6E3');
+  expect(c.texts.join('')).toContain('The username or password is incorrect.');
+});
+
+test('link form heading describes the requested identity transfer in both languages', () => {
+  const en = canvas(); renderAccount(en as any, geometry(), data('link'));
+  expect(en.texts).toContain('Link an existing account');
+  const zh = canvas(); const snapshot = data('link'); snapshot.settings.language = 'zh-CN';
+  renderAccount(zh as any, geometry(), snapshot);
+  expect(zh.texts).toContain('绑定已有用户名账号');
+});
+
 test.each(['menu', 'login', 'register', 'credentials', 'link', 'reset'])('%s footer actions stay reachable at the end of a short screen', mode => {
   const layout = geometry(); const snapshot = data(mode, { app: { confirmTransfer: true } });
   layout.scrollY = Math.max(0, accountContentHeight(layout, snapshot) - layout.content.height);
