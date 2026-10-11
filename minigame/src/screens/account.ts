@@ -1,5 +1,5 @@
 import { AuthClientError } from '../../../src/auth/contracts';
-import { AVATAR_EMOJI, AVATAR_OPTIONS, isAvatarId, sanitizePlayerProfile } from '../../../src/profile';
+import { AVATAR_EMOJI, AVATAR_OPTIONS, isAvatarId, normalizeNickname, sanitizePlayerProfile } from '../../../src/profile';
 import { gameColors } from '../../../src/theme/gameColors';
 import type { TranslationKey } from '../../../src/i18n';
 import { getWechatLoginCode } from '../platform/wechatLogin';
@@ -12,7 +12,13 @@ import { appError, authorizeOnline, drawScreenText, label, type ScreenSnapshot }
 
 function local(snapshot: ScreenSnapshot, en: string, zh: string): string { return snapshot.settings.language === 'en' ? en : zh; }
 
-function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: CanvasContext2D): { height: number; targets: TapTarget[] } {
+export interface AccountRenderOptions {
+  readonly wechatNicknameButtonAvailable?: boolean;
+  readonly syncWechatNicknameButton?: (rect: Rect | null, title: string, language: 'en' | 'zh_CN') => void;
+}
+
+function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: CanvasContext2D,
+  options: AccountRenderOptions = {}): { height: number; targets: TapTarget[] } {
   const { app, auth } = snapshot;
   const busy = app.accountBusy || app.onlineBusy || auth.pending;
   const keyboardUnavailable = app.errorCode === 'KEYBOARD_UNAVAILABLE';
@@ -24,6 +30,7 @@ function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: C
   const width = content.width - margin * 2;
   let y = content.y + 14 - layout.scrollY;
   const targets: TapTarget[] = [];
+  let wechatNicknameRect: Rect | null = null;
   const action = (id: string, rect: Rect, title: string, variant: 'primary' | 'secondary' | 'text', enabled = true) => {
     if (context) drawCanvasButton(context, rect, title, { variant, enabled, fontSize: 12, radius: 13 });
     if (enabled) targets.push({ id, rect });
@@ -117,6 +124,13 @@ function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: C
   } else if (app.accountMode === 'profile') {
     heading(label(snapshot, 'account.profile'));
     field('nickname', label(snapshot, 'account.nickname'), app.fields.nickname, editable);
+    if (signedIn) {
+      const buttonRect = { x, y, width, height: 42 };
+      const available = editable && options.wechatNicknameButtonAvailable === true;
+      action('account.useWechatNickname', buttonRect, label(snapshot, 'account.useWechatNickname'), 'secondary', available);
+      if (available) wechatNicknameRect = buttonRect;
+      y += 49;
+    }
     heading(label(snapshot, 'account.avatar'));
     const gap = 10; const size = Math.min(50, (width - gap * 2) / 3);
     for (const [index, avatar] of AVATAR_OPTIONS.entries()) {
@@ -158,6 +172,13 @@ function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: C
   y += 5;
   if (app.accountMode !== 'menu') button('account.mode.menu', label(snapshot, 'auth.back'), 'text', !busy);
   button('nav.home', label(snapshot, 'account.back'), 'text');
+  if (context && options.syncWechatNicknameButton) {
+    const visibleRect = wechatNicknameRect
+      ? clipTapTargetsToContent([{ id: 'wechat.nickname', rect: wechatNicknameRect }], content)[0]?.rect ?? null
+      : null;
+    options.syncWechatNicknameButton(visibleRect, label(snapshot, 'account.useWechatNickname'),
+      snapshot.settings.language === 'en' ? 'en' : 'zh_CN');
+  }
   if (context) context.restore();
   return { height: y + 18 + layout.scrollY - content.y, targets: clipTapTargetsToContent(targets, content) };
 }
@@ -166,8 +187,9 @@ export function accountContentHeight(layout: ScreenLayout, snapshot: ScreenSnaps
   return walkAccount(layout, snapshot).height;
 }
 
-export function renderAccount(context: CanvasContext2D, layout: ScreenLayout, snapshot: ScreenSnapshot): TapTarget[] {
-  return walkAccount(layout, snapshot, context).targets;
+export function renderAccount(context: CanvasContext2D, layout: ScreenLayout, snapshot: ScreenSnapshot,
+  options: AccountRenderOptions = {}): TapTarget[] {
+  return walkAccount(layout, snapshot, context, options).targets;
 }
 
 async function accountOperation(app: MiniGameApp, operation: () => Promise<void>, notice?: TranslationKey) {
@@ -197,7 +219,12 @@ export async function dispatchAccountAction(actionId: string, app: MiniGameApp, 
     confirmTransfer: !current.confirmTransfer,
     errorCode: current.errorCode === 'KEYBOARD_UNAVAILABLE' ? current.errorCode : null,
   })); return; }
-  if (actionId === 'account.wechat') { await accountOperation(app, () => authorizeOnline(stores)); return; }
+  if (actionId === 'account.wechat') {
+    await accountOperation(app, () => authorizeOnline(stores));
+    const auth = stores.auth.getState();
+    if (auth.user && auth.sessionToken && auth.profileVerified) app.navigation.navigate('home', true);
+    return;
+  }
   if (actionId === 'account.refresh') {
     await accountOperation(app, async () => {
       await stores.ready; await stores.auth.getState().refreshSession();
@@ -233,4 +260,28 @@ export async function dispatchAccountAction(actionId: string, app: MiniGameApp, 
       }
     }
   }, draft.accountMode === 'profile' ? 'account.profileSaved' : draft.accountMode === 'credentials' ? 'account.credentialsSaved' : undefined);
+  if ((draft.accountMode === 'login' || draft.accountMode === 'register')) {
+    const auth = stores.auth.getState();
+    if (auth.user && auth.sessionToken && auth.profileVerified) app.navigation.navigate('home', true);
+  }
+}
+
+export async function saveWechatNickname(app: MiniGameApp, stores: MiniGameStores, nickname: string): Promise<void> {
+  const normalizedNickname = normalizeNickname(nickname);
+  if (!normalizedNickname) {
+    app.update({ notice: 'account.wechatNicknameUnavailable', errorCode: null });
+    return;
+  }
+  await accountOperation(app, async () => {
+    await stores.ready;
+    const auth = stores.auth.getState();
+    if (!auth.user || !auth.sessionToken || !auth.profileVerified) {
+      throw new AuthClientError(auth.errorCode ?? 'UNAUTHORIZED', 'A verified account is required to sync a nickname.');
+    }
+    const profile = sanitizePlayerProfile({ nickname: normalizedNickname, avatarId: auth.user.profile.avatarId }, 'A');
+    await auth.updateProfile(profile);
+    app.update(current => ({ avatarId: profile.avatarId,
+      fields: { ...current.fields, nickname: profile.nickname },
+    }));
+  }, 'account.profileSaved');
 }

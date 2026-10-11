@@ -373,7 +373,7 @@ test('home subscribes after verified session hydration, retains lobby list acros
   boot.destroy(); f.dispose();
 });
 
-test('guest home never opens a socket or silent WeChat login during hydration', async () => {
+test('guest home silently attempts WeChat login at startup without opening a socket', async () => {
   const f = fixture();
   const context = { ...canvasContext(), clearRect: jest.fn(), setTransform: jest.fn() };
   const nativeApi: any = { ...f.api, createCanvas: () => ({ getContext: () => context, width: 0, height: 0 }),
@@ -384,7 +384,7 @@ test('guest home never opens a socket or silent WeChat login during hydration', 
   }
   const boot = startMiniGame(nativeApi, { scheduler: { requestFrame: () => 1, cancelFrame: jest.fn() } });
   await boot.stores.ready; await flush();
-  expect(f.api.login).not.toHaveBeenCalled(); expect(f.api.connectSocket).not.toHaveBeenCalled();
+  expect(f.api.login).toHaveBeenCalledTimes(1); expect(f.api.connectSocket).not.toHaveBeenCalled();
   boot.destroy(); f.dispose();
 });
 

@@ -1,15 +1,16 @@
 import { createWxKeyboard } from './platform/keyboard';
 import { connectMatchFeedback, createWxFeedback } from './platform/feedback';
-import { createWxRuntimePlatform, type FrameScheduler, type MiniGameWxApi } from './platform/wxApi';
+import { createWxRuntimePlatform, type CanvasContext2D, type FrameScheduler, type MiniGameWxApi } from './platform/wxApi';
 import { CanvasRuntime, type CanvasScreen } from './runtime/canvas';
 import type { ScreenLayout } from './runtime/layout';
 import { connectRoomNavigation, createMiniGameApp, type MiniGameApp } from './runtime/navigation';
 import { createMiniGameStores, type MiniGameStores, type MiniGameStoreOptions } from './stores/gameStore';
-import { dispatchScreenAction, getScreenSnapshot, homeContentHeight, renderHome } from './screens/home';
-import { accountContentHeight, renderAccount } from './screens/account';
+import { authorizeOnline, dispatchScreenAction, getScreenSnapshot, homeContentHeight, renderHome } from './screens/home';
+import { accountContentHeight, renderAccount, saveWechatNickname } from './screens/account';
 import { renderLobby } from './screens/lobby';
 import { dispatchWaitingAction, renderWaiting } from './screens/waiting';
 import { dispatchMatchAction, renderMatch } from './screens/match';
+import { createWechatNicknameButton } from './platform/wechatProfile';
 
 declare const __BELLFIVE_AUTH_URL__: string;
 declare const __BELLFIVE_SOCKET_URL__: string;
@@ -26,6 +27,9 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   const keyboard = createWxKeyboard(wxApi);
   const stores = createMiniGameStores(wxApi, options);
   const app = createMiniGameApp(keyboard);
+  const nicknameButton = createWechatNicknameButton(wxApi,
+    nickname => { void saveWechatNickname(app, stores, nickname); },
+    () => app.update({ notice: 'account.wechatNicknameUnavailable', errorCode: null }));
   const screen = (render: typeof renderHome): CanvasScreen => ({
     render(context, layout) { return render(context, layout, getScreenSnapshot(app, stores)); },
     onAction(actionId) { void dispatchScreenAction(actionId, app, stores); },
@@ -68,20 +72,39 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   const stopLobbyNavigation = app.navigation.subscribe(syncLobby);
   const stopLobbyAuth = stores.auth.subscribe(syncLobby);
   void stores.ready.then(syncLobby);
+  const hideNicknameButtonOutsideProfile = () => {
+    if (app.navigation.current !== 'account' || app.getState().accountMode !== 'profile') nicknameButton.hide();
+  };
+  const stopNicknameButtonNavigation = app.navigation.subscribe(hideNicknameButtonOutsideProfile);
+  const stopNicknameButtonApp = app.subscribe(hideNicknameButtonOutsideProfile);
+  void stores.ready.then(() => authorizeOnline(stores)).catch(error => {
+    if (!lifecycleActive) return;
+    const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? error.code : 'NETWORK_ERROR';
+    app.update({ errorCode: code });
+  });
   const stopFeedback = connectMatchFeedback(stores.game, feedback, () => stores.settings.getState().musicEnabled,
     () => feedbackActive && (app.navigation.current === 'solo' || app.navigation.current === 'match'));
   const stopFeedbackHide = platform.subscribe('hide', () => { feedbackActive = false; });
   const stopFeedbackShow = platform.subscribe('show', () => { feedbackActive = true; });
   const screens = { home: { ...screen(renderHome), scrollContentHeight(layout: ScreenLayout) {
     return homeContentHeight(layout, getScreenSnapshot(app, stores));
-  } }, account: { ...screen(renderAccount), scrollContentHeight(layout: ScreenLayout) {
+  } }, account: { ...screen(renderAccount), render(context: CanvasContext2D, layout: ScreenLayout) {
+    return renderAccount(context, layout, getScreenSnapshot(app, stores), {
+      wechatNicknameButtonAvailable: nicknameButton.available,
+      syncWechatNicknameButton(rect, title, language) { nicknameButton.place(rect, title, language); },
+    });
+  }, onAction(actionId: string) { void dispatchScreenAction(actionId, app, stores); },
+  onBack() { void dispatchScreenAction('nav.home', app, stores); },
+  onHide() { nicknameButton.hide(); app.clearPasswords(); app.clearIntent(); }, scrollContentHeight(layout: ScreenLayout) {
     return accountContentHeight(layout, getScreenSnapshot(app, stores));
   } }, lobby: screen(renderLobby),
     solo: matchScreen, waiting: waitingScreen, match: matchScreen, ...options.screens?.(app, stores) };
   const runtime = new CanvasRuntime({ platform, keyboard, navigation: app.navigation, screens,
     stores: [app, stores.auth, stores.profile, stores.settings, stores.game] });
   return { canvas: platform.canvas, runtime, app, stores, screens,
-    destroy() { lifecycleActive = false; stopLobbyNavigation(); stopLobbyAuth(); if (lobbySubscribed) stores.game.getState().closeLobby();
+    destroy() { lifecycleActive = false; stopLobbyNavigation(); stopLobbyAuth(); stopNicknameButtonNavigation(); stopNicknameButtonApp();
+      nicknameButton.destroy(); if (lobbySubscribed) stores.game.getState().closeLobby();
       stopFeedback(); stopFeedbackHide(); stopFeedbackShow(); feedback.dispose();
       stopRoomNavigation(); runtime.destroy(); app.dispose(); stores.dispose(); },
   };
