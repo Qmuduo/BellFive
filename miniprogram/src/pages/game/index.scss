@@ -1,5 +1,5 @@
 .mini-game-screen { height: 100vh; background: #f7f5f0; }
-.mini-game-shell { display: flex; flex-direction: column; box-sizing: border-box; padding: 13px 16px 28px; }
+.mini-game-shell { position: relative; display: flex; flex-direction: column; box-sizing: border-box; padding: 13px 16px 28px; }
 .mini-game-header { display: flex; flex-direction: row; align-items: center; justify-content: space-between; min-height: 42px; }
 .mini-game-brand { display: flex; flex-direction: row; align-items: center; min-width: 0; }
 .mini-game-brand-icon { display: flex; width: 35px; height: 35px; align-items: center; justify-content: center; margin-right: 8px; border-radius: 12px; background: #e4f3a7; font-size: 19px; }
@@ -60,6 +60,11 @@
 .mini-table-footnote { display: block; margin-top: 7px; color: #aaa2ad; font-size: 7px; text-align: center; }
 .mini-deck-collect { animation: mini-collect .38s ease-out both; }
 .mini-deck-penalty { animation: mini-penalty .36s ease-out both; }
+.mini-card-flight-layer { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; left: 0; overflow: visible; pointer-events: none; }
+.mini-flying-card { position: absolute; display: flex; width: 64rpx; height: 88rpx; align-items: center; justify-content: center; border: 2rpx solid #c6a3f7; border-radius: 10rpx; background: #f9f5ff; box-shadow: 0 3px 8px rgba(52, 33, 79, .24); box-sizing: border-box; will-change: transform, opacity; }
+.mini-flying-card-mark { color: #7040c4; font-size: 34rpx; line-height: 1; }
+.mini-card-flight-badge { position: absolute; z-index: 1; min-width: 44rpx; padding: 8rpx 14rpx; border-radius: 12rpx; background: #e3fb88; box-shadow: 0 2px 6px rgba(52, 33, 79, .2); color: #34214f; font-size: 22rpx; font-weight: 900; text-align: center; white-space: nowrap; }
+.mini-card-flight-badge-negative { background: #d76d67; color: #fff; }
 .mini-console-heading { min-height: 16px; }
 .mini-console-count { color: #978b9c; font-size: 8px; font-weight: 800; }
 .mini-action-prompt { display: block; margin: 8px 0 9px; color: #77717d; font-size: 9px; font-weight: 800; text-align: center; }

@@ -46,11 +46,11 @@ export function PlayerDeck({
         <Text className="mini-player-avatar">{AVATAR_EMOJI[profile.avatarId]}</Text>
         <View className="mini-player-copy">
           <Text className="mini-player-name">{playerLabel}{isLocalPlayer ? ` · ${translate(language, 'deck.you')}` : ''}</Text>
-          <Text className="mini-player-count">{translate(language, 'deck.cards', { count, cardWord: translate(language, count === 1 ? 'deck.cardWord.one' : 'deck.cardWord.many') })}</Text>
+          <Text id={`mini-draw-count-${playerId.toLowerCase()}`} className="mini-player-count">{translate(language, 'deck.cards', { count, cardWord: translate(language, count === 1 ? 'deck.cardWord.one' : 'deck.cardWord.many') })}</Text>
         </View>
         {isTurnOwner ? <Text className="mini-turn-badge">{isLocalPlayer ? translate(language, 'match.youLabel') : playerLabel}</Text> : null}
       </View>
-      <Button className="mini-card-action" disabled={!canFlip} onClick={onFlip} aria-label={translate(language, 'game.playerDeck', { playerLabel })}>
+      <Button id={`mini-card-source-${playerId.toLowerCase()}`} className="mini-card-action" disabled={!canFlip} onClick={onFlip} aria-label={translate(language, 'game.playerDeck', { playerLabel })}>
         {topCard
           ? <GameCard key={`${playerId}-${cardKey}`} card={topCard} revealed orientation={playerId} />
           : <View className="mini-empty-card"><Text>—</Text><Text className="mini-empty-card-hint">{translate(language, 'card.ready')}</Text></View>}

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Taro from '@tarojs/taro';
 import { Button, ScrollView, Text, View } from '@tarojs/components';
 import type { RoomSnapshot } from '../../../../src/network/protocol';
+import type { RingFeedbackEvent } from '../../../../src/network/protocol';
 import type { PlayerId } from '../../../../src/game/types';
 import { getPlayerDisplayName } from '../../../../src/profile';
 import { formatGameError, translate } from '../../../../src/i18n/translations';
@@ -14,6 +15,7 @@ import { miniText } from '../../uiText';
 import { BellButton } from '../../components/BellButton';
 import { MatchStatus } from '../../components/MatchStatus';
 import { PlayerDeck } from '../../components/PlayerDeck';
+import { CardTransferFly } from '../../components/CardTransferFly';
 import { RingActivityLog } from '../../components/RingActivityLog';
 import './index.scss';
 
@@ -56,6 +58,7 @@ export default function GamePage(): JSX.Element {
   const lastRingVersion = useRef(0);
   const lastFlipVersion = useRef(0);
   const lastPhase = useRef<RoomSnapshot['phase'] | null>(null);
+  const [transferEvent, setTransferEvent] = useState<RingFeedbackEvent | null>(null);
   const soundEnabled = settingsHydrated && musicEnabled;
   const t = (key: Parameters<typeof translate>[1]) => translate(language, key);
 
@@ -76,6 +79,7 @@ export default function GamePage(): JSX.Element {
       lastRingVersion.current = snapshot.ringVersion ?? snapshot.lastRingEvent?.version ?? 0;
       lastFlipVersion.current = snapshot.lastFlipEvent?.version ?? 0;
       lastPhase.current = snapshot.phase;
+      setTransferEvent(null);
       return;
     }
 
@@ -85,7 +89,10 @@ export default function GamePage(): JSX.Element {
       const ringEvent = snapshot.lastRingEvent?.version === ringVersion
         ? snapshot.lastRingEvent
         : snapshot.ringHistory.find(event => event.version === ringVersion);
-      if (ringEvent) playMiniFeedback(ringEvent.outcome, soundEnabled);
+      if (ringEvent) {
+        playMiniFeedback(ringEvent.outcome, soundEnabled);
+        if (ringEvent.movedCardCount > 0) setTransferEvent(ringEvent);
+      }
     }
 
     const flipVersion = snapshot.lastFlipEvent?.version ?? 0;
@@ -99,6 +106,14 @@ export default function GamePage(): JSX.Element {
     }
     lastPhase.current = snapshot.phase;
   }, [snapshot, game.roomSessionVersion, soundEnabled]);
+
+  useEffect(() => {
+    if (!transferEvent) return;
+    const timeout = setTimeout(() => {
+      setTransferEvent(current => current?.version === transferEvent.version ? null : current);
+    }, 900);
+    return () => clearTimeout(timeout);
+  }, [transferEvent]);
 
   if (!snapshot) {
     return <View className="mini-game-loading"><Text>{game.leavingRoom ? t('entry.leaving') : miniText(language, 'lobbyLoading')}</Text></View>;
@@ -139,7 +154,7 @@ export default function GamePage(): JSX.Element {
 
   return (
     <ScrollView className="mini-game-screen" scrollY>
-      <View className="mini-game-shell">
+      <View id="mini-game-shell" className="mini-game-shell">
         <View className="mini-game-header">
           <View className="mini-game-brand">
             <Text className="mini-game-brand-icon">🔔</Text>
@@ -259,6 +274,7 @@ export default function GamePage(): JSX.Element {
             opponentName={isSolo ? t('solo.opponent') : getPlayerDisplayName(opponent.profile, opponentPlayerId, language)}
           />
         ) : null}
+        {transferEvent ? <CardTransferFly key={transferEvent.version} event={transferEvent} /> : null}
       </View>
     </ScrollView>
   );

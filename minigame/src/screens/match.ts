@@ -2,14 +2,14 @@ import { formatGameError, playerSeatLabel, translate, type Language } from '../.
 import { formatRingActivity } from '../../../src/i18n/ringActivity';
 import { FRUIT_TYPES, type PlayerId } from '../../../src/game/types';
 import type { GameClientStatus } from '../../../src/network/GameClient';
-import type { RoomSnapshot, ServerMessage } from '../../../src/network/protocol';
+import type { RingFeedbackEvent, RoomSnapshot, ServerMessage } from '../../../src/network/protocol';
 import { AVATAR_EMOJI } from '../../../src/profile';
 import type { GameSessionMode } from '../../../src/store/createGameStoreApi';
 import { gameColors } from '../../../src/theme/gameColors';
 import type { CanvasContext2D } from '../platform/wxApi';
 import { CARD_SYMBOLS, drawCard } from '../runtime/drawCard';
 import { drawText } from '../runtime/drawText';
-import { drawAvatarBadge, drawCanvasButton, drawRoundedPanel } from '../runtime/ui';
+import { drawAvatarBadge, drawCanvasButton, drawRoundedPanel, drawStatusBadge } from '../runtime/ui';
 import type { Rect, ScreenLayout, TapTarget } from '../runtime/layout';
 import type { MiniGameApp } from '../runtime/navigation';
 import type { MiniGameStores } from '../stores/gameStore';
@@ -20,6 +20,83 @@ interface MatchOptions {
   leavingRoom?: boolean; readyPending?: boolean; errorCode?: string;
 }
 type ActionResult = Extract<ServerMessage, { type: 'action.result' }>;
+export type MatchTransferAnimation = Readonly<{ event: RingFeedbackEvent; startedAt: number }>;
+
+const CARD_FLIGHT_MS = 620;
+const CARD_FLIGHT_STAGGER_MS = 58;
+const CARD_FLIGHT_COUNT = 5;
+
+function drawTransferCard(context: CanvasContext2D, center: { x: number; y: number }, progress: number,
+  fan: number, alpha: number): void {
+  const width = 26 - progress * 10;
+  const height = width * 1.4;
+  context.save();
+  context.globalAlpha = alpha;
+  context.translate(center.x, center.y);
+  context.rotate(fan * 0.025 + progress * 0.08);
+  drawRoundedPanel(context, { x: -width / 2, y: -height / 2, width, height }, {
+    fill: gameColors.surface, border: gameColors.purpleActionBorder, radius: 5, borderWidth: 1.5,
+  });
+  context.font = `${Math.max(12, width * 0.58)}px sans-serif`;
+  context.fillStyle = gameColors.purple;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(CARD_SYMBOLS.bell, 0, 0);
+  context.restore();
+}
+
+function drawCardFlight(context: CanvasContext2D, start: { x: number; y: number }, end: { x: number; y: number },
+  progress: number, fan: number): void {
+  const eased = 1 - Math.pow(1 - progress, 3);
+  const control = { x: (start.x + end.x) / 2, y: Math.min(start.y, end.y) - 24 - Math.abs(fan) };
+  const point = {
+    x: (1 - eased) * (1 - eased) * start.x + 2 * (1 - eased) * eased * control.x + eased * eased * end.x,
+    y: (1 - eased) * (1 - eased) * start.y + 2 * (1 - eased) * eased * control.y + eased * eased * end.y,
+  };
+  context.save();
+  context.globalAlpha = 0.3 * (1 - eased);
+  context.beginPath();
+  context.moveTo(start.x, start.y);
+  context.quadraticCurveTo(control.x, control.y, point.x, point.y);
+  context.strokeStyle = gameColors.purpleActionBorder;
+  context.lineWidth = 2;
+  context.stroke();
+  context.restore();
+  drawTransferCard(context, point, eased, fan, 1 - eased * 0.14);
+}
+
+function drawCardTransfer(context: CanvasContext2D, event: RingFeedbackEvent, startedAt: number, timestamp: number,
+  tableCards: Readonly<Record<PlayerId, Rect>>, drawCounters: Readonly<Record<PlayerId, Rect>>): void {
+  const elapsed = Math.max(0, timestamp - startedAt);
+  const opponent: PlayerId = event.caller === 'A' ? 'B' : 'A';
+  const isCollection = event.outcome === 'correct';
+  const receiver: PlayerId = isCollection ? event.caller : opponent;
+  const count = Math.min(event.movedCardCount, CARD_FLIGHT_COUNT);
+  const center = (rect: Rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+  const destination = center(drawCounters[receiver]);
+
+  for (let index = 0; index < count; index += 1) {
+    const delay = index * CARD_FLIGHT_STAGGER_MS;
+    const progress = Math.min(1, Math.max(0, (elapsed - delay) / CARD_FLIGHT_MS));
+    if (elapsed < delay) continue;
+    const fan = index - (count - 1) / 2;
+    const origin = center(isCollection ? tableCards[index % 2 === 0 ? 'A' : 'B'] : drawCounters[event.caller]);
+    drawCardFlight(context, { x: origin.x + fan * 5, y: origin.y + fan * 1.5 }, destination, progress, fan);
+  }
+
+  if (elapsed >= 260) {
+    const badge = (playerId: PlayerId, label: string, tone: 'success' | 'error') => {
+      const point = center(drawCounters[playerId]);
+      drawStatusBadge(context, { x: point.x - 23, y: point.y - 12, width: 46, height: 24 }, label, tone);
+    };
+    if (isCollection) badge(event.caller, `+${event.movedCardCount}`, 'success');
+    else {
+      badge(event.caller, `−${event.movedCardCount}`, 'error');
+      badge(opponent, `+${event.movedCardCount}`, 'success');
+    }
+  }
+}
+
 export function createMatchViewModel(snapshot: RoomSnapshot | null, localPlayerId: PlayerId | null,
   lastActionResult: ActionResult | null, options: MatchOptions = {}) {
   const language = options.language ?? 'zh-CN';
@@ -88,7 +165,8 @@ export function createMatchViewModel(snapshot: RoomSnapshot | null, localPlayerI
 export type MatchViewModel = ReturnType<typeof createMatchViewModel>;
 
 /** All painting and interactive rectangles are derived from the safe logical content. */
-export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, view: MatchViewModel): TapTarget[] {
+export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, view: MatchViewModel,
+  timestamp = 0, transferAnimation: MatchTransferAnimation | null = null): TapTarget[] {
   const { content } = layout;
   const margin = Math.min(12, content.width / 24, content.height / 35);
   const x = content.x + margin; const width = Math.max(0, content.width - margin * 2);
@@ -149,6 +227,7 @@ export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, 
     view.bellHint, font - 2, gameColors.muted);
 
   const gap = Math.min(10, width / 28); const columnWidth = (width - gap) / 2;
+  const tableCards: Record<PlayerId, Rect> = { A: { x: 0, y: 0, width: 0, height: 0 }, B: { x: 0, y: 0, width: 0, height: 0 } };
   view.players.forEach((player, index) => {
     const px = x + index * (columnWidth + gap);
     const panel = { x: px, y: boardY, width: columnWidth, height: Math.max(0, boardBottom - boardY) };
@@ -164,6 +243,7 @@ export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, 
     const cardWidth = Math.min(columnWidth - 24, cardSpace / 1.4);
     const cardRect = { x: px + (columnWidth - cardWidth) / 2, y: boardY + 47,
       width: cardWidth, height: Math.min(cardSpace, cardWidth * 1.4) };
+    tableCards[player.id] = cardRect;
     drawCard(context, cardRect, player.topCard, player.local ? 'local' : 'opponent', {
       face: gameColors.surface, back: gameColors.lavenderSurface, border: gameColors.border, ink: gameColors.plum,
     });
@@ -182,8 +262,19 @@ export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, 
   const own = view.players.find(player => player.local);
   text({ x: x + 14, y: consoleY + 7, width: width * 0.43, height: 19 }, own?.identityLabel ?? view.title,
     font, gameColors.onDark, 1, true);
-  text({ x: x + width * 0.44, y: consoleY + 7, width: width * 0.52 - 8, height: 19 },
-    view.players.map(player => `${player.drawCount ?? '—'}/${player.playedCount ?? '—'}`).join(' : '), font, gameColors.lime, 1, true);
+  const counterGap = 4;
+  const counterArea = { x: x + width * 0.44, y: consoleY + 5, width: width * 0.52 - 8, height: 24 };
+  const counterWidth = Math.max(0, (counterArea.width - counterGap) / 2);
+  const drawCounters: Record<PlayerId, Rect> = { A: { x: 0, y: 0, width: 0, height: 0 }, B: { x: 0, y: 0, width: 0, height: 0 } };
+  view.players.forEach((player, index) => {
+    const rect = { x: counterArea.x + index * (counterWidth + counterGap), y: counterArea.y,
+      width: counterWidth, height: counterArea.height };
+    drawCounters[player.id] = rect;
+    drawRoundedPanel(context, rect, { fill: player.local ? gameColors.lime : gameColors.lavenderSurface, radius: 8 });
+    const label = translate(view.language, player.local ? 'match.count.you' : 'match.count.opponent');
+    text({ x: rect.x + 4, y: rect.y + 1, width: rect.width - 8, height: rect.height - 2 },
+      `${label} ${player.drawCount ?? '—'}`, Math.max(8, font - 3), player.local ? gameColors.plum : gameColors.muted, 1, true);
+  });
   text({ x: x + 14, y: consoleY + 27, width: width - 28, height: 19 },
     view.finished ? view.winnerLabel : view.turnPrompt, font - 1, gameColors.mutedOnDark);
   const actionY = consoleY + (consoleHeight <= 120 ? 50 : 56);
@@ -201,15 +292,19 @@ export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, 
   }
   text({ x: x + 12, y: actionY + actionHeight + 2, width: width - 24, height: 17 },
     view.ringFeedback || view.bellHint, font - 2, gameColors.subtleOnDark);
+  if (transferAnimation && timestamp - transferAnimation.startedAt < 950) {
+    drawCardTransfer(context, transferAnimation.event, transferAnimation.startedAt, timestamp, tableCards, drawCounters);
+  }
   context.restore(); return targets;
 }
 
-export function renderMatch(context: CanvasContext2D, layout: ScreenLayout, snapshot: ScreenSnapshot): TapTarget[] {
+export function renderMatch(context: CanvasContext2D, layout: ScreenLayout, snapshot: ScreenSnapshot,
+  timestamp = 0, transferAnimation: MatchTransferAnimation | null = null): TapTarget[] {
   const game = snapshot.game;
   return drawMatchScreen(context, layout, createMatchViewModel(game.roomSnapshot, game.localPlayerId, game.lastActionResult, {
     language: snapshot.settings.language, sessionMode: game.sessionMode, connectionStatus: game.connectionStatus,
     leavingRoom: game.leavingRoom, readyPending: Boolean(snapshot.app.pendingReadyAction), errorCode: game.error?.code,
-  }));
+  }), timestamp, transferAnimation);
 }
 
 /** Re-read the shared store on every action, including stale taps after a disconnect. */

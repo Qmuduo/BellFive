@@ -9,7 +9,7 @@ import { authorizeOnline, dispatchScreenAction, getScreenSnapshot, homeContentHe
 import { accountContentHeight, renderAccount, saveWechatNickname } from './screens/account';
 import { renderLobby } from './screens/lobby';
 import { dispatchWaitingAction, renderWaiting } from './screens/waiting';
-import { dispatchMatchAction, renderMatch } from './screens/match';
+import { dispatchMatchAction, renderMatch, type MatchTransferAnimation } from './screens/match';
 import { createWechatNicknameButton } from './platform/wechatProfile';
 
 declare const __BELLFIVE_AUTH_URL__: string;
@@ -38,8 +38,31 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   });
   let feedbackActive = true;
   const feedback = createWxFeedback(wxApi);
+  let lastMatchSessionVersion: number | null = null;
+  let lastRingVersion = 0;
+  let activeTransfer: MatchTransferAnimation | null = null;
   const matchScreen: CanvasScreen = {
-    render(context, layout) { return renderMatch(context, layout, getScreenSnapshot(app, stores)); },
+    render(context, layout, timestamp) {
+      const snapshot = getScreenSnapshot(app, stores);
+      const game = snapshot.game;
+      if (lastMatchSessionVersion !== game.roomSessionVersion) {
+        lastMatchSessionVersion = game.roomSessionVersion;
+        lastRingVersion = game.roomSnapshot?.ringVersion ?? game.roomSnapshot?.lastRingEvent?.version ?? 0;
+        activeTransfer = null;
+      } else {
+        const room = game.roomSnapshot;
+        const ringVersion = room?.ringVersion ?? room?.lastRingEvent?.version ?? 0;
+        if (room && ringVersion > lastRingVersion) {
+          lastRingVersion = ringVersion;
+          const event = room.lastRingEvent?.version === ringVersion
+            ? room.lastRingEvent
+            : room.ringHistory.find(item => item.version === ringVersion) ?? null;
+          activeTransfer = event && event.movedCardCount > 0 ? { event, startedAt: timestamp } : null;
+        }
+      }
+      if (activeTransfer && timestamp - activeTransfer.startedAt >= 950) activeTransfer = null;
+      return renderMatch(context, layout, snapshot, timestamp, activeTransfer);
+    },
     onAction(actionId) { dispatchMatchAction(actionId, app, stores); },
     onBack() { dispatchMatchAction('match.leave', app, stores); },
     onHide() { app.clearPasswords(); app.clearIntent(); },
