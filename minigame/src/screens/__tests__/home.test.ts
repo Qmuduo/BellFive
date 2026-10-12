@@ -1,88 +1,92 @@
 /** @jest-environment node */
-import { layoutForScreen } from '../../runtime/layout';
+import { hitTest, layoutForScreen } from '../../runtime/layout';
 import { homeContentHeight, renderHome } from '../home';
 import { gameColors } from '../../../../src/theme/gameColors';
 
 const context = () => ({
-  fills: [] as string[], texts: [] as string[], textCalls: [] as { text: string; x: number; y: number }[],
+  fills: [] as string[], texts: [] as string[],
   fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textAlign: 'left', textBaseline: 'middle',
   save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, closePath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, arc() {}, fill() { this.fills.push(this.fillStyle); }, stroke() {},
-  fillRect() { this.fills.push(this.fillStyle); }, fillText(text: string, x: number, y: number) { this.texts.push(text); this.textCalls.push({ text, x, y }); },
-  measureText(text: string) { return { width: text.length * 8 }; },
+  fillRect() { this.fills.push(this.fillStyle); }, fillText(text: string) { this.texts.push(text); },
+  measureText(text: string) { return { width: Array.from(text).length * 8 }; },
 });
 const snapshot = (overrides: any = {}) => ({
-  app: { fields: { roomCode: '' }, pendingIntent: null, onlineBusy: false, accountBusy: false, errorCode: null, ...overrides.app },
+  app: { fields: { roomCode: '' }, soloDifficulty: 'normal', pendingIntent: null, onlineBusy: false, accountBusy: false, errorCode: null, ...overrides.app },
   auth: { profileVerified: false, user: null, ...overrides.auth },
   profile: { profile: { nickname: 'Guest', avatarId: 'bell' } }, settings: { language: 'en' },
-  game: { openRooms: [], lobbySnapshotReceived: false, ...overrides.game }, pendingCreate: false,
+  game: { openRooms: [], lobbySnapshotReceived: false, ...overrides.game }, pendingCreate: overrides.pendingCreate ?? false,
 }) as any;
 
-test('home paints Android color hierarchy and keeps all primary actions', () => {
-  const c = context(); const layout = layoutForScreen(320, 568, { top: 20, bottom: 20 });
+test.each([
+  [320, 568, 20, 20, { x: 230, y: 20, width: 84, height: 32 }],
+  [375, 667, 44, 34, { x: 280, y: 48, width: 88, height: 32 }],
+  [390, 844, 44, 34, { x: 294, y: 48, width: 88, height: 32 }],
+] as const)('home presents one fully visible solo start on %s×%s', (w, h, top, bottom, capsule) => {
+  const c = context(); const layout = layoutForScreen(w, h, { top, bottom }, capsule);
   const targets = renderHome(c as any, layout, snapshot());
+  const start = targets.find(item => item.id === 'home.solo.normal')!;
+  expect(start).toBeDefined();
+  expect(start.rect.height).toBeGreaterThanOrEqual(56);
+  expect(start.rect.y + start.rect.height).toBeLessThanOrEqual(h - bottom);
+  expect(targets.filter(item => item.id.startsWith('home.solo.'))).toHaveLength(1);
+  expect(targets.map(item => item.id)).toEqual(expect.arrayContaining(['home.difficulty.easy', 'home.difficulty.normal', 'home.difficulty.hard']));
+  expect(targets.find(item => item.id === 'home.account')!.rect.y).toBeGreaterThanOrEqual(capsule.y + capsule.height);
   expect(c.texts).toContain('BellFive');
-  expect(c.fills).toContain(gameColors.purpleAction);
+  expect(c.fills).toContain(gameColors.purple);
   expect(c.fills).toContain(gameColors.lime);
-  expect(targets.map(item => item.id)).toEqual(expect.arrayContaining(['settings.language', 'home.account', 'home.create', 'home.solo.easy', 'home.solo.normal', 'home.solo.hard', 'home.lobby']));
-  const lobby = targets.find(item => item.id === 'home.lobby')!;
-  expect(c.textCalls).toContainEqual({ text: 'OPEN ROOMS', x: lobby.rect.x + lobby.rect.width / 2, y: lobby.rect.y + lobby.rect.height / 2 });
-  expect(targets.every(item => item.rect.y >= 20 && item.rect.y + item.rect.height <= 548)).toBe(true);
+  expect(targets.every(item => item.rect.y >= top && item.rect.y + item.rect.height <= h - bottom)).toBe(true);
 });
 
-test('home account entry avoids the native capsule reserved region', () => {
-  const layout = layoutForScreen(390, 844, { top: 0, bottom: 0 }, { x: 294, y: 8, width: 88, height: 32 });
-  const targets = renderHome(context() as any, layout, snapshot());
-  const account = targets.find(item => item.id === 'home.account')!;
-  const language = targets.find(item => item.id === 'settings.language')!;
-  expect(account.rect.x + account.rect.width).toBeLessThanOrEqual(294);
-  expect(account.rect.x).toBeGreaterThanOrEqual(language.rect.x + language.rect.width);
+test('changing difficulty changes the single start target', () => {
+  const layout = layoutForScreen(390, 844, { top: 44, bottom: 34 });
+  const targets = renderHome(context() as any, layout, snapshot({ app: { soloDifficulty: 'hard' } }));
+  expect(targets.filter(item => item.id.startsWith('home.solo.')).map(item => item.id)).toEqual(['home.solo.hard']);
 });
 
-test('short home keeps the displaced account entry and bottom join action reachable by scrolling', () => {
+test('all home controls remain reachable by scrolling with comfortable touch areas', () => {
+  const data = snapshot();
+  const layout = layoutForScreen(320, 568, { top: 20, bottom: 20 });
+  const ids = new Set<string>();
+  const maxScroll = Math.max(0, homeContentHeight(layout, data) - layout.content.height);
+  for (const scroll of [0, maxScroll / 2, maxScroll]) {
+    layout.scrollY = scroll;
+    const targets = renderHome(context() as any, layout, data);
+    targets.forEach(target => {
+      ids.add(target.id);
+      if (target.rect.height >= 44) expect(hitTest({ x: target.rect.x + target.rect.width / 2, y: target.rect.y + target.rect.height / 2 }, targets)).toBe(target.id);
+    });
+  }
+  expect([...ids]).toEqual(expect.arrayContaining(['home.account', 'settings.language', 'home.create', 'field.roomCode', 'home.join', 'home.lobby']));
+  const bottom = renderHome(context() as any, layout, data);
+  for (const id of ['field.roomCode', 'home.join', 'home.lobby', 'settings.language']) {
+    expect(bottom.find(target => target.id === id)!.rect.height).toBeGreaterThanOrEqual(44);
+  }
+});
+
+test('room updates do not displace homepage controls; browsing belongs to the lobby', () => {
+  const layout = layoutForScreen(390, 844, { top: 44, bottom: 34 });
+  const rooms = snapshot({ game: { openRooms: [{ roomCode: 'ABCD23', hostProfile: { nickname: 'Mira', avatarId: 'bell' } }] } });
+  expect(homeContentHeight(layout, rooms)).toBe(homeContentHeight(layout, snapshot()));
+  const targets = renderHome(context() as any, layout, rooms);
+  expect(targets.some(target => target.id === 'home.lobby')).toBe(true);
+  expect(targets.some(target => target.id.startsWith('lobby.apply.'))).toBe(false);
+});
+
+test('home scrolling is continuous across the capsule boundary', () => {
   const data = snapshot();
   const layout = layoutForScreen(320, 568, { top: 20, bottom: 20 }, { x: 230, y: 20, width: 84, height: 32 });
-  const targetsAtTop = renderHome(context() as any, layout, data);
-  const language = targetsAtTop.find(item => item.id === 'settings.language')!;
-  const account = targetsAtTop.find(item => item.id === 'home.account')!;
-  expect(account.rect.x).toBe(language.rect.x);
-  expect(account.rect.y).toBeGreaterThanOrEqual(language.rect.y + language.rect.height);
-  expect(homeContentHeight(layout, data)).toBeGreaterThan(layout.content.height);
-  layout.scrollY = homeContentHeight(layout, data) - layout.content.height;
-  const join = renderHome(context() as any, layout, data).find(item => item.id === 'home.join')!;
-  expect(join.rect.y + join.rect.height).toBeLessThanOrEqual(layout.content.y + layout.content.height);
-});
-
-test.each([
-  [20, { x: 230, y: 20, width: 84, height: 32 }, 47, 48],
-  [44, { x: 230, y: 8, width: 84, height: 32 }, 16, 17],
-] as const)('home header layout stays continuous when scrolling across capsule boundary (safe top %s)', (safeTop, capsule, before, after) => {
-  const data = snapshot();
-  const layout = layoutForScreen(320, 568, { top: safeTop, bottom: 20 }, capsule);
-  const createY = (scrollY: number) => {
-    layout.scrollY = scrollY;
-    return renderHome(context() as any, layout, data).find(item => item.id === 'home.create')!.rect.y;
+  const startY = (scroll: number) => {
+    layout.scrollY = scroll;
+    return renderHome(context() as any, layout, data).find(item => item.id === 'home.solo.normal')!.rect.y;
   };
-  expect(createY(before) + before).toBe(createY(after) + after);
+  expect(startY(47) + 47).toBe(startY(48) + 48);
 });
 
-test('home room preview has its own join target and bottom code controls remain reachable after scrolling', () => {
-  const data = snapshot({ game: { openRooms: [{ roomCode: 'ABCD23', hostProfile: { nickname: 'Mira', avatarId: 'bell' } }] } });
+test('pending room creation keeps cancellation reachable and disables starting another game', () => {
+  const data = snapshot({ pendingCreate: true });
   const layout = layoutForScreen(320, 568, { top: 20, bottom: 20 });
-  expect(homeContentHeight(layout, data)).toBeGreaterThan(layout.content.height);
-  layout.scrollY = homeContentHeight(layout, data) - layout.content.height;
+  layout.scrollY = Math.max(0, homeContentHeight(layout, data) - layout.content.height);
   const targets = renderHome(context() as any, layout, data);
-  expect(targets.some(item => item.id === 'field.roomCode')).toBe(true);
-  expect(targets.some(item => item.id === 'home.join')).toBe(true);
-  expect(targets.every(item => item.rect.y >= 20 && item.rect.y + item.rect.height <= 548)).toBe(true);
-  layout.scrollY = 450;
-  expect(renderHome(context() as any, layout, data).some(item => item.id === 'lobby.apply.ABCD23')).toBe(true);
-});
-
-test('pending create removes online actions while cancel remains available', () => {
-  const layout = layoutForScreen(320, 568, { top: 20, bottom: 20 });
-  const data = { ...snapshot(), pendingCreate: true };
-  layout.scrollY = homeContentHeight(layout, data) - layout.content.height;
-  const targets = renderHome(context() as any, layout, data);
-  expect(targets.some(item => item.id === 'home.create')).toBe(false);
   expect(targets.some(item => item.id === 'home.cancelCreate')).toBe(true);
+  expect(targets.some(item => item.id.startsWith('home.solo.') || item.id.startsWith('home.difficulty.') || ['home.create', 'home.join', 'home.lobby'].includes(item.id))).toBe(false);
 });

@@ -399,7 +399,10 @@ test('default native entry completes guest solo via Canvas controls without auth
   try {
     await boot.stores.ready; fixture.frame();
     const home = boot.screens.home.render(fixture.ctx as any, boot.runtime.layout, 0);
-    fixture.tap(home.find(target => target.id === 'home.solo.easy')!.rect);
+    fixture.tap(home.find(target => target.id === 'home.difficulty.easy')!.rect);
+    fixture.frame();
+    const selectedHome = boot.screens.home.render(fixture.ctx as any, boot.runtime.layout, 0);
+    fixture.tap(selectedHome.find(target => target.id === 'home.solo.easy')!.rect);
     expect(boot.runtime.currentScreen).toBe('solo'); fixture.frame();
     const solo = boot.screens.solo.render(fixture.ctx as any, boot.runtime.layout, 0);
     fixture.tap(solo.find(target => target.id === 'match.flip')!.rect);

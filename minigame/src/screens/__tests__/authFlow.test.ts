@@ -41,6 +41,24 @@ function fixture(saved?: unknown) {
   return { api, stores, app, values, requests, sockets, loginCallbacks, keyboard, respond, authorize, message, connect, dispose };
 }
 
+test('difficulty selection does not start a game; the primary action starts the selected mode offline', async () => {
+  const f = fixture(); await f.stores.ready;
+  expect(f.app.getState().soloDifficulty).toBe('normal');
+  await dispatchScreenAction('home.difficulty.hard', f.app, f.stores);
+  expect(f.app.getState().soloDifficulty).toBe('hard');
+  expect(f.stores.game.getState().sessionMode).toBe('none');
+  const targets = renderHome(canvasContext() as any, geometry, getScreenSnapshot(f.app, f.stores));
+  const start = targets.find(target => target.id.startsWith('home.solo.'))!;
+  const startGame = jest.spyOn(f.stores.game.getState(), 'startSinglePlayer');
+  await dispatchScreenAction(start.id, f.app, f.stores);
+  expect(startGame).toHaveBeenCalledWith(f.stores.profile.getState().profile, 'hard');
+  expect(f.stores.game.getState().sessionMode).toBe('single-player');
+  expect(f.app.navigation.current).toBe('solo');
+  expect(f.api.login).not.toHaveBeenCalled();
+  expect(f.api.connectSocket).not.toHaveBeenCalled();
+  f.dispose();
+});
+
 test('guest online intent authenticates on the server, persists session, and resumes once after socket acknowledgement', async () => {
   const f = fixture(); await f.stores.ready;
   const pending = dispatchScreenAction('home.create', f.app, f.stores);

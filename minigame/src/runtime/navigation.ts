@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { AvatarId } from '../../../src/profile';
 import type { GameStore } from '../../../src/store/createGameStoreApi';
+import type { SinglePlayerDifficulty } from '../../../src/game/singlePlayerController';
 import type { KeyboardAdapter } from '../platform/keyboard';
 
 export class ScreenNavigation {
@@ -88,6 +89,7 @@ export type PendingReadyAction = Readonly<{
   roomSessionVersion: number;
 }>;
 export interface MiniGameAppState {
+  readonly soloDifficulty: SinglePlayerDifficulty;
   readonly pendingIntent: OnlineIntent | null;
   readonly onlineBusy: boolean;
   readonly accountBusy: boolean;
@@ -107,6 +109,7 @@ export interface MiniGameAppState {
 /** Forms and intents live in memory only; credentials never enter persisted stores. */
 export function createMiniGameApp(keyboard?: KeyboardAdapter) {
   const state = createStore<MiniGameAppState>(() => ({
+    soloDifficulty: 'normal',
     pendingIntent: null, onlineBusy: false, accountBusy: false, errorCode: null, notice: null,
     accountMode: 'menu', confirmTransfer: false, avatarId: 'strawberry', lobbyPage: 0, waitingApplicationPage: 0,
     pendingReadyAction: null, pendingCancelApplicationId: null,

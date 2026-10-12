@@ -12,6 +12,7 @@ import type { CanvasContext2D } from '../platform/wxApi';
 import type { MiniGameApp, MiniGameAppState, OnlineIntent, InputField } from '../runtime/navigation';
 import { clipTapTargetsToContent, type Rect, type ScreenLayout, type TapTarget } from '../runtime/layout';
 import { drawAvatarBadge, drawCanvasButton, drawInputField, drawRoundedPanel } from '../runtime/ui';
+import { drawText } from '../runtime/drawText';
 import type { MiniGameStores } from '../stores/gameStore';
 import { dispatchAccountAction } from './account';
 import { dispatchLobbyAction } from './lobby';
@@ -83,43 +84,33 @@ export function drawMenu(context: CanvasContext2D, layout: ScreenLayout, title: 
 }
 
 const HOME_MARGIN = 18;
-const HOME_GAP = 12;
-const HOME_ROOM_HEIGHT = 64;
-
-interface HomeHeaderLayout {
-  language: Rect;
-  account: Rect;
-  nextY: number;
-}
-
-function getHomeHeaderLayout(layout: ScreenLayout): HomeHeaderLayout {
-  const menu = layout.menuButton;
+/** One geometry source for paint, hit targets and the runtime's scroll limit. */
+function getHomeLayout(layout: ScreenLayout, snapshot: ScreenSnapshot) {
   const { content } = layout;
   const margin = Math.min(HOME_MARGIN, content.width / 12);
-  const x = content.x + margin; const width = content.width - margin * 2;
-  const y = content.y + 12; const height = 36; const buttonWidth = Math.min(110, width * 0.4);
-  const language = { x, y, width: buttonWidth, height };
-  const account = { x: x + width - buttonWidth, y, width: buttonWidth, height };
-  if (menu && account.x < menu.x + menu.width && account.x + account.width > menu.x) {
-    const leftCandidate = menu.x - 8 - account.width;
-    if (leftCandidate >= language.x + language.width + 8) account.x = leftCandidate;
-    else {
-      account.x = x;
-      account.y = Math.max(y + height + 8, menu.y + menu.height + 6);
-    }
-  }
-  return { language, account, nextY: Math.max(language.y + height, account.y + height) + 14 };
+  const x = content.x + margin;
+  const width = Math.max(0, content.width - margin * 2);
+  // Reserve the native capsule before placing the homepage header.
+  let y = Math.max(content.y + 12, layout.menuButton ? layout.menuButton.y + layout.menuButton.height + 12 : 0);
+  const row = (height: number, gap: number): Rect => {
+    const rect = { x, y, width, height }; y += height + gap; return rect;
+  };
+  const header = row(44, 16);
+  const hero = row(content.height < 600 ? 244 : 260, 10);
+  const difficulty = row(44, 22);
+  const friends = row(156, 10);
+  const busy = snapshot.app.onlineBusy || snapshot.app.accountBusy || snapshot.pendingCreate;
+  const status = appError(snapshot) || (busy ? label(snapshot, 'entry.connecting') : '');
+  const notice = status ? row(64, 8) : null;
+  const recovery = snapshot.pendingCreate || snapshot.app.pendingIntent ? row(44, 8) : null;
+  y += 8;
+  const lobby = row(64, 12);
+  const language = row(44, 18);
+  return { header, hero, difficulty, friends, notice, recovery, lobby, language, status, height: y - content.y };
 }
 
-/** Includes the safe content origin only through the runtime's viewport height. */
 export function homeContentHeight(layout: ScreenLayout, snapshot: ScreenSnapshot): number {
-  const header = getHomeHeaderLayout(layout);
-  const headerOffset = Math.max(0, header.nextY - (layout.content.y + 62));
-  const rooms = Math.min(2, snapshot.game.openRooms.length);
-  const extras = snapshot.pendingCreate ? 44 : snapshot.app.pendingIntent ? 88 : 0;
-  const status = appError(snapshot) || snapshot.pendingCreate || snapshot.app.onlineBusy ? 42 : 0;
-  return 12 + 36 + 132 + 86 + 58 + 134 + 38 + (rooms ? rooms * (HOME_ROOM_HEIGHT + 8) : 52)
-    + 24 + 56 + 56 + extras + status + 34 + HOME_MARGIN + headerOffset;
+  return getHomeLayout(layout, snapshot).height;
 }
 
 export function drawScreenText(context: CanvasContext2D, text: string, x: number, y: number,
@@ -147,81 +138,134 @@ export function drawRoomCard(context: CanvasContext2D, rect: Rect, room: ScreenS
   return button;
 }
 
+/** A concrete five-fruit example explains the game before the first tap. */
+function drawHomeExample(context: CanvasContext2D, rect: Rect): void {
+  const left = rect.x + rect.width / 2 - 112;
+  const card = (x: number, count: 2 | 3) => {
+    drawRoundedPanel(context, { x, y: rect.y, width: 52, height: 64 },
+      { fill: gameColors.surface, radius: 12 });
+    context.save(); context.font = '20px sans-serif'; context.textAlign = 'center'; context.textBaseline = 'middle';
+    if (count === 3) {
+      context.fillText('🍓', x + 15, rect.y + 18); context.fillText('🍓', x + 37, rect.y + 18);
+      context.fillText('🍓', x + 26, rect.y + 43);
+    } else {
+      context.fillText('🍓', x + 26, rect.y + 18); context.fillText('🍓', x + 26, rect.y + 43);
+    }
+    context.restore();
+  };
+  card(left, 3); card(left + 78, 2);
+  drawScreenText(context, '+', left + 65, rect.y + 32, 20, gameColors.onDark, 'center');
+  drawScreenText(context, '→', left + 149, rect.y + 32, 22, gameColors.onDark, 'center');
+  drawRoundedPanel(context, { x: left + 171, y: rect.y + 4, width: 56, height: 56 }, { fill: gameColors.lime, radius: 28 });
+  drawScreenText(context, '🔔', left + 199, rect.y + 32, 30, gameColors.plum, 'center');
+}
+
 export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snapshot: ScreenSnapshot): TapTarget[] {
   const { content } = layout;
-  const margin = Math.min(HOME_MARGIN, content.width / 12);
-  const x = content.x + margin; const width = content.width - margin * 2;
-  const header = getHomeHeaderLayout(layout);
-  const scrollY = layout.scrollY;
-  let y = header.nextY - scrollY;
+  const geometry = getHomeLayout(layout, snapshot);
+  const scrolled = (rect: Rect): Rect => ({ ...rect, y: rect.y - layout.scrollY });
+  const header = scrolled(geometry.header);
+  const hero = scrolled(geometry.hero);
+  const difficultyRow = scrolled(geometry.difficulty);
+  const friends = scrolled(geometry.friends);
+  const lobby = scrolled(geometry.lobby);
   const targets: TapTarget[] = [];
   const busy = snapshot.app.onlineBusy || snapshot.app.accountBusy || snapshot.pendingCreate;
+  const soloEnabled = !snapshot.pendingCreate;
   const keyboardUnavailable = snapshot.app.errorCode === 'KEYBOARD_UNAVAILABLE';
   const profile = snapshot.auth.profileVerified && snapshot.auth.user ? snapshot.auth.user.profile : snapshot.profile.profile;
-  const action = (id: string, rect: Rect, title: string, variant: 'primary' | 'secondary' | 'lime' | 'text', enabled = true, fontSize = 13) => {
+  const selectedDifficulty = snapshot.app.soloDifficulty ?? 'normal';
+  const action = (id: string, rect: Rect, title: string, variant: 'primary' | 'secondary' | 'lime' | 'text', enabled = true, fontSize = 14) => {
     drawCanvasButton(context, rect, title, { variant, enabled, fontSize, radius: 14 });
     if (enabled) targets.push({ id, rect });
   };
+  const text = (value: string, x: number, y: number, size = 13, color: string = gameColors.muted,
+    maxWidth?: number, align: 'left' | 'center' | 'right' = 'left', bold = false) => {
+    context.save(); context.font = `${bold ? 'bold ' : ''}${size}px sans-serif`; context.fillStyle = color;
+    context.textAlign = align; context.textBaseline = 'middle';
+    if (maxWidth && context.measureText(value).width > maxWidth) {
+      const characters = Array.from(value);
+      while (characters.length && context.measureText(`${characters.join('')}…`).width > maxWidth) characters.pop();
+      value = `${characters.join('')}…`;
+    }
+    context.fillText(value, x, y); context.restore();
+  };
   context.save(); context.beginPath(); context.rect(content.x, content.y, content.width, content.height); context.clip();
   context.fillStyle = gameColors.canvas; context.fillRect(content.x, content.y, content.width, content.height);
-  action('settings.language', { ...header.language, y: header.language.y - scrollY }, snapshot.settings.language === 'en' ? 'English' : '简体中文', 'text', true, 10);
-  action('home.account', { ...header.account, y: header.account.y - scrollY }, label(snapshot, 'entry.account'), 'secondary', !busy, 10);
-  const bell = { x: x + width / 2 - 28, y, width: 56, height: 56 };
-  drawRoundedPanel(context, bell, { fill: gameColors.lime, radius: 18 });
-  drawScreenText(context, '🔔', x + width / 2, y + 28, 30, gameColors.plum, 'center');
-  drawScreenText(context, 'BellFive', x + width / 2, y + 86, 30, gameColors.plum, 'center');
-  drawScreenText(context, label(snapshot, 'entry.description'), x + width / 2, y + 111, 11, gameColors.muted, 'center', width);
-  y += 132;
-  const profileRect = { x, y, width, height: 74 };
-  drawRoundedPanel(context, profileRect, { fill: gameColors.surface, border: gameColors.border, radius: 18 });
-  drawAvatarBadge(context, { x: x + 12, y: y + 15, width: 44, height: 44 }, AVATAR_EMOJI[profile.avatarId],
-    { background: gameColors.lavenderSurface, foreground: gameColors.plum, fontSize: 24, radius: 22 });
-  drawScreenText(context, label(snapshot, 'entry.profile'), x + 66, y + 24, 9, gameColors.muted);
-  drawScreenText(context, profile.nickname || label(snapshot, 'account.guest'), x + 66, y + 48, 15, gameColors.plum, 'left', width - 80);
-  y += 86;
-  action('home.create', { x, y, width, height: 58 }, snapshot.pendingCreate ? label(snapshot, 'entry.connecting') : label(snapshot, 'entry.createRoom'), 'primary', !busy, 16);
-  y += 70;
-  drawRoundedPanel(context, { x, y, width, height: 122 }, { fill: gameColors.surface, radius: 16 });
-  drawRoundedPanel(context, { x: x + 10, y: y + 10, width: width - 20, height: 46 }, { fill: gameColors.lime, radius: 14 });
-  drawScreenText(context, label(snapshot, 'entry.singlePlayer'), x + width / 2, y + 33, 13, gameColors.plum, 'center', width - 32);
-  drawScreenText(context, label(snapshot, 'entry.chooseDifficulty'), x + width / 2, y + 70, 9, gameColors.muted, 'center');
-  const gap = 6; const difficultyWidth = (width - 32 - gap * 2) / 3;
-  (['easy', 'normal', 'hard'] as const).forEach((difficulty, index) => action(`home.solo.${difficulty}`,
-    { x: x + 16 + index * (difficultyWidth + gap), y: y + 84, width: difficultyWidth, height: 30 },
-    label(snapshot, `difficulty.${difficulty}`), 'secondary', !snapshot.pendingCreate, 10));
-  y += 134;
-  drawScreenText(context, label(snapshot, 'entry.openRooms'), x, y + 17, 12, gameColors.plum);
-  action('home.lobby', { x: x + width - 94, y, width: 94, height: 34 }, label(snapshot, 'entry.openRooms'), 'text', !busy, 10);
-  y += 38;
-  const rooms = snapshot.game.openRooms.slice(0, 2);
-  if (rooms.length) rooms.forEach(room => {
-    const rect = drawRoomCard(context, { x, y, width, height: HOME_ROOM_HEIGHT }, room, snapshot, !busy && !snapshot.game.localApplicationId && !snapshot.game.applyingRoomCode);
-    if (!busy && !snapshot.game.localApplicationId && !snapshot.game.applyingRoomCode) targets.push({ id: `lobby.apply.${room.roomCode}`, rect });
-    y += HOME_ROOM_HEIGHT + 8;
+
+  // Small brand and profile bar: both give context without competing with play.
+  text('BellFive', header.x, header.y + 22, 22, gameColors.plum, undefined, 'left', true);
+  const account = { x: header.x + header.width - 120, y: header.y, width: 120, height: 44 };
+  drawRoundedPanel(context, account, { fill: gameColors.surface, radius: 22 });
+  drawAvatarBadge(context, { x: account.x + 6, y: account.y + 6, width: 32, height: 32 }, AVATAR_EMOJI[profile.avatarId],
+    { background: gameColors.lavenderSurface, foreground: gameColors.plum, fontSize: 19, radius: 16 });
+  text(profile.nickname || label(snapshot, 'account.guest'), account.x + 45, account.y + 15, 12, gameColors.plum, 66, 'left', true);
+  text(label(snapshot, 'home.account'), account.x + 45, account.y + 31, 10);
+  if (!busy) targets.push({ id: 'home.account', rect: account });
+
+  // A single main action starts the selected offline mode immediately.
+  drawRoundedPanel(context, hero, { fill: gameColors.purple, radius: 26 });
+  const center = hero.x + hero.width / 2;
+  text(label(snapshot, 'home.soloHint'), center, hero.y + 23, 11, gameColors.onDark, undefined, 'center');
+  text(label(snapshot, 'home.headline'), center, hero.y + 53, hero.width < 320 ? 22 : 24, gameColors.onDark, hero.width - 28, 'center', true);
+  text(label(snapshot, 'home.rule'), center, hero.y + 80, 12, gameColors.onDark, undefined, 'center');
+  drawHomeExample(context, { x: hero.x, y: hero.y + 96, width: hero.width, height: 64 });
+  action(`home.solo.${selectedDifficulty}`, { x: hero.x + 16, y: hero.y + hero.height - 76, width: hero.width - 32, height: 56 },
+    label(snapshot, 'home.startSolo'), 'lime', soloEnabled, 18);
+
+  text(label(snapshot, 'home.difficulty'), difficultyRow.x, difficultyRow.y + 22, 12);
+  const difficultyX = difficultyRow.x + 62;
+  const gap = 6; const difficultyWidth = (difficultyRow.width - 62 - gap * 2) / 3;
+  (['easy', 'normal', 'hard'] as const).forEach((difficulty, index) => {
+    const rect = { x: difficultyX + index * (difficultyWidth + gap), y: difficultyRow.y, width: difficultyWidth, height: 44 };
+    const selected = difficulty === selectedDifficulty;
+    drawRoundedPanel(context, rect, { fill: selected ? gameColors.lavenderSurface : gameColors.canvas,
+      border: selected ? gameColors.purple : gameColors.border, radius: 14 });
+    text(`${selected ? '✓ ' : ''}${label(snapshot, `difficulty.${difficulty}`)}`, rect.x + rect.width / 2, rect.y + 22,
+      snapshot.settings.language === 'en' ? 10 : 12, soloEnabled ? gameColors.plum : gameColors.muted, rect.width - 8, 'center', selected);
+    if (soloEnabled) targets.push({ id: `home.difficulty.${difficulty}`, rect });
   });
-  else {
-    drawRoundedPanel(context, { x, y, width, height: 44 }, { fill: gameColors.surface, radius: 12 });
-    drawScreenText(context, snapshot.auth.sessionToken ? (snapshot.game.lobbySnapshotReceived ? label(snapshot, 'entry.emptyRooms') : label(snapshot, 'entry.connecting')) : label(snapshot, 'entry.onlineSignIn'),
-      x + width / 2, y + 22, 10, gameColors.muted, 'center', width - 20);
-    y += 52;
-  }
-  y += HOME_GAP;
-  drawScreenText(context, label(snapshot, 'entry.joinByCode'), x + width / 2, y + 12, 10, gameColors.muted, 'center');
-  y += 24;
-  const input = { x, y, width, height: 52 };
-  drawInputField(context, input, label(snapshot, 'entry.roomCode'), snapshot.app.fields.roomCode || '______',
-    { focused: false, enabled: !busy, fontSize: 16, radius: 14 });
+
+  text(label(snapshot, 'home.friends'), friends.x, friends.y + 10, 17, gameColors.plum, friends.width, 'left', true);
+  text(label(snapshot, 'home.friendsHint'), friends.x, friends.y + 32, 11);
+  action('home.create', { x: friends.x, y: friends.y + 46, width: friends.width, height: 48 },
+    snapshot.pendingCreate || snapshot.app.onlineBusy && snapshot.app.pendingIntent?.type === 'create-room'
+      ? label(snapshot, 'entry.connecting') : label(snapshot, 'home.create'), 'secondary', !busy);
+  const joinWidth = snapshot.settings.language === 'en' ? 94 : 90;
+  const input = { x: friends.x, y: friends.y + 104, width: friends.width - joinWidth - 8, height: 52 };
+  drawInputField(context, input, label(snapshot, 'home.code'), snapshot.app.fields.roomCode || '— — — — — —',
+    { focused: snapshot.app.focusedField === 'roomCode', enabled: !busy, fontSize: 13, radius: 14 });
   if (!busy) targets.push({ id: 'field.roomCode', rect: input });
-  y += 56;
-  action('home.join', { x, y, width, height: 52 }, label(snapshot, 'entry.joinRoom'), 'secondary', !busy && !keyboardUnavailable, 14);
-  y += 56;
-  if (snapshot.pendingCreate) { action('home.cancelCreate', { x, y, width, height: 40 }, snapshot.settings.language === 'en' ? 'Cancel room creation' : '取消创建房间', 'text'); y += 44; }
-  else if (snapshot.app.pendingIntent) {
-    if (!busy) action('auth.retry', { x, y, width, height: 40 }, label(snapshot, 'entry.refresh'), 'text');
-    y += 44; action('auth.cancel', { x, y, width, height: 40 }, label(snapshot, 'auth.back'), 'text'); y += 44;
+  action('home.join', { x: input.x + input.width + 8, y: input.y, width: joinWidth, height: 52 },
+    label(snapshot, 'home.join'), 'secondary', !busy && !keyboardUnavailable, 12);
+
+  // Feedback stays with the online controls. Text wraps rather than hiding recovery instructions.
+  if (geometry.notice) {
+    const notice = scrolled(geometry.notice);
+    drawRoundedPanel(context, notice, { fill: gameColors.lavenderSurface, radius: 12 });
+    drawText(context, { x: notice.x + 12, y: notice.y + 6, width: notice.width - 24, height: notice.height - 12 },
+      geometry.status, { fontSize: 12, lineHeight: 17, color: gameColors.plum, maxLines: 3 });
   }
-  const status = appError(snapshot) || (busy ? label(snapshot, 'entry.connecting') : '');
-  if (status) drawScreenText(context, status, x + width / 2, y + 20, 10, gameColors.muted, 'center', width);
+  if (geometry.recovery) {
+    const recovery = scrolled(geometry.recovery);
+    if (snapshot.pendingCreate) action('home.cancelCreate', recovery, label(snapshot, 'home.cancel'), 'secondary');
+    else {
+      const half = (recovery.width - 8) / 2;
+      action('auth.retry', { ...recovery, width: half }, label(snapshot, 'home.retry'), 'secondary', !busy);
+      action('auth.cancel', { ...recovery, x: recovery.x + half + 8, width: half }, label(snapshot, 'home.cancel'), 'text');
+    }
+  }
+
+  drawRoundedPanel(context, lobby, { fill: gameColors.surface, radius: 18 });
+  text(label(snapshot, 'home.lobby'), lobby.x + 16, lobby.y + 23, 14, busy ? gameColors.muted : gameColors.plum,
+    lobby.width - 56, 'left', true);
+  text(label(snapshot, 'home.lobbyHint'), lobby.x + 16, lobby.y + 44, 11);
+  text('→', lobby.x + lobby.width - 22, lobby.y + 32, 20, gameColors.purple, undefined, 'center', true);
+  if (!busy) targets.push({ id: 'home.lobby', rect: lobby });
+  const language = scrolled(geometry.language);
+  text(snapshot.settings.language === 'en' ? 'Language · English / 中文' : '语言 · 简体中文 / English',
+    language.x + language.width / 2, language.y + 22, 11, gameColors.muted, undefined, 'center');
+  targets.push({ id: 'settings.language', rect: language });
   context.restore();
   return clipTapTargetsToContent(targets, content);
 }
@@ -330,6 +374,11 @@ export async function dispatchScreenAction(actionId: string, app: MiniGameApp, s
   }
   if (actionId === 'home.account') {
     app.clearIntent(); app.update({ accountMode: 'menu', errorCode: null, notice: null }); app.navigation.navigate('account'); return;
+  }
+  if (actionId.startsWith('home.difficulty.')) {
+    const difficulty = actionId.slice('home.difficulty.'.length);
+    if (difficulty === 'easy' || difficulty === 'normal' || difficulty === 'hard') app.update({ soloDifficulty: difficulty });
+    return;
   }
   if (actionId.startsWith('home.solo.')) {
     const difficulty = actionId.slice(10);
