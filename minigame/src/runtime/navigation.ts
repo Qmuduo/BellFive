@@ -3,6 +3,7 @@ import type { AvatarId } from '../../../src/profile';
 import type { GameStore } from '../../../src/store/createGameStoreApi';
 import type { SinglePlayerDifficulty } from '../../../src/game/singlePlayerController';
 import type { KeyboardAdapter } from '../platform/keyboard';
+import { EMPTY_PRIVACY_FLOW, type PrivacyFlowState } from '../privacy/policy';
 
 export class ScreenNavigation {
   private readonly history: string[];
@@ -80,8 +81,8 @@ export function connectRoomNavigation(app: Pick<ReturnType<typeof createMiniGame
 }
 
 export type OnlineIntent = Readonly<{ type: 'create-room' } | { type: 'open-lobby' } | { type: 'join-room'; roomCode: string }>;
-export type AccountMode = 'menu' | 'profile' | 'login' | 'register' | 'credentials' | 'link' | 'reset';
-export type InputField = 'username' | 'password' | 'nickname' | 'roomCode';
+export type AccountMode = 'menu' | 'profile' | 'login' | 'register' | 'credentials' | 'link' | 'reset' | 'delete';
+export type InputField = 'username' | 'password' | 'nickname' | 'roomCode' | 'privacyEmail' | 'guardianGrant';
 export type PendingReadyAction = Readonly<{
   actionId: string;
   playerId: 'A' | 'B';
@@ -97,6 +98,7 @@ export interface MiniGameAppState {
   readonly notice: string | null;
   readonly accountMode: AccountMode;
   readonly confirmTransfer: boolean;
+  readonly confirmDelete: boolean;
   readonly avatarId: AvatarId;
   readonly lobbyPage: number;
   readonly waitingApplicationPage: number;
@@ -104,6 +106,7 @@ export interface MiniGameAppState {
   readonly pendingCancelApplicationId: string | null;
   readonly fields: Readonly<Record<InputField, string>>;
   readonly focusedField: InputField | null;
+  readonly privacy: PrivacyFlowState;
 }
 
 /** Forms and intents live in memory only; credentials never enter persisted stores. */
@@ -111,9 +114,10 @@ export function createMiniGameApp(keyboard?: KeyboardAdapter) {
   const state = createStore<MiniGameAppState>(() => ({
     soloDifficulty: 'normal',
     pendingIntent: null, onlineBusy: false, accountBusy: false, errorCode: null, notice: null,
-    accountMode: 'menu', confirmTransfer: false, avatarId: 'strawberry', lobbyPage: 0, waitingApplicationPage: 0,
+    accountMode: 'menu', confirmTransfer: false, confirmDelete: false, avatarId: 'strawberry', lobbyPage: 0, waitingApplicationPage: 0,
     pendingReadyAction: null, pendingCancelApplicationId: null,
-    fields: { username: '', password: '', nickname: '', roomCode: '' }, focusedField: null,
+    fields: { username: '', password: '', nickname: '', roomCode: '', privacyEmail: '', guardianGrant: '' }, focusedField: null,
+    privacy: { ...EMPTY_PRIVACY_FLOW },
   }));
   const navigation = new ScreenNavigation('home');
   let intentGeneration = 0;
@@ -131,7 +135,8 @@ export function createMiniGameApp(keyboard?: KeyboardAdapter) {
         errorCode: current.errorCode === 'KEYBOARD_UNAVAILABLE' ? null : current.errorCode }));
       const setValue = (value: string) => state.setState(current => ({ fields: { ...current.fields, [field]: value } }));
       keyboard?.focus({ value: field === 'password' ? '' : state.getState().fields[field],
-        maxLength: field === 'nickname' ? 48 : field === 'roomCode' ? 12 : field === 'username' ? 24 : 128,
+        maxLength: field === 'nickname' ? 48 : field === 'roomCode' ? 12 : field === 'username' ? 24
+          : field === 'privacyEmail' ? 254 : field === 'guardianGrant' ? 128 : 128,
         onInput: setValue,
         onConfirm(value: string) { setValue(value); state.setState({ focusedField: null }); },
         onCancel: () => state.setState({ focusedField: null }),

@@ -1,7 +1,7 @@
 import { DEFAULT_PLAYER_PROFILE, sanitizePlayerProfile, type PlayerProfile } from '../../../src/profile';
 import { generateSessionToken, hashPassword, hashSessionToken, sessionExpiresAt, verifyPassword } from './crypto';
 import { AuthRepository, normalizeUsername } from './repository';
-import { AuthServiceError, type AuthPrincipal, type AuthSession, type AuthUser, type BindWechatInput, type PasswordCredential, type RegisterInput } from './types';
+import { AuthServiceError, type AuthPrincipal, type AuthPrivacyInput, type AuthSession, type AuthUser, type BindWechatInput, type PasswordCredential, type RegisterInput } from './types';
 import { WechatCodeExchanger } from './wechat';
 
 function validatedUsername(username: string): string {
@@ -21,6 +21,22 @@ function isUniqueConstraint(error: unknown): boolean {
   return !!error && typeof error === 'object' && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE';
 }
 
+function privacyRecord(input?: AuthPrivacyInput) {
+  if (!input || (input.privacyPolicyVersion === undefined && input.guardianGrant === undefined)) return null;
+  if (input.privacyPolicyVersion !== undefined
+    && (typeof input.privacyPolicyVersion !== 'string' || !/^bellfive-privacy-v[0-9]{1,6}$/.test(input.privacyPolicyVersion))) {
+    throw new AuthServiceError('INVALID_INPUT');
+  }
+  if (input.guardianGrant !== undefined
+    && (typeof input.guardianGrant !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(input.guardianGrant))) {
+    throw new AuthServiceError('GUARDIAN_GRANT_INVALID');
+  }
+  return {
+    ...(input.privacyPolicyVersion ? { privacyPolicyVersion: input.privacyPolicyVersion } : {}),
+    ...(input.guardianGrant ? { guardianGrantHash: hashSessionToken(input.guardianGrant) } : {}),
+  };
+}
+
 export class AuthService {
   constructor(
     private readonly repository: AuthRepository,
@@ -33,7 +49,10 @@ export class AuthService {
     if (this.repository.findByUsername(username)) throw new AuthServiceError('USERNAME_TAKEN');
     const credential = await hashPassword(input.password);
     try {
-      const user = this.repository.createPasswordUser({ username, ...credential, profile: sanitizePlayerProfile(initialProfile, 'A') });
+      const privacy = privacyRecord(input);
+      const user = privacy
+        ? this.repository.createPasswordUserWithPrivacy({ username, ...credential, profile: sanitizePlayerProfile(initialProfile, 'A') }, privacy)
+        : this.repository.createPasswordUser({ username, ...credential, profile: sanitizePlayerProfile(initialProfile, 'A') });
       return this.issueSession(user);
     } catch (error) {
       if (isUniqueConstraint(error)) throw new AuthServiceError('USERNAME_TAKEN');
@@ -41,17 +60,33 @@ export class AuthService {
     }
   }
 
-  async login(username: string, password: string): Promise<AuthSession> {
+  async login(username: string, password: string, privacyInput?: AuthPrivacyInput): Promise<AuthSession> {
     const verified = await this.verifyCredentials(username, password);
     this.requireCurrentCredential(verified.user.userId, verified.credential);
+    const privacy = privacyRecord(privacyInput);
+    if (privacy) this.repository.applyPrivacy(verified.user.userId, privacy);
     return this.issueSession(this.requireUser(verified.user.userId));
   }
 
-  async loginWithWechat(code: string): Promise<AuthSession> {
+  async loginWithWechat(code: string, privacyInput?: AuthPrivacyInput): Promise<AuthSession> {
     const identity = await this.exchanger.exchange(code);
-    const user = this.repository.findByWechatIdentity(identity.appId, identity.openid)
-      ?? this.repository.createWechatUser({ ...identity, profile: DEFAULT_PLAYER_PROFILE });
+    const privacy = privacyRecord(privacyInput);
+    let user = this.repository.findByWechatIdentity(identity.appId, identity.openid);
+    if (user && privacy) this.repository.applyPrivacy(user.userId, privacy);
+    if (!user) user = privacy
+      ? this.repository.createWechatUserWithPrivacy({ ...identity, profile: DEFAULT_PLAYER_PROFILE }, privacy)
+      : this.repository.createWechatUser({ ...identity, profile: DEFAULT_PLAYER_PROFILE });
     return this.issueSession(user);
+  }
+
+  async recordPrivacyConsent(userId: string, privacyPolicyVersion: string): Promise<void> {
+    const privacy = privacyRecord({ privacyPolicyVersion });
+    this.repository.applyPrivacy(userId, privacy!);
+  }
+
+  async recordGuardianConsent(userId: string, guardianGrant: string, privacyPolicyVersion: string): Promise<void> {
+    const privacy = privacyRecord({ guardianGrant, privacyPolicyVersion });
+    this.repository.recordGuardianConsent(userId, privacy!.privacyPolicyVersion!, privacy!.guardianGrantHash!);
   }
 
   async bindWechat(input: BindWechatInput): Promise<AuthSession> {
@@ -70,6 +105,8 @@ export class AuthService {
       if (isUniqueConstraint(error)) throw new AuthServiceError('WECHAT_IDENTITY_CONFLICT');
       throw error;
     }
+    const privacy = privacyRecord(input);
+    if (privacy) this.repository.applyPrivacy(target.userId, privacy);
     return this.issueSession(this.requireUser(target.userId));
   }
 
@@ -90,11 +127,13 @@ export class AuthService {
     return this.requireUser(userId);
   }
 
-  async resetPasswordWithWechat(code: string, newPassword: string): Promise<AuthSession> {
+  async resetPasswordWithWechat(code: string, newPassword: string, privacyInput?: AuthPrivacyInput): Promise<AuthSession> {
     validatePassword(newPassword);
     const { appId, openid } = await this.exchanger.exchange(code);
     const owner = this.repository.findByWechatIdentity(appId, openid);
     if (!owner || owner.username === null) throw new AuthServiceError('INVALID_CREDENTIALS');
+    const privacy = privacyRecord(privacyInput);
+    if (privacy) this.repository.applyPrivacy(owner.userId, privacy);
     const credential = await hashPassword(newPassword);
     if (this.repository.findByWechatIdentity(appId, openid)?.userId !== owner.userId) {
       throw new AuthServiceError('INVALID_CREDENTIALS');
@@ -126,6 +165,22 @@ export class AuthService {
 
   async logout(token: string): Promise<void> {
     if (typeof token === 'string' && token) this.repository.revokeSession(hashSessionToken(token));
+  }
+
+  async deleteAccount(userId: string, reauthentication: { password?: string; wechatCode?: string }): Promise<void> {
+    const user = this.requireUser(userId);
+    if (user.username !== null) {
+      if (typeof reauthentication.password !== 'string') throw new AuthServiceError('INVALID_CREDENTIALS');
+      const verified = await this.verifyCredentials(user.username, reauthentication.password);
+      if (verified.user.userId !== userId) throw new AuthServiceError('INVALID_CREDENTIALS');
+      this.requireCurrentCredential(userId, verified.credential);
+    } else {
+      if (typeof reauthentication.wechatCode !== 'string') throw new AuthServiceError('INVALID_CREDENTIALS');
+      const identity = await this.exchanger.exchange(reauthentication.wechatCode);
+      const owner = this.repository.findByWechatIdentity(identity.appId, identity.openid);
+      if (!owner || owner.userId !== userId) throw new AuthServiceError('INVALID_CREDENTIALS');
+    }
+    if (!this.repository.deleteUser(userId)) throw new AuthServiceError('INVALID_INPUT');
   }
 
   private async verifyCredentials(username: string, password: string): Promise<{ user: AuthUser; credential: PasswordCredential }> {

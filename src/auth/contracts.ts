@@ -14,7 +14,7 @@ export type AuthSession = Readonly<{
 }>;
 
 export type AuthTransportRequest = Readonly<{
-  method: 'GET' | 'POST' | 'PATCH';
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;
   token?: string;
   body?: unknown;
@@ -36,6 +36,13 @@ export type RegistrationInput = Readonly<{
   username: string;
   password: string;
   initialProfile?: PlayerProfileInput;
+  privacyPolicyVersion?: string;
+  guardianGrant?: string;
+}>;
+
+export type AuthPrivacyMetadata = Readonly<{
+  privacyPolicyVersion?: string;
+  guardianGrant?: string;
 }>;
 
 export type WechatLinkInput = Readonly<{
@@ -43,4 +50,6 @@ export type WechatLinkInput = Readonly<{
   username: string;
   password: string;
   confirmedTransfer: boolean;
+  privacyPolicyVersion?: string;
+  guardianGrant?: string;
 }>;

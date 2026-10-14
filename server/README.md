@@ -41,6 +41,8 @@ See [`.env.example`](.env.example) for server configuration. The service reads p
 | `BELLFIVE_CORS_ORIGINS` | Comma-separated exact browser origins, including scheme and port; empty denies browser cross-origin account requests |
 | `BELLFIVE_WECHAT_MINI_APP_ID` | AppID for the one WeChat Mini Program or Mini Game currently using server-side code exchange |
 | `BELLFIVE_WECHAT_MINI_APP_SECRET` | Matching AppSecret, held only in the server environment |
+| `BELLFIVE_PUBLIC_BASE_URL` | Public HTTPS root used to build guardian email confirmation links; no trailing path is needed |
+| `BELLFIVE_SMTP_HOST`, `BELLFIVE_SMTP_PORT`, `BELLFIVE_SMTP_SECURE`, `BELLFIVE_SMTP_USER`, `BELLFIVE_SMTP_PASSWORD`, `BELLFIVE_SMTP_FROM` | Server-only SMTP configuration for guardian confirmation mail; when incomplete, under-14 account creation is unavailable |
 
 Set the two WeChat variables in the server's private environment to enable WeChat login, linking, and password recovery. They must be a matching AppID/AppSecret pair for the client being tested. This server currently accepts one pair at a time; if the Taro Mini Program and native Mini Game use different AppIDs, select the matching pair for the active test. Password registration/login and `/health` work when those variables are absent; WeChat operations return `503` with `WECHAT_NOT_CONFIGURED`. Keep AppSecret out of tracked files, all client output, Expo bundles, and Web clients.
 
@@ -94,7 +96,7 @@ npm run minigame:build
 
 Import the `minigame/` root as a **Mini Game** project in WeChat Developer Tools. Its `project.config.json` uses `compileType: "game"` and points to the generated `dist/`; the build must create `minigame/dist/game.json`. The `miniprogram/` folder is a different Taro Mini Program target.
 
-The Mini Game defaults to `http://localhost:8787` for simulator account requests and `ws://localhost:8787` for room traffic. To use other public service endpoints, create the ignored `minigame/local.settings.json` before building:
+The Mini Game defaults to `http://localhost:8787` for simulator account requests and `ws://localhost:8787` for room traffic. Startup, settings, and guest solo play do not authenticate or connect to the service. Account, profile customization, and online actions start only after the in-game privacy/age flow. To use other public service endpoints, create the ignored `minigame/local.settings.json` before building:
 
 ```json
 {
@@ -105,7 +107,9 @@ The Mini Game defaults to `http://localhost:8787` for simulator account requests
 
 The file accepts only the public root URLs `authUrl` (HTTP/HTTPS) and `socketUrl` (WS/WSS). Values are embedded into the generated client, so rebuild after changing them. Use localhost only where the Developer Tools simulator can reach the development computer. A phone's `localhost` is the phone itself; real-device testing needs reachable HTTPS/WSS hosts with valid certificates, and the Mini Game account must list the API host under **request legal domains** and the socket host under **socket legal domains**. Disabling domain checks in Developer Tools is only a simulator convenience.
 
-Set `BELLFIVE_WECHAT_MINI_APP_ID` to the registered Mini Game AppID in the server's private environment, and set its matching `BELLFIVE_WECHAT_MINI_APP_SECRET` there as well. In Developer Tools, choose the same Mini Game AppID or put it in the ignored `minigame/project.private.config.json`. Never put the AppSecret in either private project settings file, `local.settings.json`, the Mini Game bundle, or client-side environment variables. With the matching server configuration, `wx.login` can create the first BellFive account automatically; link an existing Expo/Web username and password from the Mini Game account page, or add username/password credentials to the new WeChat account for later Expo/Web sign-in. Guest solo remains available without WeChat credentials or an online service.
+Set `BELLFIVE_WECHAT_MINI_APP_ID` to the registered Mini Game AppID in the server's private environment, and set its matching `BELLFIVE_WECHAT_MINI_APP_SECRET` there as well. In Developer Tools, choose the same Mini Game AppID or put it in the ignored `minigame/project.private.config.json`. Never put the AppSecret in either private project settings file, `local.settings.json`, the Mini Game bundle, or client-side environment variables. A new account is created only after the user explicitly chooses an account or online action and completes the in-game privacy/age flow. Users under 14 need a guardian email confirmation before account, profile customization, or online play. Configure the public HTTPS URL and SMTP variables above to enable that flow. Guest solo remains available without WeChat credentials or an online service.
+
+Guardian confirmation requests retain the guardian email only until confirmation or a 24-hour expiry. A generated one-time grant is stored as a hash and expires after 30 minutes. Confirmation GET requests display the attestation page but do not grant consent; a guardian must explicitly submit the form. Put the service behind HTTPS, configure proxy logs to redact confirmation query tokens and credentials, and never collect HTTP request bodies into logs. The application periodically removes expired guardian requests/grants and account sessions. See [`../docs/隐私保护指引-微信小游戏.md`](../docs/隐私保护指引-微信小游戏.md) and [`../docs/微信小游戏隐私发布清单.md`](../docs/微信小游戏隐私发布清单.md); hosting/mail regions, log and backup retention, and the developer contact must be verified before release.
 
 For two phones on the same Wi-Fi, set the app endpoint to the development computer's LAN IPv4 address before starting Expo:
 

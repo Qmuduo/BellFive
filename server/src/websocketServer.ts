@@ -9,6 +9,7 @@ import { RoomManager } from './roomManager';
 import type { RoomManagerEvent } from './roomManager';
 import type { AuthService } from './auth/service';
 import type { AuthPrincipal } from './auth/types';
+import type { GuardianConsentService } from './auth/guardianConsent';
 import { handleAuthHttpRequest } from './auth/httpApi';
 
 export type CreateWebSocketServerOptions = Readonly<{
@@ -17,6 +18,7 @@ export type CreateWebSocketServerOptions = Readonly<{
   port: number;
   tickIntervalMs?: number;
   authService?: AuthService;
+  guardianConsent?: GuardianConsentService;
   corsOrigins?: readonly string[];
 }>;
 
@@ -42,9 +44,24 @@ export async function createWebSocketServer(
 ): Promise<RunningRoomServer> {
   const connections = new Map<string, Connection>();
   const roomManager = options.roomManager;
+  const sendEvents = (events: readonly RoomManagerEvent[]) => {
+    for (const event of events) {
+      const socket = connections.get(event.connectionId)?.socket;
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(event.message));
+      }
+    }
+  };
   const httpServer = createServer((request, response) => {
     void handleAuthHttpRequest(request, response, options.authService, {
       corsOrigins: options.corsOrigins ?? [],
+      guardianConsent: options.guardianConsent,
+      onAccountDeleted(userId) {
+        sendEvents(roomManager.removeUser(userId));
+        for (const connection of connections.values()) {
+          if (connection.principal?.userId === userId) connection.socket.close(4001, 'Account deleted');
+        }
+      },
     }).then(handled => {
       if (handled) return;
       response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
@@ -60,15 +77,6 @@ export async function createWebSocketServer(
     // ws forwards HTTP errors here before listen() can reject the startup promise.
     // Consume that forwarded event so the HTTP error reaches its handled path.
   });
-
-  const sendEvents = (events: readonly RoomManagerEvent[]) => {
-    for (const event of events) {
-      const socket = connections.get(event.connectionId)?.socket;
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify(event.message));
-      }
-    }
-  };
 
   webSocketServer.on('connection', socket => {
     const connectionId = randomUUID();

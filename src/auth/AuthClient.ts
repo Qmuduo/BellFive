@@ -1,5 +1,5 @@
 import type { PlayerProfileInput } from '../profile';
-import type { AuthSession, AuthTransport, AuthUser, RegistrationInput, WechatLinkInput } from './contracts';
+import type { AuthPrivacyMetadata, AuthSession, AuthTransport, AuthUser, RegistrationInput, WechatLinkInput } from './contracts';
 
 export class AuthClient {
   constructor(private readonly transport: AuthTransport) {}
@@ -8,12 +8,12 @@ export class AuthClient {
     return this.send({ method: 'POST', path: '/auth/register', body: input });
   }
 
-  login(input: Readonly<{ username: string; password: string }>): Promise<AuthSession> {
+  login(input: Readonly<{ username: string; password: string }> & AuthPrivacyMetadata): Promise<AuthSession> {
     return this.send({ method: 'POST', path: '/auth/login', body: input });
   }
 
-  wechatLogin(code: string): Promise<AuthSession> {
-    return this.send({ method: 'POST', path: '/auth/wechat/login', body: { code } });
+  wechatLogin(code: string, privacy?: AuthPrivacyMetadata): Promise<AuthSession> {
+    return this.send({ method: 'POST', path: '/auth/wechat/login', body: { code, ...privacy } });
   }
 
   linkWechat(token: string, input: WechatLinkInput): Promise<AuthSession> {
@@ -32,12 +32,24 @@ export class AuthClient {
     return this.send({ method: 'PATCH', path: '/auth/me/profile', token, body: { profile } });
   }
 
-  resetPasswordWithWechat(code: string, newPassword: string): Promise<AuthSession> {
-    return this.send({ method: 'POST', path: '/auth/password/reset/wechat', body: { code, newPassword } });
+  resetPasswordWithWechat(code: string, newPassword: string, privacy?: AuthPrivacyMetadata): Promise<AuthSession> {
+    return this.send({ method: 'POST', path: '/auth/password/reset/wechat', body: { code, newPassword, ...privacy } });
   }
 
   logout(token: string): Promise<void> {
     return this.send({ method: 'POST', path: '/auth/logout', token });
+  }
+
+  recordPrivacyConsent(token: string, privacyPolicyVersion: string): Promise<void> {
+    return this.send({ method: 'POST', path: '/auth/me/privacy-consent', token, body: { privacyPolicyVersion } });
+  }
+
+  recordGuardianConsent(token: string, guardianGrant: string, privacyPolicyVersion: string): Promise<void> {
+    return this.send({ method: 'POST', path: '/auth/me/guardian-consent', token, body: { guardianGrant, privacyPolicyVersion } });
+  }
+
+  deleteAccount(token: string, input: Readonly<{ password?: string; wechatCode?: string }>): Promise<void> {
+    return this.send({ method: 'DELETE', path: '/auth/me', token, body: input });
   }
 
   private async send<T>(request: Parameters<AuthTransport>[0]): Promise<T> {

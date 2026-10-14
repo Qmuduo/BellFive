@@ -202,6 +202,37 @@ export class RoomManager {
     return [...applicationEvents, ...this.snapshotEvents(room), ...this.lobbySnapshotEvents()];
   }
 
+  removeUser(userId: string): RoomManagerEvent[] {
+    const events: RoomManagerEvent[] = [];
+    for (const application of [...this.applications.values()]) {
+      if (application.userId !== userId) continue;
+      this.applications.delete(application.applicationId);
+      const hostConnectionId = this.rooms.get(application.roomCode)?.seats.A?.connectionId;
+      if (hostConnectionId) events.push(this.applicationStatusEvent(hostConnectionId, application.applicationId,
+        'cancelled', 'The applicant account was deleted.'));
+    }
+    for (const room of [...this.rooms.values()]) {
+      if (!Object.values(room.seats).some(seat => seat?.userId === userId)) continue;
+      events.push(...this.clearApplicationsForRoom(room.roomCode, 'This room closed because an account was deleted.'));
+      for (const seat of Object.values(room.seats)) {
+        if (!seat) continue;
+        if (seat.connectionId) {
+          this.connectionToSeat.delete(seat.connectionId);
+          if (seat.userId !== userId) events.push(this.event(seat.connectionId, {
+            type: 'room.closed', code: 'ACCOUNT_DELETED', message: 'This room closed because an account was deleted.',
+          }));
+        }
+      }
+      this.rooms.delete(room.roomCode);
+    }
+    for (const [connectionId, connection] of this.connectionToSeat) {
+      const seat = this.rooms.get(connection.roomCode)?.seats[connection.playerId];
+      if (seat?.userId === userId) this.connectionToSeat.delete(connectionId);
+    }
+    events.push(...this.lobbySnapshotEvents());
+    return events;
+  }
+
   pruneExpiredRooms(now = this.now()): string[] {
     return this.expireRooms(now).roomCodes;
   }

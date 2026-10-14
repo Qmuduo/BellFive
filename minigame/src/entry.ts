@@ -5,12 +5,14 @@ import { CanvasRuntime, type CanvasScreen } from './runtime/canvas';
 import type { ScreenLayout } from './runtime/layout';
 import { connectRoomNavigation, createMiniGameApp, type MiniGameApp } from './runtime/navigation';
 import { createMiniGameStores, type MiniGameStores, type MiniGameStoreOptions } from './stores/gameStore';
-import { authorizeOnline, dispatchScreenAction, getScreenSnapshot, homeContentHeight, renderHome } from './screens/home';
+import { dispatchScreenAction, getScreenSnapshot, homeContentHeight, renderHome } from './screens/home';
 import { accountContentHeight, renderAccount, saveWechatNickname } from './screens/account';
 import { renderLobby } from './screens/lobby';
 import { dispatchWaitingAction, renderWaiting } from './screens/waiting';
 import { dispatchMatchAction, renderMatch, type MatchTransferAnimation } from './screens/match';
 import { createWechatNicknameButton } from './platform/wechatProfile';
+import { acceptPrivacyAge, cancelPrivacyFlow, clearGuardianSecret, completeGuardianGrant, openPrivacyContract, sendGuardianRequest } from './privacy/coordinator';
+import { privacyContentHeight, renderPrivacy } from './screens/privacy';
 
 declare const __BELLFIVE_AUTH_URL__: string;
 declare const __BELLFIVE_SOCKET_URL__: string;
@@ -27,6 +29,7 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   const keyboard = createWxKeyboard(wxApi);
   const stores = createMiniGameStores(wxApi, options);
   const app = createMiniGameApp(keyboard);
+  const stopPrivacySecret = platform.subscribe('hide', () => clearGuardianSecret(app));
   const nicknameButton = createWechatNicknameButton(wxApi,
     nickname => { void saveWechatNickname(app, stores, nickname); },
     () => app.update({ notice: 'account.wechatNicknameUnavailable', errorCode: null }));
@@ -36,6 +39,33 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
     onBack() { void dispatchScreenAction('nav.home', app, stores); },
     onHide() { app.clearPasswords(); app.clearIntent(); },
   });
+  const resumeProtectedAction = async (action: { actionId: string; roomCode?: string }) => {
+    if (action.roomCode) app.setField('roomCode', action.roomCode);
+    if (action.actionId.startsWith('home.')) app.navigation.navigate('home', true);
+    else if (action.actionId.startsWith('account.')) app.navigation.navigate('account', true);
+    await dispatchScreenAction(action.actionId, app, stores);
+  };
+  const privacyScreen: CanvasScreen = {
+    render(context, layout) { return renderPrivacy(context, layout, getScreenSnapshot(app, stores)); },
+    scrollContentHeight(layout) { return privacyContentHeight(layout, getScreenSnapshot(app, stores)); },
+    onAction(actionId) {
+      const flow = app.getState().privacy;
+      if (actionId === 'field.privacyEmail') { app.focusField('privacyEmail'); return; }
+      if (actionId === 'field.guardianGrant') { app.focusField('guardianGrant'); return; }
+      if (actionId === 'privacy.continue') { app.update({ privacy: { ...flow, step: 'age', errorCode: null } }); return; }
+      if (actionId === 'privacy.read') { app.update({ privacy: { ...flow, step: 'policy', errorCode: null } }); return; }
+      if (actionId === 'privacy.platformContract') { void openPrivacyContract(wxApi, app); return; }
+      if (actionId === 'privacy.backToNotice') { app.update({ privacy: { ...flow, step: 'notice', errorCode: null } }); return; }
+      if (actionId === 'privacy.age.14plus') { void acceptPrivacyAge('14plus', wxApi, app, stores, resumeProtectedAction); return; }
+      if (actionId === 'privacy.age.under14') { void acceptPrivacyAge('under14', wxApi, app, stores, resumeProtectedAction); return; }
+      if (actionId === 'privacy.sendGuardian') { void sendGuardianRequest(wxApi, options.authUrl ?? 'http://localhost:8787', app); return; }
+      if (actionId === 'privacy.confirmGuardian') { void completeGuardianGrant(app, stores, resumeProtectedAction); return; }
+      if (actionId === 'privacy.resend') { app.setField('guardianGrant', ''); app.update({ privacy: { ...flow, step: 'guardian-email', errorCode: null } }); return; }
+      if (actionId === 'privacy.cancel') cancelPrivacyFlow(app);
+    },
+    onBack() { cancelPrivacyFlow(app); },
+    onHide() { clearGuardianSecret(app); app.clearPasswords(); },
+  };
   let feedbackActive = true;
   const feedback = createWxFeedback(wxApi);
   let lastMatchSessionVersion: number | null = null;
@@ -79,14 +109,13 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   const syncLobby = () => {
     if (!lifecycleActive) return;
     const auth = stores.auth.getState();
-    const visible = app.navigation.current === 'home' || app.navigation.current === 'lobby';
+    const visible = app.navigation.current === 'lobby';
     const valid = auth.hydrated && auth.profileVerified && Boolean(auth.user && auth.sessionToken)
       && (auth.sessionExpiresAt ?? 0) > Date.now();
     const wanted = visible && valid && stores.game.getState().sessionMode === 'none'
       && !app.getState().pendingIntent;
     if (wanted && !lobbySubscribed) {
       lobbySubscribed = true;
-      stores.game.getState().openLobby();
     } else if (!wanted && lobbySubscribed) {
       lobbySubscribed = false;
       stores.game.getState().closeLobby();
@@ -100,12 +129,6 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   };
   const stopNicknameButtonNavigation = app.navigation.subscribe(hideNicknameButtonOutsideProfile);
   const stopNicknameButtonApp = app.subscribe(hideNicknameButtonOutsideProfile);
-  void stores.ready.then(() => authorizeOnline(stores)).catch(error => {
-    if (!lifecycleActive) return;
-    const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
-      ? error.code : 'NETWORK_ERROR';
-    app.update({ errorCode: code });
-  });
   const stopFeedback = connectMatchFeedback(stores.game, feedback, () => stores.settings.getState().musicEnabled,
     () => feedbackActive && (app.navigation.current === 'solo' || app.navigation.current === 'match'));
   const stopFeedbackHide = platform.subscribe('hide', () => { feedbackActive = false; });
@@ -121,12 +144,12 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   onBack() { void dispatchScreenAction('nav.home', app, stores); },
   onHide() { nicknameButton.hide(); app.clearPasswords(); app.clearIntent(); }, scrollContentHeight(layout: ScreenLayout) {
     return accountContentHeight(layout, getScreenSnapshot(app, stores));
-  } }, lobby: screen(renderLobby),
+  } }, lobby: screen(renderLobby), privacy: privacyScreen,
     solo: matchScreen, waiting: waitingScreen, match: matchScreen, ...options.screens?.(app, stores) };
   const runtime = new CanvasRuntime({ platform, keyboard, navigation: app.navigation, screens,
     stores: [app, stores.auth, stores.profile, stores.settings, stores.game] });
   return { canvas: platform.canvas, runtime, app, stores, screens,
-    destroy() { lifecycleActive = false; stopLobbyNavigation(); stopLobbyAuth(); stopNicknameButtonNavigation(); stopNicknameButtonApp();
+    destroy() { lifecycleActive = false; clearGuardianSecret(app); stopLobbyNavigation(); stopLobbyAuth(); stopNicknameButtonNavigation(); stopNicknameButtonApp(); stopPrivacySecret();
       nicknameButton.destroy(); if (lobbySubscribed) stores.game.getState().closeLobby();
       stopFeedback(); stopFeedbackHide(); stopFeedbackShow(); feedback.dispose();
       stopRoomNavigation(); runtime.destroy(); app.dispose(); stores.dispose(); },

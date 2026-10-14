@@ -27,7 +27,9 @@ export interface StoredAuthSession {
 }
 
 export type AuthErrorCode = 'USERNAME_TAKEN' | 'INVALID_CREDENTIALS' | 'INVALID_INPUT'
-  | 'WECHAT_CODE_INVALID' | 'WECHAT_NOT_CONFIGURED' | 'WECHAT_IDENTITY_CONFLICT';
+  | 'WECHAT_CODE_INVALID' | 'WECHAT_NOT_CONFIGURED' | 'WECHAT_IDENTITY_CONFLICT'
+  | 'GUARDIAN_GRANT_INVALID' | 'GUARDIAN_GRANT_EXPIRED' | 'GUARDIAN_GRANT_USED'
+  | 'GUARDIAN_CONFIRMATION_EXPIRED' | 'GUARDIAN_CONFIRMATION_INVALID' | 'GUARDIAN_MAIL_UNAVAILABLE';
 
 export class AuthServiceError extends Error {
   constructor(public readonly code: AuthErrorCode) {
@@ -36,6 +38,7 @@ export class AuthServiceError extends Error {
   }
 }
 
-export interface RegisterInput { username: string; password: string; }
+export interface AuthPrivacyInput { privacyPolicyVersion?: string; guardianGrant?: string; }
+export interface RegisterInput extends AuthPrivacyInput { username: string; password: string; }
 export interface BindWechatInput extends RegisterInput { code: string; confirmedTransfer: boolean; }
 export interface WechatIdentity { appId: string; openid: string; }

@@ -23,7 +23,11 @@ export type MiniGameWxApi = Pick<typeof wx,
   | 'createCanvas' | 'getSystemInfoSync' | 'getMenuButtonBoundingClientRect' | 'onTouchStart' | 'offTouchStart' | 'onTouchMove' | 'offTouchMove'
   | 'onTouchEnd' | 'offTouchEnd' | 'onTouchCancel' | 'offTouchCancel'
   | 'onWindowResize' | 'offWindowResize' | 'onHide' | 'offHide' | 'onShow' | 'offShow'
-  | 'onKeyDown' | 'offKeyDown'> & Partial<Pick<typeof wx, 'createUserInfoButton'>>;
+  | 'onKeyDown' | 'offKeyDown'> & Partial<Pick<typeof wx, 'createUserInfoButton'>> & Partial<{
+    getPrivacySetting(options: { success(result: { needAuthorization?: boolean }): void; fail(error?: unknown): void }): void;
+    requirePrivacyAuthorize(options: { success(): void; fail(error?: unknown): void }): void;
+    openPrivacyContract(options: { success(): void; fail(error?: unknown): void }): void;
+  }>;
 
 // Mini Game typings expose the native 2D rendering context through getContext.
 export type CanvasContext2D = ReturnType<WechatMinigame.Canvas['getContext']>;

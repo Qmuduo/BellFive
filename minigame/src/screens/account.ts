@@ -9,6 +9,8 @@ import { clipTapTargetsToContent, type Rect, type ScreenLayout, type TapTarget }
 import { drawAvatarBadge, drawCanvasButton, drawInputField, drawRoundedPanel, drawStatusBadge } from '../runtime/ui';
 import type { MiniGameStores } from '../stores/gameStore';
 import { appError, authorizeOnline, drawScreenText, label, type ScreenSnapshot } from './home';
+import { applyMinorGrantAfterLogin, beginProtectedAction, currentAuthPrivacy, invalidateGuardianAuthorization, privacyReady, resetPrivacyFlow } from '../privacy/coordinator';
+import { DEFAULT_PLAYER_PROFILE } from '../../../src/profile';
 
 function local(snapshot: ScreenSnapshot, en: string, zh: string): string { return snapshot.settings.language === 'en' ? en : zh; }
 
@@ -113,6 +115,7 @@ function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: C
       button('account.mode.link', local(snapshot, 'Link an existing account', '绑定已有用户名账号'), 'secondary', editable);
       if (auth.user?.wechatLinked) button('account.mode.reset', label(snapshot, 'account.recovery'), 'text', !busy);
       button('account.logout', label(snapshot, 'account.signOut'), 'text', !busy);
+      button('account.mode.delete', local(snapshot, 'Delete account', '注销账号'), 'text', !busy);
     } else {
       button('account.wechat', local(snapshot, 'Sign in with WeChat', '微信登录'), 'primary', !busy);
       heading(label(snapshot, 'account.credentials'));
@@ -145,9 +148,27 @@ function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: C
     }
     y += 124;
     button('account.submit', label(snapshot, 'account.saveProfile'), 'primary', editable);
+  } else if (app.accountMode === 'delete') {
+    heading(local(snapshot, 'Delete account and data', '注销账号并删除数据'));
+    description(local(snapshot,
+      'This deletes your BellFive account, credentials, linked WeChat identity, sessions, and active room data. This cannot be undone.',
+      '这会删除 BellFive 账号、登录凭据、绑定的微信身份、会话和活动房间数据，且无法撤销。'));
+    if (auth.user?.username) field('password', label(snapshot, 'auth.password'), '•'.repeat(Math.min(20, Array.from(app.fields.password).length)), !busy);
+    else description(local(snapshot, 'Confirm with a fresh WeChat login code.', '需要使用当前微信身份重新验证。'));
+    const confirmRect = { x, y, width, height: 48 };
+    if (context) {
+      drawRoundedPanel(context, confirmRect, { fill: app.confirmDelete ? gameColors.purpleActionBorder : gameColors.surface,
+        border: gameColors.border, radius: 12 });
+      drawScreenText(context, `${app.confirmDelete ? '✓' : '□'} ${local(snapshot, 'I understand this is permanent', '我理解此操作不可撤销')}`,
+        x + 12, y + 24, 11, gameColors.plum, 'left', width - 24);
+    }
+    if (!busy) targets.push({ id: 'account.confirmDelete', rect: confirmRect });
+    y += 56;
+    button('account.submit', local(snapshot, 'Delete my account', '确认注销账号'), 'primary',
+      !busy && app.confirmDelete && (auth.user?.username ? app.fields.password.length >= 8 : true));
   } else {
     const titles: Record<Exclude<AccountMode, 'menu' | 'profile'>, TranslationKey> = {
-      login: 'auth.login', register: 'auth.register', credentials: 'account.addCredentials', link: 'account.wechatLinked', reset: 'account.recovery',
+      login: 'auth.login', register: 'auth.register', credentials: 'account.addCredentials', link: 'account.wechatLinked', reset: 'account.recovery', delete: 'account.deleted',
     };
     const formTitle = app.accountMode === 'link' ? local(snapshot, 'Link an existing account', '绑定已有用户名账号')
       : label(snapshot, titles[app.accountMode]);
@@ -196,19 +217,29 @@ async function accountOperation(app: MiniGameApp, operation: () => Promise<void>
   if (app.getState().accountBusy || app.getState().onlineBusy) return;
   app.update({ accountBusy: true, errorCode: null, notice: null });
   try { await operation(); if (notice) app.update({ notice }); }
-  catch (error) { app.update({ errorCode: error instanceof AuthClientError ? error.code : 'NETWORK_ERROR' }); }
+  catch (error) {
+    const code = error instanceof AuthClientError ? error.code : 'NETWORK_ERROR';
+    invalidateGuardianAuthorization(app, code);
+    app.update({ errorCode: code });
+  }
   finally { app.update({ accountBusy: false }); }
 }
 export async function dispatchAccountAction(actionId: string, app: MiniGameApp, stores: MiniGameStores): Promise<void> {
   if (app.getState().accountBusy || app.getState().onlineBusy) return;
+  const protectedAction = actionId === 'account.refresh' || actionId === 'account.wechat'
+    || actionId === 'account.mode.profile' || actionId === 'account.mode.login' || actionId === 'account.mode.register'
+    || actionId === 'account.mode.credentials' || actionId === 'account.mode.link' || actionId === 'account.mode.reset'
+    || actionId === 'account.submit' && app.getState().accountMode !== 'menu' && app.getState().accountMode !== 'delete'
+    || actionId.startsWith('account.avatar.') || actionId === 'account.useWechatNickname';
+  if (protectedAction && !privacyReady(app)) { beginProtectedAction({ actionId }, app); return; }
   if (actionId === 'account.submit' && app.getState().errorCode === 'KEYBOARD_UNAVAILABLE') return;
   if (actionId.startsWith('account.mode.')) {
     const mode = actionId.slice(13);
-    if (!['menu', 'profile', 'login', 'register', 'credentials', 'link', 'reset'].includes(mode)) return;
+    if (!['menu', 'profile', 'login', 'register', 'credentials', 'link', 'reset', 'delete'].includes(mode)) return;
     app.clearPasswords(); stores.auth.getState().clearError();
     const profile = stores.auth.getState().profileVerified && stores.auth.getState().user
       ? stores.auth.getState().user!.profile : stores.profile.getState().profile;
-    app.update(current => ({ accountMode: mode as AccountMode, confirmTransfer: false, notice: null, errorCode: null,
+    app.update(current => ({ accountMode: mode as AccountMode, confirmTransfer: false, confirmDelete: false, notice: null, errorCode: null,
       avatarId: profile.avatarId, fields: { ...current.fields, username: '', nickname: profile.nickname } }));
     app.navigation.navigate('account'); return;
   }
@@ -219,8 +250,9 @@ export async function dispatchAccountAction(actionId: string, app: MiniGameApp, 
     confirmTransfer: !current.confirmTransfer,
     errorCode: current.errorCode === 'KEYBOARD_UNAVAILABLE' ? current.errorCode : null,
   })); return; }
+  if (actionId === 'account.confirmDelete') { app.update(current => ({ confirmDelete: !current.confirmDelete, errorCode: null })); return; }
   if (actionId === 'account.wechat') {
-    await accountOperation(app, () => authorizeOnline(stores));
+    await accountOperation(app, () => authorizeOnline(stores, app));
     const auth = stores.auth.getState();
     if (auth.user && auth.sessionToken && auth.profileVerified) app.navigation.navigate('home', true);
     return;
@@ -230,10 +262,16 @@ export async function dispatchAccountAction(actionId: string, app: MiniGameApp, 
       await stores.ready; await stores.auth.getState().refreshSession();
       const auth = stores.auth.getState();
       if (!auth.profileVerified || !auth.user) throw new AuthClientError(auth.errorCode ?? 'UNAUTHORIZED', 'Account refresh failed.');
+      const privacy = currentAuthPrivacy(app);
+      if (privacy?.guardianGrant) {
+        await auth.recordGuardianConsent(privacy.guardianGrant, privacy.privacyPolicyVersion);
+        await applyMinorGrantAfterLogin(app);
+      } else if (privacy?.privacyPolicyVersion) await auth.recordPrivacyConsent(privacy.privacyPolicyVersion);
     }); return;
   }
   if (actionId === 'account.logout') {
-    app.clearIntent(); app.clearPasswords(); app.update({ accountMode: 'menu', confirmTransfer: false, notice: null });
+    resetPrivacyFlow(app);
+    app.clearIntent(); app.clearPasswords(); app.update({ accountMode: 'menu', confirmTransfer: false, confirmDelete: false, notice: null });
     await accountOperation(app, () => stores.auth.getState().logout()); return;
   }
   if (actionId !== 'account.submit') return;
@@ -242,7 +280,17 @@ export async function dispatchAccountAction(actionId: string, app: MiniGameApp, 
   await accountOperation(app, async () => {
     await stores.ready;
     const auth = stores.auth.getState();
-    if (draft.accountMode === 'profile') {
+    if (draft.accountMode === 'delete') {
+      if (!draft.confirmDelete || !auth.user || !auth.sessionToken) throw new AuthClientError('INVALID_INPUT', 'Confirm account deletion.');
+      const reauthentication = auth.user.username
+        ? { password }
+        : { wechatCode: await getWechatLoginCode(stores.wx) };
+      await auth.deleteAccount(reauthentication);
+      stores.profile.getState().setProfile(DEFAULT_PLAYER_PROFILE);
+      stores.game.getState().resetClient();
+      resetPrivacyFlow(app);
+      app.update({ accountMode: 'menu', confirmDelete: false, notice: 'account.deleted' });
+    } else if (draft.accountMode === 'profile') {
       const profile = sanitizePlayerProfile({ nickname, avatarId: draft.avatarId }, 'A');
       if (auth.sessionToken) await auth.updateProfile(profile); else stores.profile.getState().setProfile(profile);
     } else {
@@ -251,22 +299,27 @@ export async function dispatchAccountAction(actionId: string, app: MiniGameApp, 
         throw new AuthClientError('INVALID_INPUT', 'Check the credential requirements.');
       }
       switch (draft.accountMode) {
-        case 'login': await auth.login(username.trim(), password); break;
-        case 'register': await auth.register(username.trim(), password, stores.profile.getState().profile); break;
+        case 'login': await auth.login(username.trim(), password, currentAuthPrivacy(app)); break;
+        case 'register': await auth.register(username.trim(), password, stores.profile.getState().profile, currentAuthPrivacy(app)); break;
         case 'credentials': await auth.addCredentials(username.trim(), password); break;
-        case 'link': await auth.linkWechat({ code: await getWechatLoginCode(stores.wx), username: username.trim(), password, confirmedTransfer: true }); break;
-        case 'reset': await auth.resetPasswordWithWechat(await getWechatLoginCode(stores.wx), password); break;
+        case 'link': await auth.linkWechat({ code: await getWechatLoginCode(stores.wx), username: username.trim(), password, confirmedTransfer: true,
+          ...currentAuthPrivacy(app) }); break;
+        case 'reset': await auth.resetPasswordWithWechat(await getWechatLoginCode(stores.wx), password, currentAuthPrivacy(app)); break;
         default: return;
       }
     }
   }, draft.accountMode === 'profile' ? 'account.profileSaved' : draft.accountMode === 'credentials' ? 'account.credentialsSaved' : undefined);
   if ((draft.accountMode === 'login' || draft.accountMode === 'register')) {
     const auth = stores.auth.getState();
-    if (auth.user && auth.sessionToken && auth.profileVerified) app.navigation.navigate('home', true);
+    if (auth.user && auth.sessionToken && auth.profileVerified) {
+      await applyMinorGrantAfterLogin(app);
+      app.navigation.navigate('home', true);
+    }
   }
 }
 
 export async function saveWechatNickname(app: MiniGameApp, stores: MiniGameStores, nickname: string): Promise<void> {
+  if (!privacyReady(app)) { beginProtectedAction({ actionId: 'account.useWechatNickname' }, app); return; }
   const normalizedNickname = normalizeNickname(nickname);
   if (!normalizedNickname) {
     app.update({ notice: 'account.wechatNicknameUnavailable', errorCode: null });

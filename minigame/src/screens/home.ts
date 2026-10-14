@@ -5,7 +5,7 @@ import type { PlayerProfileStore } from '../../../src/store/createProfileStoreAp
 import type { SettingsStore } from '../../../src/store/createSettingsStoreApi';
 import { translate, formatGameError, type TranslationKey } from '../../../src/i18n';
 import { formatAuthError } from '../../../src/i18n/translations';
-import { AVATAR_EMOJI } from '../../../src/profile';
+import { AVATAR_EMOJI, DEFAULT_PLAYER_PROFILE } from '../../../src/profile';
 import { gameColors } from '../../../src/theme/gameColors';
 import { getWechatLoginCode } from '../platform/wechatLogin';
 import type { CanvasContext2D } from '../platform/wxApi';
@@ -16,6 +16,8 @@ import { drawText } from '../runtime/drawText';
 import type { MiniGameStores } from '../stores/gameStore';
 import { dispatchAccountAction } from './account';
 import { dispatchLobbyAction } from './lobby';
+import { applyMinorGrantAfterLogin, beginProtectedAction, currentAuthPrivacy, invalidateGuardianAuthorization, privacyReady } from '../privacy/coordinator';
+import type { ProtectedAction } from '../privacy/policy';
 
 export interface ScreenSnapshot {
   readonly app: MiniGameAppState;
@@ -308,7 +310,7 @@ function codeOf(error: unknown): string {
   return error instanceof AuthClientError ? error.code : 'NETWORK_ERROR';
 }
 const authorizing = new WeakMap<MiniGameStores, Promise<void>>();
-export async function authorizeOnline(stores: MiniGameStores): Promise<void> {
+export async function authorizeOnline(stores: MiniGameStores, app?: MiniGameApp): Promise<void> {
   const existing = authorizing.get(stores); if (existing) return existing;
   const operation = (async () => {
     await stores.ready;
@@ -320,11 +322,21 @@ export async function authorizeOnline(stores: MiniGameStores): Promise<void> {
       await auth.refreshSession(); auth = stores.auth.getState();
       if (auth.sessionToken && !auth.profileVerified) throw new AuthClientError(auth.errorCode ?? 'PROFILE_REFRESH_REQUIRED', 'Refresh required.');
     }
-    if (!auth.sessionToken) await stores.auth.getState().wechatLogin(await getWechatLoginCode(stores.wx));
+    const privacy = app ? currentAuthPrivacy(app) : undefined;
+    let authenticatedNow = false;
+    if (!auth.sessionToken) {
+      await stores.auth.getState().wechatLogin(await getWechatLoginCode(stores.wx), privacy);
+      authenticatedNow = true;
+    }
     auth = stores.auth.getState();
     if (!auth.user || !auth.profileVerified || !auth.sessionToken || (auth.sessionExpiresAt ?? 0) <= Date.now()) {
       throw new AuthClientError('UNAUTHORIZED', 'A valid account session is required.');
     }
+    if (!authenticatedNow && privacy?.privacyPolicyVersion) {
+      if (privacy.guardianGrant) await auth.recordGuardianConsent(privacy.guardianGrant, privacy.privacyPolicyVersion);
+      else await auth.recordPrivacyConsent(privacy.privacyPolicyVersion);
+    }
+    if (app && privacy?.guardianGrant) await applyMinorGrantAfterLogin(app);
   })();
   authorizing.set(stores, operation);
   try { await operation; } finally { if (authorizing.get(stores) === operation) authorizing.delete(stores); }
@@ -333,7 +345,7 @@ async function runIntent(intent: OnlineIntent, app: MiniGameApp, stores: MiniGam
   if (app.getState().onlineBusy || app.getState().accountBusy || pendingCreates.has(app)) return;
   const generation = app.beginIntent(intent);
   try {
-    await authorizeOnline(stores);
+    await authorizeOnline(stores, app);
     if (!app.intentIsCurrent(generation)) return;
     const game = stores.game.getState();
     game.clearError();
@@ -344,7 +356,9 @@ async function runIntent(intent: OnlineIntent, app: MiniGameApp, stores: MiniGam
       app.navigation.navigate('lobby');
     }
   } catch (error) {
-    if (app.intentIsCurrent(generation)) app.update({ onlineBusy: false, errorCode: codeOf(error) });
+    const code = codeOf(error);
+    invalidateGuardianAuthorization(app, code);
+    if (app.intentIsCurrent(generation)) app.update({ onlineBusy: false, errorCode: code });
   }
 }
 export function validatedRoomCode(value: string): string | null {
@@ -353,6 +367,18 @@ export function validatedRoomCode(value: string): string | null {
 }
 
 export async function dispatchScreenAction(actionId: string, app: MiniGameApp, stores: MiniGameStores): Promise<void> {
+  const protectedAction = actionId === 'home.create' || actionId === 'home.join' || actionId === 'home.lobby'
+    || actionId === 'account.refresh' || actionId === 'account.wechat'
+    || actionId === 'account.mode.profile' || actionId === 'account.mode.login' || actionId === 'account.mode.register'
+    || actionId === 'account.mode.credentials' || actionId === 'account.mode.link' || actionId === 'account.mode.reset'
+    || actionId === 'account.submit' && app.getState().accountMode !== 'menu' && app.getState().accountMode !== 'delete'
+    || actionId.startsWith('account.avatar.') || actionId === 'account.useWechatNickname';
+  if (protectedAction && !privacyReady(app)) {
+    const action: ProtectedAction = actionId === 'home.join'
+      ? { actionId, roomCode: app.getState().fields.roomCode } : { actionId };
+    beginProtectedAction(action, app);
+    return;
+  }
   if (actionId === 'home.cancelCreate') { pendingCreates.get(app)?.cancel(); return; }
   if (actionId === 'home.join' && app.getState().errorCode === 'KEYBOARD_UNAVAILABLE') return;
   if (pendingCreates.has(app) && (actionId.startsWith('home.') || actionId.startsWith('account.')
@@ -385,7 +411,10 @@ export async function dispatchScreenAction(actionId: string, app: MiniGameApp, s
     if (difficulty !== 'easy' && difficulty !== 'normal' && difficulty !== 'hard') return;
     app.clearIntent(); app.clearPasswords();
     const auth = stores.auth.getState();
-    stores.game.getState().startSinglePlayer(auth.profileVerified && auth.user ? auth.user.profile : stores.profile.getState().profile, difficulty);
+    const profile = privacyReady(app)
+      ? auth.profileVerified && auth.user ? auth.user.profile : stores.profile.getState().profile
+      : DEFAULT_PLAYER_PROFILE;
+    stores.game.getState().startSinglePlayer(profile, difficulty);
     app.navigation.navigate('solo'); return;
   }
   if (actionId === 'home.create') { await runIntent({ type: 'create-room' }, app, stores); return; }

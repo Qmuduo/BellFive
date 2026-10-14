@@ -5,7 +5,7 @@ import { normalizeNickname, sanitizePlayerProfile } from '../profile';
 import type { PlayerProfileInput } from '../profile';
 import { AuthClient } from './AuthClient';
 import { AuthClientError } from './contracts';
-import type { AuthSession, AuthUser, WechatLinkInput } from './contracts';
+import type { AuthPrivacyMetadata, AuthSession, AuthUser, WechatLinkInput } from './contracts';
 
 export type AuthStore = Readonly<{
   user: AuthUser | null;
@@ -17,14 +17,17 @@ export type AuthStore = Readonly<{
   errorCode: string | null;
   markHydrated: () => void;
   refreshSession: () => Promise<void>;
-  login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string, initialProfile?: PlayerProfileInput) => Promise<void>;
-  wechatLogin: (code: string) => Promise<void>;
+  login: (username: string, password: string, privacy?: AuthPrivacyMetadata) => Promise<void>;
+  register: (username: string, password: string, initialProfile?: PlayerProfileInput, privacy?: AuthPrivacyMetadata) => Promise<void>;
+  wechatLogin: (code: string, privacy?: AuthPrivacyMetadata) => Promise<void>;
   linkWechat: (input: WechatLinkInput) => Promise<void>;
   updateProfile: (profile: PlayerProfileInput) => Promise<void>;
   addCredentials: (username: string, password: string) => Promise<void>;
-  resetPasswordWithWechat: (code: string, newPassword: string) => Promise<void>;
+  resetPasswordWithWechat: (code: string, newPassword: string, privacy?: AuthPrivacyMetadata) => Promise<void>;
   logout: () => Promise<void>;
+  recordPrivacyConsent: (privacyPolicyVersion: string) => Promise<void>;
+  recordGuardianConsent: (guardianGrant: string, privacyPolicyVersion: string) => Promise<void>;
+  deleteAccount: (reauthentication: Readonly<{ password?: string; wechatCode?: string }>) => Promise<void>;
   clearError: () => void;
 }>;
 
@@ -47,7 +50,7 @@ function normalizedUser(user: AuthUser): AuthUser {
   };
 }
 
-export function createAuthStoreApi(storage: StateStorage, client: AuthClient) {
+export function createAuthStoreApi(storage: StateStorage, client: AuthClient, options: { autoRefreshOnHydrate?: boolean } = {}) {
   return createStore<AuthStore>()(persist(
     (set, get) => {
       const acceptSession = (session: AuthSession) => set({
@@ -124,21 +127,22 @@ export function createAuthStoreApi(storage: StateStorage, client: AuthClient) {
             set({ hydrated: true });
           }
         },
-        login: (username, password) => perform(async () => {
-          acceptSession(await client.login({ username, password }));
+        login: (username, password, privacy) => perform(async () => {
+          acceptSession(await client.login({ username, password, ...privacy }));
         }),
-        register: (username, password, initialProfile) => perform(async () => {
+        register: (username, password, initialProfile, privacy) => perform(async () => {
           acceptSession(await client.register({
             username,
             password,
+            ...privacy,
             ...(initialProfile ? { initialProfile: {
               ...sanitizePlayerProfile(initialProfile, 'A'),
               nickname: normalizeNickname(initialProfile.nickname),
             } } : {}),
           }));
         }),
-        wechatLogin: code => perform(async () => {
-          acceptSession(await client.wechatLogin(code));
+        wechatLogin: (code, privacy) => perform(async () => {
+          acceptSession(await client.wechatLogin(code, privacy));
         }),
         linkWechat: input => {
           const token = get().sessionToken;
@@ -167,8 +171,8 @@ export function createAuthStoreApi(storage: StateStorage, client: AuthClient) {
             acceptUserForToken(token, user);
           }, token);
         },
-        resetPasswordWithWechat: (code, newPassword) => perform(async () => {
-          acceptSession(await client.resetPasswordWithWechat(code, newPassword));
+        resetPasswordWithWechat: (code, newPassword, privacy) => perform(async () => {
+          acceptSession(await client.resetPasswordWithWechat(code, newPassword, privacy));
         }),
         logout: async () => {
           const token = get().sessionToken;
@@ -180,6 +184,24 @@ export function createAuthStoreApi(storage: StateStorage, client: AuthClient) {
           } finally {
             set({ pending: false });
           }
+        },
+        recordPrivacyConsent: async privacyPolicyVersion => {
+          const token = get().sessionToken;
+          if (!token) throw new AuthClientError('UNAUTHORIZED', 'Sign in to record privacy consent.');
+          await perform(async () => { await client.recordPrivacyConsent(token, privacyPolicyVersion); }, token);
+        },
+        recordGuardianConsent: async (guardianGrant, privacyPolicyVersion) => {
+          const token = get().sessionToken;
+          if (!token) throw new AuthClientError('UNAUTHORIZED', 'Sign in to record guardian consent.');
+          await perform(async () => { await client.recordGuardianConsent(token, guardianGrant, privacyPolicyVersion); }, token);
+        },
+        deleteAccount: async reauthentication => {
+          const token = get().sessionToken;
+          if (!token) throw new AuthClientError('UNAUTHORIZED', 'Sign in to delete this account.');
+          await perform(async () => {
+            await client.deleteAccount(token, reauthentication);
+            set({ user: null, sessionToken: null, sessionExpiresAt: null, profileVerified: false, errorCode: null });
+          }, token);
         },
         clearError: () => set({ errorCode: null }),
       };
@@ -204,7 +226,10 @@ export function createAuthStoreApi(storage: StateStorage, client: AuthClient) {
           profileVerified: false,
         };
       },
-      onRehydrateStorage: initialState => () => { void initialState.refreshSession(); },
+      onRehydrateStorage: initialState => () => {
+        if (options.autoRefreshOnHydrate !== false) void initialState.refreshSession();
+        else initialState.markHydrated();
+      },
     },
   ));
 }
