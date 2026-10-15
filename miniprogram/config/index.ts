@@ -4,7 +4,7 @@ import devConfig from './dev';
 import prodConfig from './prod';
 
 const baseConfig: UserConfigExport<'webpack5'> = {
-  projectName: 'BellFive',
+  projectName: '铃果派对',
   date: '2026-10-06',
   designWidth: 750,
   deviceRatio: {

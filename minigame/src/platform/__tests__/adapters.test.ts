@@ -227,8 +227,8 @@ test('feedback obeys disabled settings, tolerates unavailable capabilities and r
   feedback.dispose(); feedback.dispose(); expect(destroyed).toBe(1);
   const absent = createWxFeedback({} as any);
   expect(() => { absent.play('audio/ring.mp3'); absent.vibrate(); absent.dispose(); }).not.toThrow();
-  shareMiniGame({ shareAppMessage: (options: unknown) => shared.push(options) } as any, 'Join BellFive', 'room=ABC123');
-  expect(shared).toEqual([{ title: 'Join BellFive', query: 'room=ABC123' }]);
+  shareMiniGame({ shareAppMessage: (options: unknown) => shared.push(options) } as any, 'Join 铃果派对', 'room=ABC123');
+  expect(shared).toEqual([{ title: 'Join 铃果派对', query: 'room=ABC123' }]);
 });
 
 test('runtime wx adapter normalizes safe-area insets, native logical touches and back key without leaking wx events', () => {

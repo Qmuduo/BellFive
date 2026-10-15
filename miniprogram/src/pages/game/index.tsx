@@ -159,7 +159,7 @@ export default function GamePage(): JSX.Element {
           <View className="mini-game-brand">
             <Text className="mini-game-brand-icon">🔔</Text>
             <View>
-              <Text className="mini-game-brand-name">BellFive</Text>
+              <Text className="mini-game-brand-name">铃果派对</Text>
               <Text className="mini-game-brand-caption">{isSolo ? t('game.singlePlayer') : miniText(language, 'waitingTitle')}</Text>
             </View>
           </View>

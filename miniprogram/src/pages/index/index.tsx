@@ -144,7 +144,7 @@ export default function IndexPage(): JSX.Element {
 
         <View className="brand-mark"><Text className="brand-bell">🔔</Text></View>
         <Text className="entry-eyebrow">{t('entry.eyebrow')}</Text>
-        <Text className="entry-title">BellFive</Text>
+        <Text className="entry-title">铃果派对</Text>
         <Text className="entry-description">{t('entry.description')}</Text>
 
         <View className="profile-card">

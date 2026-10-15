@@ -23,14 +23,14 @@ function wrap(context: CanvasContext2D, value: string, width: number): string[] 
 function paragraphs(language: string, step: string): string[] {
   if (step === 'policy') return language === 'en' ? [...PRIVACY_SUMMARY] : [...PRIVACY_SUMMARY_ZH];
   if (step === 'age') return language === 'en'
-    ? ['Please choose the age path that applies. BellFive does not ask for a birth date.', 'Users aged 14 or older may continue after any required WeChat privacy authorization. Users under 14 need a guardian email confirmation before account, profile customization, or online play.']
-    : ['请选择适用的年龄路径。BellFive 不收集出生日期。', '14 周岁及以上用户完成微信要求的隐私授权后可继续；未满 14 周岁用户需先完成监护人邮箱确认，之后才能创建账号、个性化资料或联机。'];
+    ? ['Please choose the age path that applies. 铃果派对 does not ask for a birth date.', 'Users aged 14 or older may continue after any required WeChat privacy authorization. Users under 14 need a guardian email confirmation before account, profile customization, or online play.']
+    : ['请选择适用的年龄路径。铃果派对 不收集出生日期。', '14 周岁及以上用户完成微信要求的隐私授权后可继续；未满 14 周岁用户需先完成监护人邮箱确认，之后才能创建账号、个性化资料或联机。'];
   if (step === 'guardian-email' || step === 'guardian-code') return language === 'en'
     ? ['A guardian must confirm permission from their own email address. The email is used only for this confirmation and is deleted after confirmation or expiry.', 'You can cancel and continue with generic-profile guest solo play.']
     : ['请由监护人使用其本人邮箱确认。邮箱仅用于本次确认，完成确认或请求过期后会删除。', '你可以取消并继续使用通用资料进行游客单机。'];
   return language === 'en'
-    ? ['BellFive uses an account identifier, optional username, optional WeChat nickname, game profile, and session records for account and online play.', 'It does not request a phone number, contacts, location, album, or date of birth. Guest solo play works offline.', 'Users can request account deletion in Account settings. Publisher identity, contact channel, service region, mail provider, and final retention periods will be published before release.']
-    : ['BellFive 为提供账号和联机功能，会处理账号标识、可选用户名、可选微信昵称、游戏资料和会话记录。', '游戏不申请手机号、通讯录、定位、相册或出生日期；游客可离线单机。', '用户可在账号设置中申请注销。运营者身份、联系渠道、服务地区、邮件服务商和实际保留期限将在发布前补齐并公布。'];
+    ? ['铃果派对 uses an account identifier, optional username, optional WeChat nickname, game profile, and session records for account and online play.', 'It does not request a phone number, contacts, location, album, or date of birth. Guest solo play works offline.', 'Users can request account deletion in Account settings. Publisher identity, contact channel, service region, mail provider, and final retention periods will be published before release.']
+    : ['铃果派对 为提供账号和联机功能，会处理账号标识、可选用户名、可选微信昵称、游戏资料和会话记录。', '游戏不申请手机号、通讯录、定位、相册或出生日期；游客可离线单机。', '用户可在账号设置中申请注销。运营者身份、联系渠道、服务地区、邮件服务商和实际保留期限将在发布前补齐并公布。'];
 }
 
 export function privacyContentHeight(layout: ScreenLayout, snapshot: ScreenSnapshot): number {
@@ -70,7 +70,7 @@ export function renderPrivacy(context: CanvasContext2D, layout: ScreenLayout, sn
   context.beginPath(); context.rect(content.x, content.y, content.width, content.height); context.clip();
   context.fillStyle = gameColors.canvas; context.fillRect(content.x, content.y, content.width, content.height);
   drawScreenText(context, stepTitle[state.step] ?? local(language, 'Privacy', '隐私'), x, content.y + 27, 22, gameColors.plum);
-  drawScreenText(context, local(language, 'BellFive · bellfive-privacy-v1', 'BellFive · bellfive-privacy-v1'),
+  drawScreenText(context, local(language, '铃果派对 · v1', '铃果派对 · v1'),
     x, content.y + 49, 10, gameColors.muted);
 
   const bodyTop = content.y + 73 - layout.scrollY;

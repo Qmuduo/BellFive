@@ -18,7 +18,7 @@ export default function WaitingPage(): JSX.Element {
   const t = (key: Parameters<typeof translate>[1]) => translate(language, key);
 
   useShareAppMessage(() => ({
-    title: `BellFive · ${miniText(language, 'roomCode')} ${roomCode ?? ''}`,
+    title: `铃果派对 · ${miniText(language, 'roomCode')} ${roomCode ?? ''}`,
     path: `/pages/index/index?roomCode=${roomCode ?? ''}`,
   }));
 

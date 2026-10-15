@@ -408,7 +408,7 @@ export default function GameScreen({ initialRoomCode, onAuthenticate, onAccount 
       <StatusBar barStyle="dark-content" backgroundColor={gameColors.canvas} />
       <View ref={screenRef} style={styles.screen}>
         <View style={styles.header}>
-          <Text style={styles.title}>BellFive</Text>
+          <Text style={styles.title}>铃果派对</Text>
           <View style={styles.headerActions}>
             <MusicToggle enabled={music.enabled} disabled={!settingsHydrated} onToggle={music.toggle} />
             <LanguageSettings compact />

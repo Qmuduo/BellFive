@@ -11,7 +11,7 @@ describe('AuthScreen', () => {
       <AuthScreen canRegister={false} onLogin={jest.fn()} onRegister={jest.fn()} />,
     );
 
-    const switchMode = screen.getByRole('button', { name: 'New to BellFive? Create an account' });
+    const switchMode = screen.getByRole('button', { name: 'New to 铃果派对? Create an account' });
     expect(switchMode).toBeDisabled();
     expect(screen.getByText('LOADING PROFILE…')).toBeOnTheScreen();
     await user.press(switchMode);
@@ -23,7 +23,7 @@ describe('AuthScreen', () => {
     const user = userEvent.setup();
     await render(<AuthScreen onLogin={onLogin} onRegister={onRegister} initialProfile={{ nickname: 'Mira', avatarId: 'pear' }} />);
 
-    await user.press(screen.getByRole('button', { name: 'New to BellFive? Create an account' }));
+    await user.press(screen.getByRole('button', { name: 'New to 铃果派对? Create an account' }));
     await user.type(screen.getByLabelText('Username'), 'mira');
     await user.type(screen.getByLabelText('Password'), 'password-123');
     await user.type(screen.getByLabelText('Confirm password'), 'different-password');

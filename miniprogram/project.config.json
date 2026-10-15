@@ -1,7 +1,7 @@
 {
   "miniprogramRoot": "dist/",
-  "projectname": "BellFive",
-  "description": "BellFive WeChat Mini Program",
+  "projectname": "铃果派对",
+  "description": "铃果派对 WeChat Mini Program",
   "appid": "touristappid",
   "compileType": "miniprogram",
   "libVersion": "3.0.0",

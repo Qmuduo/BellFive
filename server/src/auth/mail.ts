@@ -29,9 +29,9 @@ export function createGuardianMailerFromEnv(): GuardianMailer | null {
       const safeUrl = escapeHtml(input.confirmationUrl);
       await transporter.sendMail({
         from, to: input.email,
-        subject: '请确认 BellFive 未成年人账号授权',
-        text: `请由监护人本人完成 BellFive 账号与联机功能的确认。该链接将在 ${expiry} 过期。\n\n${input.confirmationUrl}\n\n如果你没有发起此操作，请忽略此邮件。`,
-        html: `<p>请由监护人本人完成 BellFive 账号与联机功能的确认。</p><p>该链接将在 ${expiry} 过期。</p><p><a href="${safeUrl}">打开监护人确认页</a></p><p>如果你没有发起此操作，请忽略此邮件。</p>`,
+        subject: '请确认 铃果派对 未成年人账号授权',
+        text: `请由监护人本人完成 铃果派对 账号与联机功能的确认。该链接将在 ${expiry} 过期。\n\n${input.confirmationUrl}\n\n如果你没有发起此操作，请忽略此邮件。`,
+        html: `<p>请由监护人本人完成 铃果派对 账号与联机功能的确认。</p><p>该链接将在 ${expiry} 过期。</p><p><a href="${safeUrl}">打开监护人确认页</a></p><p>如果你没有发起此操作，请忽略此邮件。</p>`,
       });
     },
   };

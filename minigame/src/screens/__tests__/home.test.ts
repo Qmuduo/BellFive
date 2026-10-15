@@ -31,7 +31,7 @@ test.each([
   expect(targets.filter(item => item.id.startsWith('home.solo.'))).toHaveLength(1);
   expect(targets.map(item => item.id)).toEqual(expect.arrayContaining(['home.difficulty.easy', 'home.difficulty.normal', 'home.difficulty.hard']));
   expect(targets.find(item => item.id === 'home.account')!.rect.y).toBeGreaterThanOrEqual(capsule.y + capsule.height);
-  expect(c.texts).toContain('BellFive');
+  expect(c.texts).toContain('铃果派对');
   expect(c.fills).toContain(gameColors.purple);
   expect(c.fills).toContain(gameColors.lime);
   expect(targets.every(item => item.rect.y >= top && item.rect.y + item.rect.height <= h - bottom)).toBe(true);

@@ -151,8 +151,8 @@ function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: C
   } else if (app.accountMode === 'delete') {
     heading(local(snapshot, 'Delete account and data', '注销账号并删除数据'));
     description(local(snapshot,
-      'This deletes your BellFive account, credentials, linked WeChat identity, sessions, and active room data. This cannot be undone.',
-      '这会删除 BellFive 账号、登录凭据、绑定的微信身份、会话和活动房间数据，且无法撤销。'));
+      'This deletes your 铃果派对 account, credentials, linked WeChat identity, sessions, and active room data. This cannot be undone.',
+      '这会删除 铃果派对 账号、登录凭据、绑定的微信身份、会话和活动房间数据，且无法撤销。'));
     if (auth.user?.username) field('password', label(snapshot, 'auth.password'), '•'.repeat(Math.min(20, Array.from(app.fields.password).length)), !busy);
     else description(local(snapshot, 'Confirm with a fresh WeChat login code.', '需要使用当前微信身份重新验证。'));
     const confirmRect = { x, y, width, height: 48 };

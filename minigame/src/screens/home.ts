@@ -196,7 +196,7 @@ export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snaps
   context.fillStyle = gameColors.canvas; context.fillRect(content.x, content.y, content.width, content.height);
 
   // Small brand and profile bar: both give context without competing with play.
-  text('BellFive', header.x, header.y + 22, 22, gameColors.plum, undefined, 'left', true);
+  text('铃果派对', header.x, header.y + 22, 22, gameColors.plum, undefined, 'left', true);
   const account = { x: header.x + header.width - 120, y: header.y, width: 120, height: 44 };
   drawRoundedPanel(context, account, { fill: gameColors.surface, radius: 22 });
   drawAvatarBadge(context, { x: account.x + 6, y: account.y + 6, width: 32, height: 32 }, AVATAR_EMOJI[profile.avatarId],

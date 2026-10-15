@@ -43,9 +43,9 @@ type AiRingPlan = Readonly<{
 }>;
 
 const DIFFICULTY_SETTINGS: Readonly<Record<SinglePlayerDifficulty, DifficultySettings>> = {
-  easy: { flipDelayMs: 1100, correctRingDelayMs: 900, falseRingChance: 0.2 },
-  normal: { flipDelayMs: 750, correctRingDelayMs: 550, falseRingChance: 0.08 },
-  hard: { flipDelayMs: 420, correctRingDelayMs: 250, falseRingChance: 0.02 },
+  easy: { flipDelayMs: 1500, correctRingDelayMs: 1300, falseRingChance: 0.2 },
+  normal: { flipDelayMs: 1050, correctRingDelayMs: 850, falseRingChance: 0.08 },
+  hard: { flipDelayMs: 650, correctRingDelayMs: 450, falseRingChance: 0.02 },
 };
 
 const MATCH_LENGTH_SECONDS = 5 * 60;

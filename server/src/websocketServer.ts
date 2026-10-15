@@ -115,7 +115,7 @@ export async function createWebSocketServer(
         sendMessage(socket, {
           type: 'error',
           code: 'INVALID_MESSAGE',
-          message: 'The message does not match the BellFive room protocol.',
+          message: 'The message does not match the 铃果派对 room protocol.',
         });
         return;
       }

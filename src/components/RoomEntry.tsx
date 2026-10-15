@@ -108,7 +108,7 @@ export function RoomEntry({
       <View style={styles.settingsRow}><LanguageSettings /></View>
       <View style={styles.brandMark}><Text style={styles.bell}>🔔</Text></View>
       <Text style={styles.eyebrow}>{t('entry.eyebrow')}</Text>
-      <Text style={styles.title}>BellFive</Text>
+      <Text style={styles.title}>铃果派对</Text>
       <Text style={styles.description}>{t('entry.description')}</Text>
       <View style={styles.authRow}>
         {!onlineEnabled ? <Text style={styles.authHint}>{t('entry.onlineSignIn')}</Text> : null}

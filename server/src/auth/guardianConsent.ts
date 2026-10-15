@@ -69,7 +69,7 @@ export class GuardianConsentService {
       return page('链接已过期', '<p>确认链接已过期。请回到小游戏重新发送确认邮件。</p>');
     }
     const safeToken = escapeHtml(token);
-    return page('BellFive 监护人确认', `<p>此操作将允许未满 14 周岁的用户创建 BellFive 账号、使用个性化资料并参与在线游戏。该账号服务与 BellFive 的 Web、Expo 和 Taro 微信小程序等客户端共用；账号资料可能用于同一账号在这些客户端登录。确认后会生成一次性授权码，需由你交给该用户。</p><p>适用隐私规则版本：${escapeHtml(request.policyVersion)}。请确认你是该用户的监护人，并同意按此版本的隐私规则处理其账号、游戏资料和联机所需数据。</p><p>本次确认邮箱只用于验证监护人邮箱，确认成功后删除。BellFive 不收集出生日期。</p><form method="post" action="/guardian/confirm"><input type="hidden" name="token" value="${safeToken}"><label><input required type="checkbox" name="guardianAttested" value="yes"> 我是该用户的监护人，已阅读并同意以上说明</label><p><button type="submit">确认并生成一次性授权码</button></p></form>`);
+    return page('铃果派对 监护人确认', `<p>此操作将允许未满 14 周岁的用户创建 铃果派对 账号、使用个性化资料并参与在线游戏。该账号服务与 铃果派对 的 Web、Expo 和 Taro 微信小程序等客户端共用；账号资料可能用于同一账号在这些客户端登录。确认后会生成一次性授权码，需由你交给该用户。</p><p>适用隐私规则版本：${escapeHtml(request.policyVersion)}。请确认你是该用户的监护人，并同意按此版本的隐私规则处理其账号、游戏资料和联机所需数据。</p><p>本次确认邮箱只用于验证监护人邮箱，确认成功后删除。铃果派对 不收集出生日期。</p><form method="post" action="/guardian/confirm"><input type="hidden" name="token" value="${safeToken}"><label><input required type="checkbox" name="guardianAttested" value="yes"> 我是该用户的监护人，已阅读并同意以上说明</label><p><button type="submit">确认并生成一次性授权码</button></p></form>`);
   }
 
   confirm(token: string, guardianAttested: boolean): string {

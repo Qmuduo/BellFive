@@ -346,7 +346,7 @@ test('native entry renders home, dispatches one solo tap, and clears keyboard bu
   }
   const boot = startMiniGame(nativeApi, { scheduler: { requestFrame: callback => { frames.set(++next, callback); return next; }, cancelFrame: handle => { frames.delete(handle); } } });
   await boot.stores.ready; const frame = [...frames.values()][0]; frames.clear(); frame(0);
-  expect(context.texts).toContain('BellFive');
+  expect(context.texts).toContain('铃果派对');
   boot.app.update({ accountMode: 'profile' });
   expect(boot.screens.account.scrollContentHeight?.(boot.runtime.layout)).toBeGreaterThan(boot.runtime.layout.content.height);
   const target = renderHome(context as any, boot.runtime.layout, getScreenSnapshot(boot.app, boot.stores)).find(item => item.id === 'home.solo.normal')!;

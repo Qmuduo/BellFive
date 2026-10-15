@@ -41,7 +41,7 @@ export function GameCard({ card, revealed, orientation }: GameCardProps): JSX.El
       ) : (
         <View className="mini-card-back">
           <Text className="mini-card-back-mark">🔔</Text>
-          <Text className="mini-card-back-word">BELLFIVE</Text>
+          <Text className="mini-card-back-word">铃果派对</Text>
         </View>
       )}
     </View>
