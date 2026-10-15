@@ -7,6 +7,7 @@ export function useBackgroundMusic(active: boolean) {
   const player = useAudioPlayer(require('../../assets/audio/background-music.wav'));
   const status = useAudioPlayerStatus(player);
   const enabled = useSettingsStore(state => state.musicEnabled);
+  const volume = useSettingsStore(state => state.musicVolume);
   const hydrated = useSettingsStore(state => state.hydrated);
   const setMusicEnabled = useSettingsStore(state => state.setMusicEnabled);
   const [foreground, setForeground] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
@@ -26,8 +27,8 @@ export function useBackgroundMusic(active: boolean) {
 
   useEffect(() => {
     player.loop = true;
-    player.volume = 0.15;
-  }, [player]);
+    player.volume = volume ?? 0.15;
+  }, [player, volume]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {

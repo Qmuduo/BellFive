@@ -1,6 +1,12 @@
 import type { Language, TranslationParams } from './types';
 
 const en = {
+  'settings.game': 'Game settings',
+  'settings.backgroundMusic': 'Background music',
+  'settings.musicVolume': 'Music volume',
+  'settings.musicOn': 'On',
+  'settings.musicOff': 'Off',
+  'settings.savedLocally': 'Saved on this device',
   'settings.open': 'Language settings',
   'settings.title': 'Language',
   'settings.close': 'Done',
@@ -261,6 +267,12 @@ const en = {
 } as const;
 
 const zhCN = {
+  'settings.game': '游戏设置',
+  'settings.backgroundMusic': '背景音乐',
+  'settings.musicVolume': '音乐音量',
+  'settings.musicOn': '已开启',
+  'settings.musicOff': '已关闭',
+  'settings.savedLocally': '自动记住你的选择',
   'settings.open': '语言设置',
   'settings.title': '选择语言',
   'settings.close': '完成',

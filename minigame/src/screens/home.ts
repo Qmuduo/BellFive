@@ -16,6 +16,7 @@ import { drawText } from '../runtime/drawText';
 import type { MiniGameStores } from '../stores/gameStore';
 import { dispatchAccountAction } from './account';
 import { dispatchLobbyAction } from './lobby';
+import { dispatchSettingsAction } from './settings';
 import { applyMinorGrantAfterLogin, beginProtectedAction, currentAuthPrivacy, invalidateGuardianAuthorization, privacyReady } from '../privacy/coordinator';
 import type { ProtectedAction } from '../privacy/policy';
 
@@ -265,9 +266,12 @@ export function renderHome(context: CanvasContext2D, layout: ScreenLayout, snaps
   text('→', lobby.x + lobby.width - 22, lobby.y + 32, 20, gameColors.purple, undefined, 'center', true);
   if (!busy) targets.push({ id: 'home.lobby', rect: lobby });
   const language = scrolled(geometry.language);
+  const settingsWidth = Math.min(110, language.width * 0.36);
   text(snapshot.settings.language === 'en' ? 'Language · English / 中文' : '语言 · 简体中文 / English',
-    language.x + language.width / 2, language.y + 22, 11, gameColors.muted, undefined, 'center');
-  targets.push({ id: 'settings.language', rect: language });
+    language.x + (language.width - settingsWidth - 8) / 2, language.y + 22, 10, gameColors.muted, undefined, 'center');
+  targets.push({ id: 'settings.language', rect: { ...language, width: language.width - settingsWidth - 8 } });
+  action('nav.settings', { ...language, x: language.x + language.width - settingsWidth, width: settingsWidth },
+    label(snapshot, 'settings.game'), 'secondary', true, 12);
   context.restore();
   return clipTapTargetsToContent(targets, content);
 }
@@ -391,6 +395,8 @@ export async function dispatchScreenAction(actionId: string, app: MiniGameApp, s
   if (actionId === 'settings.language') {
     const settings = stores.settings.getState(); settings.setLanguage(settings.language === 'en' ? 'zh-CN' : 'en'); return;
   }
+  if (dispatchSettingsAction(actionId, stores)) return;
+  if (actionId === 'nav.settings') { app.navigation.navigate('settings'); return; }
   if (actionId === 'auth.cancel') { app.clearIntent(); app.clearPasswords(); return; }
   if (actionId === 'auth.retry') {
     const intent = app.getState().pendingIntent; if (intent) await runIntent(intent, app, stores); return;

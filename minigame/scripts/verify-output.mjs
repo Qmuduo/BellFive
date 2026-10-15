@@ -11,7 +11,7 @@ assert.equal(project.compileType, 'game');
 await access(resolve(output, 'game.js'));
 await access(resolve(output, 'game.json'));
 JSON.parse(await readFile(resolve(output, 'game.json'), 'utf8'));
-for (const name of ['card-flip', 'bell', 'victory', 'defeat']) {
+for (const name of ['background-music', 'card-flip', 'bell', 'victory', 'defeat']) {
   const packaged = await readFile(resolve(output, `assets/audio/${name}.wav`));
   assert.deepEqual(packaged, await readFile(resolve(root, `../assets/audio/${name}.wav`)), `Missing or changed ${name} sound`);
 }

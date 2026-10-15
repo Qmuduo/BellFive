@@ -54,6 +54,19 @@ function context() {
   };
 }
 const options = { language: 'en' as const, sessionMode: 'online' as const, connectionStatus: 'connected' as const };
+
+test.each([[320, 568], [844, 390]])('match has a separate music switch outside the play controls at %sx%s', (width, height) => {
+  const capsule = { x: width - 96, y: 20, width: 90, height: 32 };
+  const layout = layoutForScreen(width, height, { top: 20, bottom: 20 }, capsule);
+  const targets = drawMatchScreen(context() as any, layout, createMatchViewModel(room(), 'A', null, options));
+  const music = targets.find(target => target.id === 'settings.music.toggle');
+  expect(music).toBeDefined();
+  for (const other of targets.filter(target => target !== music)) {
+    const a = music!.rect; const b = other.rect;
+    expect(a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y).toBe(false);
+  }
+  expect(hitTest({ x: music!.rect.x + music!.rect.width / 2, y: music!.rect.y + music!.rect.height / 2 }, targets)).toBe('settings.music.toggle');
+});
 const geometry = layoutForScreen(390, 844, { top: 44, bottom: 34 });
 function screenSnapshot(game: GameStore, app: ReturnType<typeof createMiniGameApp>): ScreenSnapshot {
   return { app: app.getState(), game, settings: { language: 'en', musicEnabled: true } as any,
@@ -259,7 +272,7 @@ test('table rendering displays snapshot identities, piles, cards, timer, winner 
   const ctx = context();
   drawMatchScreen(ctx as any, geometry, createMatchViewModel(room({ phase: 'finished', winner: 'B', lastRingEvent: ringEvent, ringHistory: [ringEvent] }), 'A', null, options));
   const text = ctx.texts.join(' ');
-  for (const expected of ['Guest', 'Peer', '27/3', '26/4', '1:05', 'Connected', 'WINS', 'RING LOG', '6 cards', '🍌', '🔔']) expect(text).toContain(expected);
+  for (const expected of ['Guest', 'Peer', 'YOU 27', 'OPP. 26', '1:05', 'Connected', 'WINS', 'RING LOG', '6 cards', '🍌', '🔔']) expect(text).toContain(expected);
   const paused = drawMatchScreen(context() as any, geometry, createMatchViewModel(room({ phase: 'connection-paused' }), 'A', null, options));
   expect(paused.map(target => target.id)).not.toContain('match.flip');
   expect(paused.map(target => target.id)).not.toContain('match.ring');
@@ -382,7 +395,10 @@ function nativeFixture() {
     getSystemInfoSync: () => ({ windowWidth: 390, windowHeight: 844, pixelRatio: 2, safeArea: { top: 44, bottom: 810, left: 0, right: 390 } }),
   };
   for (const name of ['TouchStart', 'TouchMove', 'TouchEnd', 'TouchCancel', 'WindowResize', 'Hide', 'Show', 'KeyDown', 'KeyboardInput', 'KeyboardConfirm', 'KeyboardComplete']) {
-    nativeApi[`on${name}`] = (callback: (...args: any[]) => void) => { events[name] = callback; }; nativeApi[`off${name}`] = jest.fn();
+    const listeners = new Set<(...args: any[]) => void>();
+    events[name] = (...args: any[]) => { for (const listener of listeners) listener(...args); };
+    nativeApi[`on${name}`] = (callback: (...args: any[]) => void) => { listeners.add(callback); };
+    nativeApi[`off${name}`] = jest.fn((callback: (...args: any[]) => void) => { listeners.delete(callback); });
   }
   const scheduler = { requestFrame: (callback: (time: number) => void) => { frames.set(++sequence, callback); return sequence; }, cancelFrame: (id: number) => { frames.delete(id); } };
   const frame = () => { const first = frames.entries().next().value; if (first) { frames.delete(first[0]); first[1](Date.now()); } };
@@ -392,6 +408,38 @@ function nativeFixture() {
   };
   return { ctx, nativeApi, scheduler, frame, tap, events };
 }
+
+test('native settings and the in-match shortcut control the same looping player through hide and show', async () => {
+  jest.useFakeTimers();
+  const fixture = nativeFixture();
+  const audio = { src: '', loop: false, volume: 1, playing: false, destroyed: false, onError() {},
+    play() { this.playing = true; }, pause() { this.playing = false; }, stop() { this.playing = false; },
+    destroy() { this.destroyed = true; this.playing = false; } };
+  fixture.nativeApi.createInnerAudioContext = () => audio;
+  const boot = startMiniGame(fixture.nativeApi, { scheduler: fixture.scheduler });
+  try {
+    await boot.stores.ready;
+    const tap = (id: string) => {
+      fixture.frame();
+      const screen = boot.screens[boot.app.navigation.current as keyof typeof boot.screens];
+      const target = screen.render(fixture.ctx as any, boot.runtime.layout, 0).find(item => item.id === id);
+      expect(target).toBeDefined(); fixture.tap(target!.rect);
+    };
+    tap('nav.settings');
+    expect(boot.app.navigation.current).toBe('settings');
+    expect(audio).toMatchObject({ src: 'assets/audio/background-music.wav', loop: true, playing: true, volume: 0.15 });
+    tap('settings.music.louder'); expect(audio.volume).toBe(0.25);
+    tap('settings.music.toggle'); expect(audio.playing).toBe(false);
+    tap('settings.back'); tap('home.solo.normal');
+    expect(boot.app.navigation.current).toBe('solo');
+    tap('settings.music.toggle'); expect(audio.playing).toBe(true);
+    expect(boot.stores.settings.getState()).toMatchObject({ musicEnabled: true, musicVolume: 0.25 });
+    fixture.events.Hide(); expect(audio.playing).toBe(false);
+    fixture.events.Show(); expect(audio.playing).toBe(true);
+    tap('settings.music.toggle'); fixture.events.Hide(); fixture.events.Show(); expect(audio.playing).toBe(false);
+  } finally { boot.destroy(); jest.useRealTimers(); }
+  expect(audio.destroyed).toBe(true);
+});
 
 test('default native entry completes guest solo via Canvas controls without auth or sockets, supports replay and immediate back', async () => {
   jest.useFakeTimers();

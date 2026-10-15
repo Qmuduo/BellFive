@@ -20,7 +20,7 @@ describe('local language settings store', () => {
 
     expect(store.getState().language).toBe('en');
     expect(JSON.parse(storage.values.get('bellfive-settings') ?? 'null')).toEqual({
-      state: { language: 'en', musicEnabled: true },
+      state: { language: 'en', musicEnabled: true, musicVolume: 0.15 },
       version: 0,
     });
   });
@@ -32,7 +32,7 @@ describe('local language settings store', () => {
     store.getState().setMusicEnabled(false);
 
     expect(JSON.parse(storage.values.get('bellfive-settings') ?? 'null')).toEqual({
-      state: { language: 'zh-CN', musicEnabled: false },
+      state: { language: 'zh-CN', musicEnabled: false, musicVolume: 0.15 },
       version: 0,
     });
   });

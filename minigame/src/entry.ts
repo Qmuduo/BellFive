@@ -13,6 +13,8 @@ import { dispatchMatchAction, renderMatch, type MatchTransferAnimation } from '.
 import { createWechatNicknameButton } from './platform/wechatProfile';
 import { acceptPrivacyAge, cancelPrivacyFlow, clearGuardianSecret, completeGuardianGrant, openPrivacyContract, sendGuardianRequest } from './privacy/coordinator';
 import { privacyContentHeight, renderPrivacy } from './screens/privacy';
+import { createWxBackgroundMusic } from './platform/backgroundMusic';
+import { dispatchSettingsAction, renderSettings, settingsContentHeight } from './screens/settings';
 
 declare const __BELLFIVE_AUTH_URL__: string;
 declare const __BELLFIVE_SOCKET_URL__: string;
@@ -29,6 +31,10 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   const keyboard = createWxKeyboard(wxApi);
   const stores = createMiniGameStores(wxApi, options);
   const app = createMiniGameApp(keyboard);
+  const music = createWxBackgroundMusic(wxApi, stores.settings);
+  const stopMusicGesture = platform.subscribe('touchstart', () => music.startFromGesture());
+  const stopMusicHide = platform.subscribe('hide', () => music.setForeground(false));
+  const stopMusicShow = platform.subscribe('show', () => music.setForeground(true));
   const stopPrivacySecret = platform.subscribe('hide', () => clearGuardianSecret(app));
   const nicknameButton = createWechatNicknameButton(wxApi,
     nickname => { void saveWechatNickname(app, stores, nickname); },
@@ -129,7 +135,7 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   };
   const stopNicknameButtonNavigation = app.navigation.subscribe(hideNicknameButtonOutsideProfile);
   const stopNicknameButtonApp = app.subscribe(hideNicknameButtonOutsideProfile);
-  const stopFeedback = connectMatchFeedback(stores.game, feedback, () => stores.settings.getState().musicEnabled,
+  const stopFeedback = connectMatchFeedback(stores.game, feedback, undefined,
     () => feedbackActive && (app.navigation.current === 'solo' || app.navigation.current === 'match'));
   const stopFeedbackHide = platform.subscribe('hide', () => { feedbackActive = false; });
   const stopFeedbackShow = platform.subscribe('show', () => { feedbackActive = true; });
@@ -145,6 +151,12 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
   onHide() { nicknameButton.hide(); app.clearPasswords(); app.clearIntent(); }, scrollContentHeight(layout: ScreenLayout) {
     return accountContentHeight(layout, getScreenSnapshot(app, stores));
   } }, lobby: screen(renderLobby), privacy: privacyScreen,
+    settings: {
+      render(context: CanvasContext2D, layout: ScreenLayout) { return renderSettings(context, layout, getScreenSnapshot(app, stores)); },
+      scrollContentHeight: settingsContentHeight,
+      onAction(actionId: string) { if (actionId === 'settings.back') app.navigation.back(); else dispatchSettingsAction(actionId, stores); },
+      onBack() { app.navigation.back(); },
+    },
     solo: matchScreen, waiting: waitingScreen, match: matchScreen, ...options.screens?.(app, stores) };
   const runtime = new CanvasRuntime({ platform, keyboard, navigation: app.navigation, screens,
     stores: [app, stores.auth, stores.profile, stores.settings, stores.game] });
@@ -152,6 +164,7 @@ export function startMiniGame(wxApi: BootWxApi, options: MiniGameBootOptions = {
     destroy() { lifecycleActive = false; clearGuardianSecret(app); stopLobbyNavigation(); stopLobbyAuth(); stopNicknameButtonNavigation(); stopNicknameButtonApp(); stopPrivacySecret();
       nicknameButton.destroy(); if (lobbySubscribed) stores.game.getState().closeLobby();
       stopFeedback(); stopFeedbackHide(); stopFeedbackShow(); feedback.dispose();
+      stopMusicGesture(); stopMusicHide(); stopMusicShow(); music.dispose();
       stopRoomNavigation(); runtime.destroy(); app.dispose(); stores.dispose(); },
   };
 }

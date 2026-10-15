@@ -14,10 +14,12 @@ import type { Rect, ScreenLayout, TapTarget } from '../runtime/layout';
 import type { MiniGameApp } from '../runtime/navigation';
 import type { MiniGameStores } from '../stores/gameStore';
 import type { ScreenSnapshot } from './home';
+import { dispatchSettingsAction } from './settings';
 
 interface MatchOptions {
   language?: Language; sessionMode?: GameSessionMode; connectionStatus?: GameClientStatus;
   leavingRoom?: boolean; readyPending?: boolean; errorCode?: string;
+  musicEnabled?: boolean; musicHydrated?: boolean;
 }
 type ActionResult = Extract<ServerMessage, { type: 'action.result' }>;
 export type MatchTransferAnimation = Readonly<{ event: RingFeedbackEvent; startedAt: number }>;
@@ -148,9 +150,11 @@ export function createMatchViewModel(snapshot: RoomSnapshot | null, localPlayerI
     rematch: canSend && finished && solo,
     ready: canSend && finished && !solo && !options.readyPending,
     leave: !leaving && mode !== 'none', returnHome: !leaving,
+    music: !leaving && (options.musicHydrated ?? true),
   };
   return {
     language, solo, players, controls, finished, connectionPaused, leaving, winnerLabel, turnPrompt, timerLabel,
+    musicEnabled: options.musicEnabled ?? true,
     title: solo ? t('game.singlePlayer') : `${t('game.table')} · ${snapshot?.roomCode ?? ''}`,
     connectionLabel: solo ? t('debug.singlePlayer') : t(`status.connection.${options.connectionStatus ?? 'connected'}`),
     ringFeedback, resultLabel, ringHistory,
@@ -194,15 +198,16 @@ export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, 
   const menu = layout.menuButton;
   const auxiliaryGap = 4;
   const actionRight = menu ? Math.min(x + width, menu.x - auxiliaryGap) : x + width;
-  const actionGroupWidth = auxiliaryWidth * 2 + auxiliaryGap;
+  const actionGroupWidth = auxiliaryWidth * 3 + auxiliaryGap * 2;
   const horizontalAuxiliary = Boolean(menu && menu.y < top + titleHeight
     && actionRight - x - actionGroupWidth >= 160);
   const overlapsMenu = (rect: Rect) => !!menu && rect.x < menu.x + menu.width && rect.x + rect.width > menu.x
     && rect.y < menu.y + menu.height && rect.y + rect.height > menu.y;
-  const leaveRect = { x: horizontalAuxiliary ? actionRight - actionGroupWidth : x + width - actionGroupWidth,
+  const musicRect = { x: horizontalAuxiliary ? actionRight - actionGroupWidth : x + width - actionGroupWidth,
     y: auxiliaryY, width: auxiliaryWidth, height: headerHeight };
+  const leaveRect = { ...musicRect, x: musicRect.x + auxiliaryWidth + auxiliaryGap };
   const homeRect = { x: leaveRect.x + auxiliaryWidth + auxiliaryGap, y: auxiliaryY, width: auxiliaryWidth, height: headerHeight };
-  if (!horizontalAuxiliary && (overlapsMenu(leaveRect) || overlapsMenu(homeRect))) {
+  if (!horizontalAuxiliary && (overlapsMenu(musicRect) || overlapsMenu(leaveRect) || overlapsMenu(homeRect))) {
     auxiliaryY = Math.max(top, menu!.y + menu!.height + 4);
     headerHeight = auxiliaryY - top + 30;
     turnY = top + headerHeight + 6;
@@ -210,11 +215,13 @@ export function drawMatchScreen(context: CanvasContext2D, layout: ScreenLayout, 
   }
   const boardHeight = Math.max(72, consoleY - 8 - detailHeight - boardY);
   const boardBottom = Math.min(consoleY - 8, boardY + boardHeight);
+  button('settings.music.toggle', view.language === 'en' ? view.musicEnabled ? 'Music On' : 'Music Off' : view.musicEnabled ? '音乐开' : '音乐关',
+    { ...musicRect, y: auxiliaryY, height: 30 }, view.controls.music, view.musicEnabled ? 'lime' : 'secondary', 10);
   button('match.leave', translate(view.language, 'game.leaveRoom'),
     { ...leaveRect, y: auxiliaryY, height: 30 }, view.controls.leave, 'text', 9);
   button('match.home', view.language === 'en' ? 'Home' : '首页',
     { ...homeRect, y: auxiliaryY, height: 30 }, view.controls.returnHome, 'text', 9);
-  const timerX = horizontalAuxiliary ? leaveRect.x - 68 : x + width - actionGroupWidth - 64;
+  const timerX = horizontalAuxiliary ? musicRect.x - 68 : x + width - actionGroupWidth - 64;
   const titleWidth = horizontalAuxiliary ? Math.max(0, timerX - x - 8) : width - actionGroupWidth - 66;
   text({ x, y: top, width: titleWidth, height: titleHeight }, view.title, font + 2, gameColors.plum, 1, true);
   text({ x: timerX, y: top, width: 60, height: titleHeight }, view.timerLabel, font + 1, gameColors.purple, 1, true);
@@ -304,11 +311,13 @@ export function renderMatch(context: CanvasContext2D, layout: ScreenLayout, snap
   return drawMatchScreen(context, layout, createMatchViewModel(game.roomSnapshot, game.localPlayerId, game.lastActionResult, {
     language: snapshot.settings.language, sessionMode: game.sessionMode, connectionStatus: game.connectionStatus,
     leavingRoom: game.leavingRoom, readyPending: Boolean(snapshot.app.pendingReadyAction), errorCode: game.error?.code,
+    musicEnabled: snapshot.settings.musicEnabled, musicHydrated: snapshot.settings.hydrated,
   }), timestamp, transferAnimation);
 }
 
 /** Re-read the shared store on every action, including stale taps after a disconnect. */
 export function dispatchMatchAction(actionId: string, app: MiniGameApp, stores: MiniGameStores): void {
+  if (dispatchSettingsAction(actionId, stores)) return;
   const game = stores.game.getState();
   const view = createMatchViewModel(game.roomSnapshot, game.localPlayerId, game.lastActionResult, {
     sessionMode: game.sessionMode, connectionStatus: game.connectionStatus, leavingRoom: game.leavingRoom,

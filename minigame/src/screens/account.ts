@@ -124,6 +124,7 @@ function walkAccount(layout: ScreenLayout, snapshot: ScreenSnapshot, context?: C
       button('account.mode.reset', label(snapshot, 'account.recovery'), 'text', !busy);
     }
     button('settings.language', label(snapshot, 'settings.open'), 'text', !busy);
+    button('nav.settings', label(snapshot, 'settings.game'), 'secondary');
   } else if (app.accountMode === 'profile') {
     heading(label(snapshot, 'account.profile'));
     field('nickname', label(snapshot, 'account.nickname'), app.fields.nickname, editable);

@@ -47,7 +47,7 @@ const options = {
         if (result.errors.length > 0) return;
         await copyFile(resolve(root, 'game.json'), resolve(output, 'game.json'));
         await mkdir(resolve(output, 'assets/audio'), { recursive: true });
-        for (const name of ['card-flip', 'bell', 'victory', 'defeat']) {
+        for (const name of ['background-music', 'card-flip', 'bell', 'victory', 'defeat']) {
           await copyFile(resolve(root, `../assets/audio/${name}.wav`), resolve(output, `assets/audio/${name}.wav`));
         }
         await verifyOutput();

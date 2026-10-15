@@ -49,7 +49,7 @@ test('vanilla settings API preserves settings hydration and persistence without 
   const api = createSettingsStoreApi(storage);
   api.getState().setLanguage('en');
   api.getState().setMusicEnabled(false);
-  expect(JSON.parse(values.get('bellfive-settings')!)).toEqual({ state: { language: 'en', musicEnabled: false }, version: 0 });
+  expect(JSON.parse(values.get('bellfive-settings')!)).toEqual({ state: { language: 'en', musicEnabled: false, musicVolume: 0.15 }, version: 0 });
   expect(createSettingsStoreApi(storage).getState()).toMatchObject({ language: 'en', musicEnabled: false, hydrated: true });
 });
 
